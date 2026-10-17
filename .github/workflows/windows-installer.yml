@@ -1,0 +1,155 @@
+name: Build MynAI Windows Installer
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "src/**"
+      - "tools/MynAssistantDesktopBridge/**"
+      - "installer/**"
+      - ".github/workflows/windows-installer.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "src/**"
+      - "tools/MynAssistantDesktopBridge/**"
+      - "installer/**"
+      - ".github/workflows/windows-installer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install desktop bridge dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r tools/MynAssistantDesktopBridge/requirements.txt
+
+      - name: Test desktop bridge command handling
+        run: python -m unittest discover -s tools/MynAssistantDesktopBridge/tests -v
+
+      - name: Build desktop bridge executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/bridge-dist, build/pyinstaller-work, build/pyinstaller-spec | Out-Null
+          pyinstaller --noconfirm --clean --onefile --console --name MynAssistantDesktopBridge --distpath build/bridge-dist --workpath build/pyinstaller-work --specpath build/pyinstaller-spec --collect-all google_auth_oauthlib --collect-all google.auth --hidden-import win32crypt tools/MynAssistantDesktopBridge/agent.py
+          if (-not (Test-Path "build/bridge-dist/MynAssistantDesktopBridge.exe")) {
+            throw "Desktop Bridge EXE was not created."
+          }
+
+      - name: Restore and build .NET solution
+        shell: pwsh
+        run: |
+          dotnet restore MynAI.slnx
+          dotnet build MynAI.slnx --configuration Release --no-restore
+
+      - name: Publish MynAI Windows application
+        shell: pwsh
+        run: |
+          dotnet publish src/MynAI.Windows/MynAI.Windows.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false --output build/publish
+
+          dotnet publish src/MynAI.Agent/MynAI.Agent.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false --output build/agent-publish
+
+          Get-ChildItem "build/agent-publish/MynAI.Agent*" | Copy-Item -Destination "build/publish" -Force
+          Copy-Item "build/bridge-dist/MynAssistantDesktopBridge.exe" "build/publish/MynAssistantDesktopBridge.exe" -Force
+
+          if (-not (Test-Path "build/publish/MynAI.Windows.exe")) {
+            throw "MynAI Windows application EXE was not published."
+          }
+          if (-not (Test-Path "build/publish/MynAI.Agent.exe")) {
+            throw "MynAI.Agent.exe was not published."
+          }
+          if (-not (Test-Path "build/publish/MynAssistantDesktopBridge.exe")) {
+            throw "MynAssistantDesktopBridge.exe was not published."
+          }
+
+      - name: Prepare CI-only OAuth config
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/config | Out-Null
+          $placeholder = @'
+          {
+            "installed": {
+              "client_id": "ci-only.apps.googleusercontent.com",
+              "project_id": "myncloud-24",
+              "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+              "token_uri": "https://oauth2.googleapis.com/token",
+              "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+              "client_secret": "CI_ONLY_NOT_A_REAL_SECRET",
+              "redirect_uris": ["http://localhost"]
+            }
+          }
+          '@
+          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path "build/config/client_secret.json"), $placeholder, $utf8NoBom)
+
+      - name: Prepare production OAuth config
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          MYNAI_GOOGLE_OAUTH_JSON: ${{ secrets.MYNAI_GOOGLE_OAUTH_JSON }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:MYNAI_GOOGLE_OAUTH_JSON)) {
+            throw "Missing repository Actions secret MYNAI_GOOGLE_OAUTH_JSON. Store the Google Desktop OAuth client JSON as this secret before building a distributable installer."
+          }
+
+          $parsed = $env:MYNAI_GOOGLE_OAUTH_JSON | ConvertFrom-Json
+          if (-not $parsed.installed -and -not $parsed.web) {
+            throw "MYNAI_GOOGLE_OAUTH_JSON must be the full Google OAuth client JSON with an installed or web root object."
+          }
+
+          New-Item -ItemType Directory -Force -Path build/config | Out-Null
+          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path "build/config/client_secret.json"), $env:MYNAI_GOOGLE_OAUTH_JSON, $utf8NoBom)
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Compile Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/installer | Out-Null
+          $compilerCandidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          )
+          $compiler = $compilerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $compiler) {
+            throw "Inno Setup compiler (ISCC.exe) was not found after installation."
+          }
+          & $compiler "installer/MynAI.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE."
+          }
+          if (-not (Test-Path "build/installer/MynAI-Setup.exe")) {
+            throw "MynAI-Setup.exe was not created."
+          }
+
+      - name: Upload Windows installer
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MynAI-Windows-Installer
+          path: build/installer/MynAI-Setup.exe
+          if-no-files-found: error
+          retention-days: 7
