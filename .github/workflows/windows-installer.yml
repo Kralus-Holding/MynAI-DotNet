@@ -118,8 +118,8 @@ jobs:
           }
 
           $parsed = $env:MYNAI_GOOGLE_OAUTH_JSON | ConvertFrom-Json
-          if (-not $parsed.installed -and -not $parsed.web) {
-            throw "MYNAI_GOOGLE_OAUTH_JSON must be the full Google OAuth client JSON with an installed or web root object."
+          if (-not $parsed.installed) {
+            throw "MYNAI_GOOGLE_OAUTH_JSON must be a Google Desktop app OAuth client JSON with an installed root object."
           }
 
           New-Item -ItemType Directory -Force -Path build/config | Out-Null
