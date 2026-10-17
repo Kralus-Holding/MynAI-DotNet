@@ -320,19 +320,34 @@ def screen_request_is_active(fields: dict) -> bool:
         return False
 
 
+MAX_SCREEN_FRAME_BASE64_CHARS = 650_000
+
+
 def capture_screen_base64() -> str:
     image = pyautogui.screenshot()
-    image.thumbnail((1280, 720))
-    output = io.BytesIO()
-    image.save(output, format="JPEG", quality=45, optimize=True)
-    payload = output.getvalue()
-    if len(payload) > 800_000:
+    # The Firestore document limit applies after Base64 expansion (roughly +33%),
+    # not to the compressed JPEG bytes. Keep ample room for the document's other
+    # fields by enforcing a 650 KB Base64 string budget.
+    attempts = (
+        ((1280, 720), 40),
+        ((960, 540), 35),
+        ((800, 450), 30),
+        ((640, 360), 25),
+    )
+
+    for dimensions, quality in attempts:
+        frame_image = image.copy()
+        frame_image.thumbnail(dimensions)
         output = io.BytesIO()
-        image.save(output, format="JPEG", quality=30, optimize=True)
-        payload = output.getvalue()
-    if len(payload) > 900_000:
-        raise RuntimeError("Ekran görüntüsü Firestore belge sınırına sığmıyor.")
-    return base64.b64encode(payload).decode("ascii")
+        frame_image.save(output, format="JPEG", quality=quality, optimize=True)
+        encoded = base64.b64encode(output.getvalue()).decode("ascii")
+        if len(encoded) <= MAX_SCREEN_FRAME_BASE64_CHARS:
+            return encoded
+
+    raise RuntimeError(
+        "Ekran görüntüsü Base64 olarak Firestore belge bütçesine sığmıyor; "
+        "çözünürlüğü düşürüp tekrar dene."
+    )
 
 
 def upload_screen_frame(session: FirebaseSession, device_id: str) -> None:
