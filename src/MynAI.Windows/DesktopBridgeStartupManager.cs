@@ -58,7 +58,7 @@ public static class DesktopBridgeStartupManager
                 $"Telefon-PC bağlantısı için Google OAuth yapılandırması bulunamadı: {oauthPath}");
         }
 
-        key.SetValue(ValueName, $"\\"{executablePath}\\"", RegistryValueKind.String);
+        key.SetValue(ValueName, $"{(char)34}{executablePath}{(char)34}", RegistryValueKind.String);
     }
 
     public static string? TryGetExecutablePath()
