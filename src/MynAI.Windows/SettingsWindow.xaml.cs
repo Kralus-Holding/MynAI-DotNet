@@ -2,6 +2,7 @@
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Color = System.Windows.Media.Color;
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
