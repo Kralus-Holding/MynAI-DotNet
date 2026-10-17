@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: ["main", "feature/mynai-desktop-bridge-integration"]
+    branches: ["main"]
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
