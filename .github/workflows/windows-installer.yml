@@ -87,7 +87,7 @@ jobs:
           }
 
       - name: Prepare CI-only OAuth config
-        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
+        if: github.event_name == 'pull_request'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build/config | Out-Null
@@ -108,7 +108,7 @@ jobs:
           [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path "build/config/client_secret.json"), $placeholder, $utf8NoBom)
 
       - name: Prepare production OAuth config
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request'
         shell: pwsh
         env:
           MYNAI_GOOGLE_OAUTH_JSON: ${{ secrets.MYNAI_GOOGLE_OAUTH_JSON }}
@@ -151,7 +151,7 @@ jobs:
           }
 
       - name: Upload Windows installer
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: MynAI-Windows-Installer
