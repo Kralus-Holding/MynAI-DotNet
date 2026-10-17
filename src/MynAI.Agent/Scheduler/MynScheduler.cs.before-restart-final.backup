@@ -1,0 +1,203 @@
+﻿using MynAI.Core.Interfaces;
+using MynAI.Core.Models;
+
+namespace MynAI.Agent.Scheduler;
+
+public sealed class MynScheduler
+{
+    private readonly object _lock = new();
+    private readonly List<ScheduledTask> _tasks = [];
+    private readonly IPowerService _powerService;
+    private readonly IScheduledTaskStore _store;
+
+    public MynScheduler(
+        IPowerService powerService,
+        IScheduledTaskStore store)
+    {
+        _powerService = powerService;
+        _store = store;
+    }
+
+    public async Task InitializeAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await _store.InitializeAsync(cancellationToken);
+
+        var tasks = await _store.GetAllAsync(cancellationToken);
+
+        lock (_lock)
+        {
+            _tasks.Clear();
+
+            foreach (var task in tasks)
+            {
+                // Agent kapandıktan sonra Executing kalan bir görev,
+                // tamamlandığı doğrulanmadığı için tekrar Pending yapılır.
+                if (task.Status == ScheduledTaskStatus.Executing)
+                {
+                    task.Status = ScheduledTaskStatus.Pending;
+                }
+
+                _tasks.Add(task);
+            }
+        }
+    }
+
+    public async Task AddAsync(
+        ScheduledTask task,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            _tasks.Add(task);
+        }
+
+        try
+        {
+            await _store.SaveAsync(task, cancellationToken);
+        }
+        catch
+        {
+            lock (_lock)
+            {
+                _tasks.RemoveAll(x => x.Id == task.Id);
+            }
+
+            throw;
+        }
+    }
+
+    public async Task<bool> CancelAsync(
+        Guid taskId,
+        CancellationToken cancellationToken = default)
+    {
+        ScheduledTask? task;
+
+        lock (_lock)
+        {
+            task = _tasks.FirstOrDefault(x => x.Id == taskId);
+
+            if (task is null)
+                return false;
+
+            if (task.Status != ScheduledTaskStatus.Pending)
+                return false;
+
+            task.Status = ScheduledTaskStatus.Cancelled;
+        }
+
+        try
+        {
+            await _store.UpdateStatusAsync(
+                taskId,
+                ScheduledTaskStatus.Cancelled,
+                cancellationToken);
+
+            return true;
+        }
+        catch
+        {
+            lock (_lock)
+            {
+                task.Status = ScheduledTaskStatus.Pending;
+            }
+
+            throw;
+        }
+    }
+
+    public IReadOnlyList<ScheduledTask> GetTasks()
+    {
+        lock (_lock)
+        {
+            return _tasks
+                .OrderBy(x => x.ExecuteAt)
+                .ToList()
+                .AsReadOnly();
+        }
+    }
+
+    public async Task RunAsync(
+        CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(
+            TimeSpan.FromSeconds(1));
+
+        while (await timer.WaitForNextTickAsync(
+                   cancellationToken))
+        {
+            await CheckDueTasksAsync(cancellationToken);
+        }
+    }
+
+    private async Task CheckDueTasksAsync(
+        CancellationToken cancellationToken)
+    {
+        List<ScheduledTask> dueTasks;
+
+        lock (_lock)
+        {
+            var now = DateTimeOffset.Now;
+
+            dueTasks = _tasks
+                .Where(x =>
+                    x.Status == ScheduledTaskStatus.Pending &&
+                    x.ExecuteAt <= now)
+                .ToList();
+
+            foreach (var task in dueTasks)
+            {
+                task.Status = ScheduledTaskStatus.Executing;
+            }
+        }
+
+        foreach (var task in dueTasks)
+        {
+            try
+            {
+                await _store.UpdateStatusAsync(
+                    task.Id,
+                    ScheduledTaskStatus.Executing,
+                    cancellationToken);
+
+                switch (task.Action)
+                {
+                    case ScheduledAction.Shutdown:
+                        await _powerService.ShutdownAsync(
+                            cancellationToken);
+                        break;
+
+                    case ScheduledAction.Sleep:
+                        await _powerService.SleepAsync(
+                            cancellationToken);
+                        break;
+
+                    case ScheduledAction.Lock:
+                        await _powerService.LockAsync(
+                            cancellationToken);
+                        break;
+
+                    default:
+                        throw new InvalidOperationException(
+                            $"Desteklenmeyen eylem: {task.Action}");
+                }
+
+                task.Status = ScheduledTaskStatus.Completed;
+
+                await _store.UpdateStatusAsync(
+                    task.Id,
+                    ScheduledTaskStatus.Completed,
+                    cancellationToken);
+            }
+            catch
+            {
+                task.Status = ScheduledTaskStatus.Failed;
+
+                await _store.UpdateStatusAsync(
+                    task.Id,
+                    ScheduledTaskStatus.Failed,
+                    cancellationToken);
+            }
+        }
+    }
+}

@@ -1,0 +1,627 @@
+﻿<Window x:Class="MynAI.Windows.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MynAI"
+        Width="820"
+        Height="448"
+        MinWidth="600"
+        MinHeight="350"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="True"
+        Topmost="True"
+        WindowStartupLocation="Manual">
+
+    <Window.Resources>
+
+        <Style x:Key="TopButton" TargetType="Button">
+            <Setter Property="Width" Value="32"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Margin" Value="4,0,0,0"/>
+            <Setter Property="Background" Value="#111722"/>
+            <Setter Property="Foreground" Value="#AEB9C9"/>
+            <Setter Property="BorderBrush" Value="#29374C"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10">
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#1D293A"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SmallIconButton" TargetType="Button">
+            <Setter Property="Width" Value="42"/>
+            <Setter Property="Height" Value="42"/>
+            <Setter Property="Background" Value="#0C1420"/>
+            <Setter Property="Foreground" Value="#66BFF5"/>
+            <Setter Property="BorderBrush" Value="#263B58"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="13">
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SendButton" TargetType="Button">
+            <Setter Property="Width" Value="50"/>
+            <Setter Property="Height" Value="50"/>
+            <Setter Property="Background" Value="#0EA8E6"/>
+            <Setter Property="Foreground" Value="#07131C"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontSize" Value="21"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="14">
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CancelButton" TargetType="Button">
+            <Setter Property="Background" Value="#212936"/>
+            <Setter Property="Foreground" Value="#CED6E2"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="9,5"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="BlueScrollThumb" TargetType="Thumb">
+            <Setter Property="Background" Value="#168ED2"/>
+            <Setter Property="MinHeight" Value="22"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                Margin="1"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="BlueScrollBar" TargetType="ScrollBar">
+            <Setter Property="Width" Value="7"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Width="7">
+                            <Track x:Name="PART_Track"
+                                   IsDirectionReversed="True">
+
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton
+                                        Command="ScrollBar.PageUpCommand"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        IsTabStop="False"/>
+                                </Track.DecreaseRepeatButton>
+
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource BlueScrollThumb}"/>
+                                </Track.Thumb>
+
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton
+                                        Command="ScrollBar.PageDownCommand"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        IsTabStop="False"/>
+                                </Track.IncreaseRepeatButton>
+
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+    </Window.Resources>
+
+    <Border Background="#080B10"
+            BorderBrush="#1A2535"
+            BorderThickness="1"
+            CornerRadius="18">
+
+        <Grid>
+
+            <Grid.RowDefinitions>
+                <RowDefinition Height="28"/>
+                <RowDefinition Height="132"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="76"/>
+            </Grid.RowDefinitions>
+
+
+            <!-- HANDLE -->
+
+            <Grid Grid.Row="0"
+                  MouseLeftButtonDown="Handle_MouseLeftButtonDown"
+                  MouseMove="Handle_MouseMove"
+                  MouseLeftButtonUp="Handle_MouseLeftButtonUp"
+                  Cursor="SizeNS">
+
+                <Border Width="76"
+                        Height="5"
+                        Background="#596373"
+                        CornerRadius="3"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"/>
+
+            </Grid>
+
+
+            <!-- SON KOMUTLAR -->
+
+            <Border Grid.Row="1"
+                    Margin="14,0,14,8"
+                    Background="#10151D"
+                    BorderBrush="#1D2B40"
+                    BorderThickness="1"
+                    CornerRadius="13"
+                    Padding="13,9">
+
+                <Grid>
+
+                    <TextBlock Text="Son Komutlar"
+                               Foreground="#F2F5F8"
+                               FontSize="12"
+                               FontWeight="SemiBold"/>
+
+                    <ScrollViewer Margin="0,21,0,0"
+                                  Height="102"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+
+                        <ScrollViewer.Resources>
+                            <Style TargetType="ScrollBar"
+                                   BasedOn="{StaticResource BlueScrollBar}"/>
+                        </ScrollViewer.Resources>
+
+                        <ItemsControl x:Name="RecentCommandsList">
+
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+
+                                    <Border Background="#151B25"
+                                            CornerRadius="7"
+                                            Padding="7"
+                                            Margin="0,0,0,4">
+
+                                        <TextBlock Text="{Binding}"
+                                                   Foreground="#9BA8B9"
+                                                   FontSize="10"/>
+
+                                    </Border>
+
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+
+                        </ItemsControl>
+
+                    </ScrollViewer>
+
+                    <TextBlock x:Name="EmptyRecentText"
+                               Text="Henüz komut yok."
+                               Foreground="#687485"
+                               FontSize="10"
+                               Margin="0,21,0,0"/>
+
+                </Grid>
+
+            </Border>
+
+
+            <!-- ANA MYNAI -->
+
+<Border Grid.Row="2"
+        VerticalAlignment="Top"
+        Margin="14,0,14,8"
+        Background="#0D121A"
+        BorderBrush="#233551"
+        BorderThickness="1"
+        CornerRadius="17">
+
+    <Grid Margin="14">
+
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="138"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+
+        <!-- LOGO -->
+
+        <Border Grid.Column="0"
+                Width="130"
+                Height="130"
+                Background="#020306"
+                CornerRadius="3"
+                VerticalAlignment="Top"
+                Margin="0,8,0,0">
+
+            <Image x:Name="LogoImage"
+                   Width="124"
+                   Height="124"
+                   Stretch="Uniform"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"/>
+
+        </Border>
+
+
+        <!-- SAĞ TARAF -->
+
+        <Grid Grid.Column="1"
+              Margin="16,0,0,0">
+
+            <Grid.RowDefinitions>
+                <RowDefinition Height="41"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+
+            <!-- BAŞLIK + AGENT + BUTONLAR -->
+
+            <Grid Grid.Row="0">
+
+                <TextBlock Text="MynAi"
+                           Foreground="#F4F7FA"
+                           FontSize="22"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Top"/>
+
+                <Border Margin="88,0,0,0"
+                        Padding="12,6"
+                        Background="#0B203C"
+                        BorderBrush="#1266DE"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top">
+
+                    <TextBlock x:Name="StatusText"
+                               Text="=Beklemede"
+                               Foreground="#48B5F2"
+                               FontSize="10"
+                               FontWeight="SemiBold"/>
+
+                </Border>
+
+
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top">
+
+                    <!-- AGENT DURUMU -->
+
+                    <Border Background="#101B16"
+                            BorderBrush="#244A36"
+                            BorderThickness="1"
+                            CornerRadius="9"
+                            Padding="8,5"
+                            Margin="0,0,2,0"
+                            VerticalAlignment="Center">
+
+                        <TextBlock x:Name="AgentStatusText"
+                                   Text="Agent: bağlantı bekleniyor"
+                                   Foreground="#7FD495"
+                                   FontSize="9"/>
+
+                    </Border>
+
+
+                    <!-- AYARLAR - ŞİMDİLİK PASİF -->
+
+                    <Button Style="{StaticResource TopButton}"
+                            IsEnabled="False"
+                            Opacity="0.65"
+                            ToolTip="Ayarlar (yakında)"
+                            FontFamily="Segoe UI Symbol"
+                            FontSize="13"
+                            Content="⚙"/>
+
+
+                    <!-- KÜÇÜLT -->
+
+                    <Button Content="—"
+                            Click="CollapseButton_Click"
+                            Style="{StaticResource TopButton}"
+                            ToolTip="Simge durumuna küçült"/>
+
+
+                    <!-- GENİŞLET / NORMAL -->
+
+                    <Button Click="ExpandButton_Click"
+                            Style="{StaticResource TopButton}"
+                            ToolTip="Tam ekran / normal">
+
+                        <Border Width="10"
+                                Height="10"
+                                BorderBrush="#AAB7CA"
+                                BorderThickness="1"
+                                Background="Transparent"
+                                IsHitTestVisible="False"/>
+
+                    </Button>
+
+
+                    <!-- KAPAT -->
+
+                    <Button Content="×"
+                            Click="CloseButton_Click"
+                            Style="{StaticResource TopButton}"
+                            ToolTip="Kapat"/>
+
+                </StackPanel>
+
+            </Grid>
+
+
+            <!-- PLANLANAN İŞLER -->
+
+            <Border Grid.Row="1"
+                    Background="#0C172A"
+                    BorderBrush="#203B60"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Padding="10"
+                    Height="94"
+                    VerticalAlignment="Top">
+
+                <Grid>
+
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="24"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+
+                    <Grid>
+
+                        <TextBlock Text="Planlanan İşler"
+                                   Foreground="#F1F4F8"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"/>
+
+                        <TextBlock x:Name="PlannedCountText"
+                                   Text="0"
+                                   Foreground="#6D7A8D"
+                                   FontSize="10"
+                                   HorizontalAlignment="Right"/>
+
+                    </Grid>
+
+
+                    <ScrollViewer Grid.Row="1"
+                                  Height="62" MaxHeight="62" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+
+                        <ScrollViewer.Resources>
+
+                            <Style TargetType="ScrollBar"
+                                   BasedOn="{StaticResource BlueScrollBar}"/>
+
+                        </ScrollViewer.Resources>
+
+                        <StackPanel>
+
+                            <TextBlock x:Name="EmptyTasksText"
+                                       Text="Planlanmış görev yok."
+                                       Foreground="#697587"
+                                       FontSize="9"
+                                       Margin="0,4,0,0"/>
+
+                            <ItemsControl x:Name="ScheduledTasksList"
+                                          Margin="0,4,0,0">
+
+                                <ItemsControl.ItemTemplate>
+
+                                    <DataTemplate>
+
+                                        <Border Background="#151B25"
+                                                BorderBrush="#1E3048"
+                                                BorderThickness="1"
+                                                CornerRadius="8"
+                                                Padding="7"
+                                                Margin="0,0,0,4">
+
+                                            <Grid>
+
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <StackPanel Orientation="Horizontal">
+
+                                                    <TextBlock
+                                                        Text="{Binding ExecuteAt, StringFormat={}{0:HH:mm}}"
+                                                        Foreground="#F2F5FA"
+                                                        FontSize="11"
+                                                        FontWeight="SemiBold"/>
+
+                                                    <TextBlock
+                                                        Text="  •  "
+                                                        Foreground="#4D5B70"
+                                                        FontSize="9"/>
+
+                                                    <TextBlock
+                                                        Text="{Binding Description}"
+                                                        Foreground="#8490A2"
+                                                        FontSize="9"/>
+
+                                                </StackPanel>
+
+                                                <Button Grid.Column="1"
+                                                        Content="İptal"
+                                                        Tag="{Binding Id}"
+                                                        Click="CancelTask_Click"
+                                                        Style="{StaticResource CancelButton}"
+                                                        VerticalAlignment="Center"/>
+
+                                            </Grid>
+
+                                        </Border>
+
+                                    </DataTemplate>
+
+                                </ItemsControl.ItemTemplate>
+
+                            </ItemsControl>
+
+                        </StackPanel>
+
+                    </ScrollViewer>
+
+                </Grid>
+
+            </Border>
+
+        </Grid>
+
+    </Grid>
+
+</Border>
+
+
+<!-- KOMUT ALANI -->
+
+            <Border Grid.Row="3"
+                    Margin="14,0,14,10"
+                    Background="#090D13"
+                    BorderBrush="#20324D"
+                    BorderThickness="1"
+                    CornerRadius="16"
+                    Padding="7">
+
+                <Grid VerticalAlignment="Center">
+
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Button Grid.Column="0"
+                            Content="+"
+                            Style="{StaticResource SmallIconButton}"
+                            Margin="0,0,7,0"/>
+
+                    <Grid Grid.Column="1">
+
+    <TextBox x:Name="CommandInput"
+             Background="Transparent"
+             BorderThickness="0"
+             Foreground="#EAF0F7"
+             CaretBrush="#FFFFFF"
+             FontSize="14"
+             VerticalContentAlignment="Center"
+             Padding="5,0"
+             KeyDown="CommandInput_KeyDown"/>
+
+    <TextBlock Text="MynAi'ye Komut Gönderin"
+               Foreground="#68788E"
+               FontSize="14"
+               VerticalAlignment="Center"
+               Margin="5,0,0,0"
+               IsHitTestVisible="False">
+
+        <TextBlock.Style>
+            <Style TargetType="TextBlock">
+                <Setter Property="Visibility"
+                        Value="Collapsed"/>
+
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Text, ElementName=CommandInput}"
+                                 Value="">
+                        <Setter Property="Visibility"
+                                Value="Visible"/>
+                    </DataTrigger>
+                </Style.Triggers>
+
+            </Style>
+        </TextBlock.Style>
+
+    </TextBlock>
+
+</Grid>
+
+                    <Button Grid.Column="2"
+                            Content="◉"
+                            Style="{StaticResource SmallIconButton}"
+                            Margin="7,0"/>
+
+                    <Button Grid.Column="3"
+                            Content="➤"
+                            Click="SendButton_Click"
+                            Style="{StaticResource SendButton}"
+                            VerticalAlignment="Center"/>
+
+                </Grid>
+
+            </Border>
+
+        </Grid>
+
+    </Border>
+
+</Window>
+
+
+
+
+

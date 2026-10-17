@@ -1,0 +1,33 @@
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+*.suo
+client_secret.json
+**/client_secret.json
+.env
+.env.*
+!.env.example
+secrets/
+*.log
+
+# Build outputs
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Google OAuth secrets and tokens
+client_secret.json
+**/client_secret.json
+token.json
+tokens/
+secrets/
+.env
+.env.*
+*.pem
+*.p12
+*.key

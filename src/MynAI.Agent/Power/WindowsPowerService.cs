@@ -1,0 +1,205 @@
+﻿using System.ComponentModel;
+using System.Runtime.InteropServices;
+using MynAI.Core.Interfaces;
+
+namespace MynAI.Agent.Power;
+
+public sealed class WindowsPowerService : IPowerService
+{
+    private const uint TOKEN_ADJUST_PRIVILEGES = 0x0020;
+    private const uint TOKEN_QUERY = 0x0008;
+    private const uint SE_PRIVILEGE_ENABLED = 0x00000002;
+
+    private const uint EWX_SHUTDOWN = 0x00000001;
+
+    private const uint ERROR_SUCCESS = 0;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LUID
+    {
+        public uint LowPart;
+        public int HighPart;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LUID_AND_ATTRIBUTES
+    {
+        public LUID Luid;
+        public uint Attributes;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TOKEN_PRIVILEGES
+    {
+        public uint PrivilegeCount;
+        public LUID_AND_ATTRIBUTES Privileges;
+    }
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool OpenProcessToken(
+        IntPtr ProcessHandle,
+        uint DesiredAccess,
+        out IntPtr TokenHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool LookupPrivilegeValue(
+        string? lpSystemName,
+        string lpName,
+        out LUID Luid);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool AdjustTokenPrivileges(
+        IntPtr TokenHandle,
+        bool DisableAllPrivileges,
+        ref TOKEN_PRIVILEGES NewState,
+        uint BufferLength,
+        IntPtr PreviousState,
+        IntPtr ReturnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool ExitWindowsEx(
+        uint uFlags,
+        uint dwReason);
+
+    public Task ShutdownAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        EnableShutdownPrivilege();
+
+        if (!ExitWindowsEx(EWX_SHUTDOWN, 0))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task RestartAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        EnableShutdownPrivilege();
+
+        const uint EWX_REBOOT = 0x00000002;
+        const uint EWX_FORCEIFHUNG = 0x00000010;
+
+        if (!ExitWindowsEx(
+                EWX_REBOOT | EWX_FORCEIFHUNG,
+                0))
+        {
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error(),
+                "Windows yeniden başlatılamadı.");
+        }
+
+        return Task.CompletedTask;
+    }
+    public Task SleepAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!SetSuspendState(
+                false,
+                false,
+                false))
+        {
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error());
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task LockAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!LockWorkStation())
+        {
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error());
+        }
+
+        return Task.CompletedTask;
+    }
+
+
+    [DllImport(
+        "user32.dll",
+        SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool LockWorkStation();
+
+    [DllImport(
+        "powrprof.dll",
+        SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetSuspendState(
+        bool hibernate,
+        bool forceCritical,
+        bool disableWakeEvent);
+    private static void EnableShutdownPrivilege()
+    {
+        var processHandle = GetCurrentProcess();
+
+        if (!OpenProcessToken(
+                processHandle,
+                TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+                out var tokenHandle))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        try
+        {
+            if (!LookupPrivilegeValue(
+                    null,
+                    "SeShutdownPrivilege",
+                    out var luid))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            var tokenPrivileges = new TOKEN_PRIVILEGES
+            {
+                PrivilegeCount = 1,
+                Privileges = new LUID_AND_ATTRIBUTES
+                {
+                    Luid = luid,
+                    Attributes = SE_PRIVILEGE_ENABLED
+                }
+            };
+
+            if (!AdjustTokenPrivileges(
+                    tokenHandle,
+                    false,
+                    ref tokenPrivileges,
+                    0,
+                    IntPtr.Zero,
+                    IntPtr.Zero))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            var error = Marshal.GetLastWin32Error();
+
+            if (error != ERROR_SUCCESS)
+            {
+                throw new Win32Exception((int)error);
+            }
+        }
+        finally
+        {
+            CloseHandle(tokenHandle);
+        }
+    }
+}
+
+

@@ -1,0 +1,188 @@
+﻿using System.Windows;
+using System.Windows.Media.Imaging;
+using MynAI.Windows.Google;
+
+namespace MynAI.Windows;
+
+public partial class SettingsWindow : Window
+{
+    private readonly GoogleOAuthService _googleOAuthService;
+    private readonly GoogleAccountStore _googleAccountStore;
+    private readonly MynAISettingsStore _settingsStore;
+
+    public SettingsWindow()
+    {
+        InitializeComponent();
+
+        _googleOAuthService =
+            new GoogleOAuthService();
+
+        _googleAccountStore =
+            new GoogleAccountStore();
+
+        _settingsStore =
+            new MynAISettingsStore();
+
+        LoadSettings();
+        LoadGoogleAccount();
+    }
+
+    private void LoadSettings()
+    {
+        var settings =
+            _settingsStore.Load();
+
+        AgentStartupCheckBox.IsChecked =
+            AgentStartupManager.IsEnabled()
+            || settings.StartAgentWithWindows;
+    }
+
+    private void LoadGoogleAccount()
+    {
+        var savedAccount =
+            _googleAccountStore.Load();
+
+        if (savedAccount is not null)
+        {
+            ApplyGoogleAccount(
+                savedAccount);
+        }
+    }
+
+    private void ApplyGoogleAccount(
+        GoogleAccount account)
+    {
+        GoogleNameText.Text =
+            account.Name;
+
+        GoogleEmailText.Text =
+            account.Email;
+
+        if (!string.IsNullOrWhiteSpace(
+                account.PhotoUrl))
+        {
+            try
+            {
+                GooglePhoto.Source =
+                    new BitmapImage(
+                        new Uri(
+                            account.PhotoUrl));
+            }
+            catch
+            {
+            }
+        }
+
+        GoogleContactsCheckBox.IsEnabled =
+            true;
+
+        GoogleContactsCheckBox.IsChecked =
+            true;
+
+        GoogleConnectButton.Content =
+            "Bağlı";
+    }
+
+    private async void GoogleConnectButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        GoogleConnectButton.IsEnabled =
+            false;
+
+        GoogleConnectButton.Content =
+            "Bağlanıyor...";
+
+        try
+        {
+            var account =
+                await _googleOAuthService.SignInAsync();
+
+            _googleAccountStore.Save(
+                account);
+
+            ApplyGoogleAccount(
+                account);
+        }
+        catch (Exception ex)
+        {
+            GoogleConnectButton.Content =
+                "Google ile bağlan";
+
+            MessageBox.Show(
+                $"Google bağlantısı başarısız:\n\n{ex.Message}",
+                "MynAI",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            GoogleConnectButton.IsEnabled =
+                true;
+        }
+    }
+
+    private void GoogleContactsCheckBox_Checked(
+        object sender,
+        RoutedEventArgs e)
+    {
+    }
+
+    private void GoogleContactsCheckBox_Unchecked(
+        object sender,
+        RoutedEventArgs e)
+    {
+    }
+
+    private void SaveButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        try
+        {
+            var startAgent =
+                AgentStartupCheckBox.IsChecked == true;
+
+            AgentStartupManager.SetEnabled(
+                startAgent);
+
+            var settings =
+                _settingsStore.Load();
+
+            settings.StartAgentWithWindows =
+                startAgent;
+
+            _settingsStore.Save(
+                settings);
+
+            SaveStatusText.Text =
+                "Ayarlar kaydedildi.";
+
+            SaveStatusText.Foreground =
+                new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            SaveStatusText.Text =
+                "Kaydedilemedi.";
+
+            SaveStatusText.Foreground =
+                new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Colors.IndianRed);
+
+            MessageBox.Show(
+                $"Ayarlar kaydedilemedi:\n\n{ex.Message}",
+                "MynAI",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private void CloseButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        Close();
+    }
+}

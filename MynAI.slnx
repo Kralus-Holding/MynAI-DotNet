@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MynAI.Agent/MynAI.Agent.csproj" />
+    <Project Path="src/MynAI.Core/MynAI.Core.csproj" />
+    <Project Path="src/MynAI.Windows/MynAI.Windows.csproj" />
+  </Folder>
+</Solution>

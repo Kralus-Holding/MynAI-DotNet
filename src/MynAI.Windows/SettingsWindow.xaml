@@ -1,0 +1,747 @@
+﻿<Window x:Class="MynAI.Windows.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MynAI Ayarlar"
+        Icon="Resources/myn.ico"
+        Width="900"
+        Height="640"
+        MinWidth="820"
+        MinHeight="560"
+        WindowStartupLocation="CenterOwner"
+        Background="#080D13"
+        Foreground="#EAF0F7">
+
+    <Window.Resources>
+
+        <Style x:Key="NavButton"
+               TargetType="Button">
+
+            <Setter Property="Height"
+                    Value="44"/>
+
+            <Setter Property="Margin"
+                    Value="0,3"/>
+
+            <Setter Property="Padding"
+                    Value="14,0"/>
+
+            <Setter Property="HorizontalContentAlignment"
+                    Value="Left"/>
+
+            <Setter Property="Background"
+                    Value="Transparent"/>
+
+            <Setter Property="Foreground"
+                    Value="#8995A8"/>
+
+            <Setter Property="BorderThickness"
+                    Value="0"/>
+
+            <Setter Property="FontSize"
+                    Value="12"/>
+
+            <Setter Property="Cursor"
+                    Value="Hand"/>
+
+            <Setter Property="Template">
+
+                <Setter.Value>
+
+                    <ControlTemplate
+                        TargetType="Button">
+
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="10">
+
+                            <ContentPresenter
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Left"
+                                Margin="{TemplateBinding Padding}"/>
+
+                        </Border>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+
+            </Setter>
+
+            <Style.Triggers>
+
+                <Trigger Property="IsMouseOver"
+                         Value="True">
+
+                    <Setter Property="Background"
+                            Value="#121B27"/>
+
+                    <Setter Property="Foreground"
+                            Value="#FFFFFF"/>
+
+                </Trigger>
+
+            </Style.Triggers>
+
+        </Style>
+
+        <Style x:Key="Card"
+               TargetType="Border">
+
+            <Setter Property="Background"
+                    Value="#101720"/>
+
+            <Setter Property="BorderBrush"
+                    Value="#243247"/>
+
+            <Setter Property="BorderThickness"
+                    Value="1"/>
+
+            <Setter Property="CornerRadius"
+                    Value="14"/>
+
+            <Setter Property="Padding"
+                    Value="18"/>
+
+            <Setter Property="Margin"
+                    Value="0,0,0,14"/>
+
+        </Style>
+
+        <Style x:Key="PrimaryButton"
+               TargetType="Button">
+
+            <Setter Property="Background"
+                    Value="#1597E5"/>
+
+            <Setter Property="Foreground"
+                    Value="White"/>
+
+            <Setter Property="BorderThickness"
+                    Value="0"/>
+
+            <Setter Property="Padding"
+                    Value="14,8"/>
+
+            <Setter Property="FontSize"
+                    Value="12"/>
+
+            <Setter Property="Cursor"
+                    Value="Hand"/>
+
+            <Setter Property="Template">
+
+                <Setter.Value>
+
+                    <ControlTemplate
+                        TargetType="Button">
+
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="9"
+                            Padding="{TemplateBinding Padding}">
+
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
+
+                        </Border>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+
+            </Setter>
+
+        </Style>
+
+        <Style x:Key="SecondaryButton"
+               TargetType="Button"
+               BasedOn="{StaticResource PrimaryButton}">
+
+            <Setter Property="Background"
+                    Value="#172231"/>
+
+            <Setter Property="BorderBrush"
+                    Value="#2A3B52"/>
+
+            <Setter Property="BorderThickness"
+                    Value="1"/>
+
+        </Style>
+
+        <Style TargetType="ScrollBar">
+
+            <Setter Property="Width"
+                    Value="7"/>
+
+            <Setter Property="Background"
+                    Value="#0D131B"/>
+
+            <Setter Property="Template">
+
+                <Setter.Value>
+
+                    <ControlTemplate
+                        TargetType="ScrollBar">
+
+                        <Grid>
+
+                            <Track x:Name="PART_Track"
+                                   IsDirectionReversed="True">
+
+                                <Track.Thumb>
+
+                                    <Thumb>
+
+                                        <Thumb.Template>
+
+                                            <ControlTemplate
+                                                TargetType="Thumb">
+
+                                                <Border
+                                                    Background="#33445A"
+                                                    CornerRadius="4"
+                                                    Margin="1"/>
+
+                                            </ControlTemplate>
+
+                                        </Thumb.Template>
+
+                                    </Thumb>
+
+                                </Track.Thumb>
+
+                            </Track>
+
+                        </Grid>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+
+            </Setter>
+
+        </Style>
+
+    </Window.Resources>
+
+    <Grid>
+
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="190"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- SOL MENÜ -->
+
+        <Border Grid.Column="0"
+                Background="#0B1118"
+                BorderBrush="#1B2635"
+                BorderThickness="0,0,1,0">
+
+            <Grid Margin="14">
+
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel>
+
+                    <Border Width="48"
+                            Height="48"
+                            HorizontalAlignment="Left"
+                            CornerRadius="10"
+                            BorderBrush="#198FE2"
+                            BorderThickness="1"
+                            Margin="4,2,0,14">
+
+                        <Image Source="Resources/myn.jpg"
+                               Stretch="UniformToFill"/>
+
+                    </Border>
+
+                    <TextBlock Text="MynAI"
+                               FontSize="20"
+                               FontWeight="SemiBold"/>
+
+                    <TextBlock Text="Ayarlar"
+                               Foreground="#657287"
+                               FontSize="11"
+                               Margin="0,3,0,16"/>
+
+                    <Button Content="Genel"
+                            Style="{StaticResource NavButton}"
+                            Click="GeneralNav_Click"/>
+
+                    <Button Content="Agent"
+                            Style="{StaticResource NavButton}"
+                            Click="AgentNav_Click"/>
+
+                    <Button Content="Hesap"
+                            Style="{StaticResource NavButton}"
+                            Click="AccountNav_Click"/>
+
+                    <Button Content="Gizlilik"
+                            Style="{StaticResource NavButton}"
+                            Click="PrivacyNav_Click"/>
+
+                    <Button Content="Kısayollar"
+                            Style="{StaticResource NavButton}"
+                            Click="ShortcutNav_Click"/>
+
+                </StackPanel>
+
+                <TextBlock Grid.Row="2"
+                           Text="MynAI"
+                           Foreground="#364356"
+                           FontSize="10"
+                           Margin="0,0,0,4"/>
+
+            </Grid>
+
+        </Border>
+
+        <!-- İÇERİK -->
+
+        <Grid Grid.Column="1"
+              Margin="22">
+
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <ScrollViewer Grid.Row="0"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+
+                <Grid>
+
+                    <!-- GENEL -->
+
+                    <StackPanel x:Name="GeneralPanel">
+
+                        <TextBlock Text="Genel"
+                                   FontSize="24"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
+
+                        <TextBlock Text="MynAI'nin genel çalışma davranışları."
+                                   Foreground="#718096"
+                                   FontSize="12"
+                                   Margin="0,0,0,18"/>
+
+                        <Border Style="{StaticResource Card}">
+
+                            <StackPanel>
+
+                                <TextBlock Text="Windows bildirimleri"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+
+                                <CheckBox x:Name="NotificationsCheckBox"
+                                          Content="Planlanan işlemler için bildirim göster"
+                                          Margin="0,12,0,0"/>
+
+                                <TextBlock Text="10 ve 5 dakika uyarıları bu ayarı kullanır."
+                                           Foreground="#7E8A9D"
+                                           FontSize="11"
+                                           Margin="0,6,0,0"/>
+
+                            </StackPanel>
+
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+
+                            <StackPanel>
+
+                                <TextBlock Text="Başlangıç"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+
+                                <CheckBox x:Name="AgentStartupGeneralCheckBox"
+                                          Content="Windows açılışında MynAI Agent'i çalıştır"
+                                          Margin="0,12,0,0"/>
+
+                                <TextBlock Text="Agent zamanlayıcı ve arka plan görevlerini UI'dan bağımsız yürütür."
+                                           Foreground="#7E8A9D"
+                                           FontSize="11"
+                                           Margin="0,6,0,0"
+                                           TextWrapping="Wrap"/>
+
+                            </StackPanel>
+
+                        </Border>
+
+                    </StackPanel>
+
+                    <!-- AGENT -->
+
+                    <StackPanel x:Name="AgentPanel"
+                                Visibility="Collapsed">
+
+                        <TextBlock Text="Agent"
+                                   FontSize="24"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
+
+                        <TextBlock Text="MynAI'nin arka plan motorunu buradan yönet."
+                                   Foreground="#718096"
+                                   FontSize="12"
+                                   Margin="0,0,0,18"/>
+
+                        <Border Style="{StaticResource Card}">
+
+                            <Grid>
+
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel>
+
+                                    <TextBlock Text="Agent durumu"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"/>
+
+                                    <TextBlock x:Name="AgentStatusText"
+                                               Text="Kontrol ediliyor..."
+                                               Margin="0,7,0,0"
+                                               Foreground="#7FD495"
+                                               FontSize="12"/>
+
+                                    <TextBlock x:Name="AgentPathText"
+                                               Text=""
+                                               Margin="0,7,0,0"
+                                               Foreground="#627084"
+                                               FontSize="10"
+                                               TextWrapping="Wrap"/>
+
+                                </StackPanel>
+
+                                <Ellipse x:Name="AgentStatusDot"
+                                         Grid.Column="1"
+                                         Width="12"
+                                         Height="12"
+                                         Fill="#667085"
+                                         VerticalAlignment="Top"
+                                         Margin="20,4,0,0"/>
+
+                            </Grid>
+
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+
+                            <StackPanel>
+
+                                <TextBlock Text="Agent yönetimi"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+
+                                <TextBlock Text="Agent'i doğrudan buradan çalıştırabilir veya yeniden başlatabilirsin."
+                                           Foreground="#7E8A9D"
+                                           FontSize="11"
+                                           Margin="0,6,0,14"
+                                           TextWrapping="Wrap"/>
+
+                                <WrapPanel>
+
+                                    <Button Content="Agent'i başlat"
+                                            Style="{StaticResource PrimaryButton}"
+                                            Click="StartAgent_Click"
+                                            Margin="0,0,8,0"/>
+
+                                    <Button Content="Durdur"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="StopAgent_Click"
+                                            Margin="0,0,8,0"/>
+
+                                    <Button Content="Yeniden başlat"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="RestartAgent_Click"/>
+
+                                </WrapPanel>
+
+                            </StackPanel>
+
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+
+                            <StackPanel>
+
+                                <TextBlock Text="Başlangıç"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+
+                                <CheckBox x:Name="AgentStartupCheckBox"
+                                          Content="Windows açılışında Agent'i çalıştır"
+                                          Margin="0,12,0,0"/>
+
+                                <TextBlock Text="Kullanıcı oturumu açıldığında Agent otomatik başlar."
+                                           Foreground="#7E8A9D"
+                                           FontSize="11"
+                                           Margin="0,6,0,0"/>
+
+                            </StackPanel>
+
+                        </Border>
+
+                    </StackPanel>
+
+                    <!-- HESAP -->
+
+                    <StackPanel x:Name="AccountPanel"
+                                Visibility="Collapsed">
+
+                        <TextBlock Text="Hesap"
+                                   FontSize="24"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
+
+                        <TextBlock Text="Google hesabını ve Google Kişiler erişimini yönet."
+                                   Foreground="#718096"
+                                   FontSize="12"
+                                   Margin="0,0,0,18"/>
+
+                        <Border Style="{StaticResource Card}">
+
+                            <Grid>
+
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="60"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Border Width="52"
+                                        Height="52"
+                                        CornerRadius="26"
+                                        BorderBrush="#29405A"
+                                        BorderThickness="1">
+
+                                    <Image x:Name="GooglePhoto"
+                                           Source="Resources/myn.jpg"
+                                           Stretch="UniformToFill"/>
+
+                                </Border>
+
+                                <StackPanel Grid.Column="1"
+                                            Margin="14,0,0,0">
+
+                                    <TextBlock x:Name="GoogleNameText"
+                                               Text="Google hesabı bağlı değil"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"/>
+
+                                    <TextBlock x:Name="GoogleEmailText"
+                                               Text=""
+                                               Foreground="#7D899B"
+                                               FontSize="11"
+                                               Margin="0,4,0,0"/>
+
+                                </StackPanel>
+
+                                <Button x:Name="GoogleConnectButton"
+                                        Grid.Column="2"
+                                        Content="Google ile bağlan"
+                                        Style="{StaticResource PrimaryButton}"
+                                        Click="GoogleConnectButton_Click"
+                                        VerticalAlignment="Center"/>
+
+                            </Grid>
+
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+
+                            <StackPanel>
+
+                                <TextBlock Text="Google Kişiler"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+
+                                <CheckBox x:Name="GoogleContactsCheckBox"
+                                          Content="Google Kişiler listeme eriş"
+                                          IsEnabled="False"
+                                          Margin="0,12,0,0"
+                                          Checked="GoogleContactsCheckBox_Checked"
+                                          Unchecked="GoogleContactsCheckBox_Unchecked"/>
+
+                                <TextBlock Text="Kişi ekleme ve iletişim özellikleri bu erişimi kullanabilir."
+                                           Foreground="#7E8A9D"
+                                           FontSize="11"
+                                           Margin="0,6,0,0"
+                                           TextWrapping="Wrap"/>
+
+                            </StackPanel>
+
+                        </Border>
+
+                    </StackPanel>
+
+                    <!-- GİZLİLİK -->
+
+                    <StackPanel x:Name="PrivacyPanel"
+                                Visibility="Collapsed">
+
+                        <TextBlock Text="Gizlilik"
+                                   FontSize="24"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
+
+                        <TextBlock Text="Mikrofon ve kamera özelliklerini yönet."
+                                   Foreground="#718096"
+                                   FontSize="12"
+                                   Margin="0,0,0,18"/>
+
+                        <Border Style="{StaticResource Card}">
+
+                            <StackPanel>
+
+                                <TextBlock Text="Mikrofon"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+
+                                <CheckBox x:Name="MicrophoneCheckBox"
+                                          Content="MynAI mikrofon özelliğini etkinleştir"
+                                          Margin="0,12,0,10"/>
+
+                                <Button Content="Windows mikrofon gizlilik ayarlarını aç"
+                                        Style="{StaticResource SecondaryButton}"
+                                        HorizontalAlignment="Left"
+                                        Click="OpenMicrophoneSettings_Click"/>
+
+                            </StackPanel>
+
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+
+                            <StackPanel>
+
+                                <TextBlock Text="Kamera"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+
+                                <CheckBox x:Name="CameraCheckBox"
+                                          Content="MynAI kamera özelliğini etkinleştir"
+                                          Margin="0,12,0,10"/>
+
+                                <Button Content="Windows kamera gizlilik ayarlarını aç"
+                                        Style="{StaticResource SecondaryButton}"
+                                        HorizontalAlignment="Left"
+                                        Click="OpenCameraSettings_Click"/>
+
+                            </StackPanel>
+
+                        </Border>
+
+                    </StackPanel>
+
+                    <!-- KISAYOLLAR -->
+
+                    <StackPanel x:Name="ShortcutPanel"
+                                Visibility="Collapsed">
+
+                        <TextBlock Text="Kısayollar"
+                                   FontSize="24"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
+
+                        <TextBlock Text="MynAI'yi başka uygulamadayken öne getirmek için global kısayol."
+                                   Foreground="#718096"
+                                   FontSize="12"
+                                   Margin="0,0,0,18"
+                                   TextWrapping="Wrap"/>
+
+                        <Border Style="{StaticResource Card}">
+
+                            <StackPanel>
+
+                                <TextBlock Text="MynAI'yi öne getir"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+
+                                <TextBlock Text="Örneğin Ctrl + Shift + Space tuşlarına bas."
+                                           Foreground="#7E8A9D"
+                                           FontSize="11"
+                                           Margin="0,6,0,12"/>
+
+                                <TextBox x:Name="HotkeyTextBox"
+                                         Width="260"
+                                         HorizontalAlignment="Left"
+                                         Padding="10,8"
+                                         Background="#0B1118"
+                                         Foreground="#FFFFFF"
+                                         BorderBrush="#2A3B52"
+                                         BorderThickness="1"
+                                         PreviewKeyDown="HotkeyTextBox_PreviewKeyDown"/>
+
+                                <WrapPanel Margin="0,10,0,0">
+
+                                    <Button Content="Kısayolu temizle"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="ClearHotkey_Click"
+                                            Margin="0,0,10,0"/>
+
+                                    <TextBlock x:Name="HotkeyInfoText"
+                                               Text=""
+                                               Foreground="#7FD495"
+                                               VerticalAlignment="Center"
+                                               FontSize="11"/>
+
+                                </WrapPanel>
+
+                            </StackPanel>
+
+                        </Border>
+
+                    </StackPanel>
+
+                </Grid>
+
+            </ScrollViewer>
+
+            <!-- ALT -->
+
+            <Grid Grid.Row="1"
+                  Margin="0,14,0,0">
+
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="SaveStatusText"
+                           Text=""
+                           Foreground="#7FD495"
+                           VerticalAlignment="Center"
+                           FontSize="11"/>
+
+                <Button Grid.Column="1"
+                        Content="Kaydet"
+                        Width="95"
+                        Style="{StaticResource PrimaryButton}"
+                        Click="SaveButton_Click"
+                        Margin="0,0,8,0"/>
+
+                <Button Grid.Column="2"
+                        Content="Kapat"
+                        Width="90"
+                        Style="{StaticResource SecondaryButton}"
+                        Click="CloseButton_Click"/>
+
+            </Grid>
+
+        </Grid>
+
+    </Grid>
+
+</Window>
