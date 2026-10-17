@@ -72,6 +72,12 @@ public static class AgentStartupManager
                 AppContext.BaseDirectory,
                 "MynAI.Agent.exe"));
 
+        candidates.Add(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "Agent",
+                "MynAI.Agent.exe"));
+
         var directory =
             new DirectoryInfo(
                 AppContext.BaseDirectory);
