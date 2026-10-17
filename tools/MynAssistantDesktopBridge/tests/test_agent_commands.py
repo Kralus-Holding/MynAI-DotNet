@@ -127,5 +127,64 @@ class OAuthConfigPathTests(unittest.TestCase):
                     self.assertEqual(agent.find_oauth_credentials_path(), user_config)
 
 
+class FakeScreenImage:
+    def __init__(self, byte_sizes, attempts=None):
+        self.byte_sizes = byte_sizes
+        self.attempts = attempts if attempts is not None else []
+        self.dimensions = None
+
+    def copy(self):
+        return FakeScreenImage(self.byte_sizes, self.attempts)
+
+    def thumbnail(self, dimensions):
+        self.dimensions = dimensions
+        self.attempts.append(dimensions)
+
+    def save(self, output, format, quality, optimize):
+        output.write(b"x" * self.byte_sizes[self.dimensions])
+
+
+class ScreenFrameSizeTests(unittest.TestCase):
+    @patch.object(agent.pyautogui, "screenshot")
+    def test_frame_budget_measures_base64_size_and_reduces_resolution(self, screenshot):
+        attempts = []
+        screenshot.return_value = FakeScreenImage(
+            {
+                (1280, 720): 600_000,
+                (960, 540): 470_000,
+                (800, 450): 300_000,
+                (640, 360): 200_000,
+            },
+            attempts,
+        )
+
+        frame = agent.capture_screen_base64()
+
+        self.assertLessEqual(len(frame), agent.MAX_SCREEN_FRAME_BASE64_CHARS)
+        self.assertEqual(len(frame) % 4, 0)
+        self.assertEqual(attempts, [(1280, 720), (960, 540)])
+
+    @patch.object(agent.pyautogui, "screenshot")
+    def test_frame_that_exceeds_base64_budget_is_rejected(self, screenshot):
+        attempts = []
+        screenshot.return_value = FakeScreenImage(
+            {
+                (1280, 720): 600_000,
+                (960, 540): 600_000,
+                (800, 450): 600_000,
+                (640, 360): 600_000,
+            },
+            attempts,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "Base64"):
+            agent.capture_screen_base64()
+
+        self.assertEqual(
+            attempts,
+            [(1280, 720), (960, 540), (800, 450), (640, 360)],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
