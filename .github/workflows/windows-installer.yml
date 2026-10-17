@@ -1,5 +1,9 @@
 name: Build MynAI Windows Installer
 
+concurrency:
+  group: mynai-windows-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: ["main", "feature/mynai-desktop-bridge-integration"]
