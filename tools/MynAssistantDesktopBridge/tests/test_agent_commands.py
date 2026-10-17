@@ -91,5 +91,41 @@ class CommandClaimTests(unittest.TestCase):
             agent.claim_command(self.session, self.document)
 
 
+class OAuthConfigPathTests(unittest.TestCase):
+    def _make_config_tree(self, root: Path):
+        install_dir = root / "install"
+        app_data = root / "local" / "MynAI" / "DesktopAgent"
+        google_dir = root / "local" / "MynAI" / "Google"
+        install_dir.mkdir(parents=True)
+        app_data.mkdir(parents=True)
+        google_dir.mkdir(parents=True)
+        sidecar = install_dir / "client_secret.json"
+        user_config = google_dir / "client_secret.json"
+        return install_dir, app_data, sidecar, user_config
+
+    def test_side_by_side_config_is_preferred(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            install_dir, app_data, sidecar, user_config = self._make_config_tree(Path(temp_dir))
+            sidecar.write_text("{}", encoding="utf-8")
+            user_config.write_text("{}", encoding="utf-8")
+
+            with patch.object(agent, "running_directory", return_value=install_dir):
+                with patch.object(agent, "APP_DATA", app_data):
+                    self.assertEqual(agent.find_oauth_credentials_path(), sidecar)
+
+    def test_per_user_google_config_is_used_as_fallback(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            install_dir, app_data, sidecar, user_config = self._make_config_tree(Path(temp_dir))
+            user_config.write_text("{}", encoding="utf-8")
+
+            with patch.object(agent, "running_directory", return_value=install_dir):
+                with patch.object(agent, "APP_DATA", app_data):
+                    self.assertEqual(agent.find_oauth_credentials_path(), user_config)
+
+
 if __name__ == "__main__":
     unittest.main()
