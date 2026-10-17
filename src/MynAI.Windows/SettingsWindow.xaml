@@ -492,6 +492,82 @@
 
                         </Border>
 
+                        <!-- ANDROID - WINDOWS BAGLANTISI -->
+
+                        <Border Style="{StaticResource Card}">
+
+                            <StackPanel>
+
+                                <TextBlock Text="Telefon-PC bağlantısı"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+
+                                <TextBlock Text="Android MynAssistant uygulamasını bu Windows bilgisayara bağlayan köprü."
+                                           Foreground="#7E8A9D"
+                                           FontSize="11"
+                                           Margin="0,6,0,0"
+                                           TextWrapping="Wrap"/>
+
+                                <TextBlock x:Name="DesktopBridgeStatusText"
+                                           Text="Kontrol ediliyor..."
+                                           Margin="0,12,0,0"
+                                           Foreground="#7FD495"
+                                           FontSize="12"/>
+
+                                <Ellipse x:Name="DesktopBridgeStatusDot"
+                                         Width="10"
+                                         Height="10"
+                                         Fill="#667085"
+                                         HorizontalAlignment="Left"
+                                         Margin="0,6,0,0"/>
+
+                                <TextBlock x:Name="DesktopBridgeExecutablePathText"
+                                           Text=""
+                                           Margin="0,7,0,0"
+                                           Foreground="#627084"
+                                           FontSize="10"
+                                           TextWrapping="Wrap"/>
+
+                                <TextBlock x:Name="DesktopBridgeOAuthPathText"
+                                           Text=""
+                                           Margin="0,5,0,0"
+                                           Foreground="#627084"
+                                           FontSize="10"
+                                           TextWrapping="Wrap"/>
+
+                                <WrapPanel Margin="0,12,0,0">
+
+                                    <Button Content="Bağlantıyı başlat"
+                                            Style="{StaticResource PrimaryButton}"
+                                            Click="StartDesktopBridge_Click"
+                                            Margin="0,0,8,8"/>
+
+                                    <Button Content="Durdur"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="StopDesktopBridge_Click"
+                                            Margin="0,0,8,8"/>
+
+                                    <Button Content="Yeniden başlat"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="RestartDesktopBridge_Click"
+                                            Margin="0,0,0,8"/>
+
+                                </WrapPanel>
+
+                                <CheckBox x:Name="DesktopBridgeStartupCheckBox"
+                                          Content="Windows açılışında telefon-PC bağlantısını başlat"
+                                          Margin="0,8,0,0"/>
+
+                                <TextBlock Text="İlk bağlantıda tarayıcıyla Google girişi açılır. Telefonda kullandığın aynı hesapla giriş yap."
+                                           Foreground="#7E8A9D"
+                                           FontSize="11"
+                                           Margin="0,6,0,0"
+                                           TextWrapping="Wrap"/>
+
+                            </StackPanel>
+
+                        </Border>
+
                     </StackPanel>
 
                     <!-- HESAP -->
