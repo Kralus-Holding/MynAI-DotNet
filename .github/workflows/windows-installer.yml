@@ -71,16 +71,17 @@ jobs:
         run: |
           dotnet publish src/MynAI.Windows/MynAI.Windows.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false --output build/publish
 
-          dotnet publish src/MynAI.Agent/MynAI.Agent.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false --output build/agent-publish
+          dotnet publish src/MynAI.Agent/MynAI.Agent.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -p:WindowsAppSDKSelfContained=true --output build/agent-publish
 
-          Get-ChildItem "build/agent-publish/MynAI.Agent*" | Copy-Item -Destination "build/publish" -Force
+          New-Item -ItemType Directory -Force -Path "build/publish/Agent" | Out-Null
+          Copy-Item "build/agent-publish/*" "build/publish/Agent" -Recurse -Force
           Copy-Item "build/bridge-dist/MynAssistantDesktopBridge.exe" "build/publish/MynAssistantDesktopBridge.exe" -Force
 
           if (-not (Test-Path "build/publish/MynAI.Windows.exe")) {
             throw "MynAI Windows application EXE was not published."
           }
-          if (-not (Test-Path "build/publish/MynAI.Agent.exe")) {
-            throw "MynAI.Agent.exe was not published."
+          if (-not (Test-Path "build/publish/Agent/MynAI.Agent.exe")) {
+            throw "MynAI.Agent.exe was not published into the Agent subdirectory."
           }
           if (-not (Test-Path "build/publish/MynAssistantDesktopBridge.exe")) {
             throw "MynAssistantDesktopBridge.exe was not published."
