@@ -15,8 +15,10 @@ MynAI Windows installer'ı Android MynAssistant'ın Firebase tabanlı Windows k�
 
 1. Google Cloud Console'da `myncloud-24` projesindeki **Desktop app / installed** OAuth istemcisinin JSON dosyasını indir.
 2. GitHub'da `MynAI-DotNet` deposunun Settings → Secrets and variables → Actions bölümünde `MYNAI_GOOGLE_OAUTH_JSON` adlı repository secret oluştur. Secret'ın değeri tam OAuth JSON içeriği olmalı. Bu dosyayı kaynak koda, ZIP'e veya sohbete ekleme.
-3. İnceleme ve test tamamlandıktan sonra paketleme değişikliklerini `main` dalına al. `.github/workflows/windows-installer.yml` Windows uygulamasını, .NET Agent'ı ve köprü EXE'sini derler; ardından `MynAI-Setup.exe` üretip `MynAI-Windows-Installer` adlı Actions artifact'ı olarak yayımlar.
-4. Artifact yalnızca GitHub Actions'ta başarılı paketleme çalışması ve mevcut artifact saklama süresi boyunca indirilebilir. Bu workflow için retention 7 gündür.
+3. İnceleme ve test tamamlandıktan sonra kurulum paketini iki yoldan biriyle üret:
+   - **Ana dala almadan test paketi:** GitHub deposunda Actions → **Build MynAI Windows Installer** → **Run workflow** bölümünden `feature/mynai-desktop-bridge-integration` dalını seç. Bu manuel çalıştırma `MYNAI_GOOGLE_OAUTH_JSON` secret'ını kullanır ve kurulum artifact'ını yükler.
+   - **Normal dağıtım:** PR gözden geçirilip `main` dalına alındığında workflow otomatik çalışır ve aynı artifact'ı üretir.
+4. Workflow Windows uygulamasını, .NET Agent'ı ve köprü EXE'sini derler; `MynAI-Setup.exe` üretip `MynAI-Windows-Installer` adıyla Actions artifact'ı olarak yükler. Artifact saklama süresi 7 gündür.
 
 Pull request doğrulamasında gerçek OAuth dosyası yerine yalnızca test amaçlı sahte yapılandırma kullanılır; PR artifact'ı yayımlanmaz.
 
