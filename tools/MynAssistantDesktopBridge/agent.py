@@ -130,19 +130,29 @@ def load_device_id(uid: str) -> str:
     return device_id
 
 
-def google_oauth_credentials():
+def oauth_credentials_candidates() -> tuple[Path, ...]:
     # Prefer a side-by-side config for standalone use; packaged MynAI installs
-    # share the same per-user OAuth configuration as the main Windows app.
-    candidates = (
+    # share the per-user Google OAuth configuration used by the main app.
+    return (
         running_directory() / OAUTH_FILE_NAME,
         APP_DATA.parent / "Google" / OAUTH_FILE_NAME,
     )
-    credentials_path = next((path for path in candidates if path.is_file()), None)
+
+
+def find_oauth_credentials_path() -> Path | None:
+    return next(
+        (path for path in oauth_credentials_candidates() if path.is_file()),
+        None,
+    )
+
+
+def google_oauth_credentials():
+    credentials_path = find_oauth_credentials_path()
     if credentials_path is None:
-        searched = "\\n".join(f"- {path}" for path in candidates)
+        searched = "\n".join(f"- {path}" for path in oauth_credentials_candidates())
         raise FileNotFoundError(
             "Google OAuth dosyası bulunamadı. MynAI Google ayarlarında "
-            f"'{OAUTH_FILE_NAME}' dosyasını yapılandır. Aranan konumlar:\\n{searched}"
+            f"'{OAUTH_FILE_NAME}' dosyasını yapılandır. Aranan konumlar:\n{searched}"
         )
     flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
     return flow.run_local_server(
