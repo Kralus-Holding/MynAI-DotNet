@@ -271,7 +271,7 @@ public partial class SettingsWindow : Window
         catch (Exception ex)
         {
             MessageBox.Show(
-                $"Telefon-PC bağlantısı başlatılamadı:\\n\\n{ex.Message}",
+                $"Telefon-PC bağlantısı başlatılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
                 "MynAI",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -298,7 +298,7 @@ public partial class SettingsWindow : Window
         catch (Exception ex)
         {
             MessageBox.Show(
-                $"Telefon-PC bağlantısı yeniden başlatılamadı:\\n\\n{ex.Message}",
+                $"Telefon-PC bağlantısı yeniden başlatılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
                 "MynAI",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
