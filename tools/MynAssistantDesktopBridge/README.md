@@ -2,7 +2,7 @@
 
 This folder contains the Windows Firebase bridge agent used to connect Android MynAssistant to the installed Windows MynAI application.
 
-Canonical source: `MynKralus/MynAssistant-Android/desktop-agent`, branch `feature/android-pc-firebase-bridge`, source blob SHA `d64b095834ceb8c20bed9c52de0f8707806696b5` at the time of vendoring.
+Canonical source: `MynKralus/MynAssistant-Android/desktop-agent`, branch `feature/android-pc-firebase-bridge`, source blob SHA `24bdaedd91dd4fb77c0ab5fc61d779746b1d659c` at the time of vendoring.
 
 Keep this copy in sync when the canonical Android-repository agent changes. The packaged executable is named `MynAssistantDesktopBridge.exe`.
 
