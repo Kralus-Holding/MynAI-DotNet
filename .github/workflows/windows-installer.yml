@@ -2,7 +2,7 @@ name: Build MynAI Windows Installer
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "feature/mynai-desktop-bridge-integration"]
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
@@ -82,7 +82,7 @@ jobs:
           }
 
       - name: Prepare CI-only OAuth config
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build/config | Out-Null
@@ -103,7 +103,7 @@ jobs:
           [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path "build/config/client_secret.json"), $placeholder, $utf8NoBom)
 
       - name: Prepare production OAuth config
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           MYNAI_GOOGLE_OAUTH_JSON: ${{ secrets.MYNAI_GOOGLE_OAUTH_JSON }}
@@ -146,7 +146,7 @@ jobs:
           }
 
       - name: Upload Windows installer
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: MynAI-Windows-Installer
