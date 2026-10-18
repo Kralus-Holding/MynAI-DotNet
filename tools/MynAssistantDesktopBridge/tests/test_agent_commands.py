@@ -50,6 +50,51 @@ class DeviceCommandQueryTests(unittest.TestCase):
         self.assertEqual(query["orderBy"][0]["direction"], "ASCENDING")
 
 
+class AndroidPhoneDiscoveryTests(unittest.TestCase):
+    @patch.object(agent.requests, "post")
+    def test_query_returns_only_android_devices_owned_by_current_user(self, post):
+        post.return_value = FakeResponse(200, [
+            {"document": {
+                "name": "projects/myncloud-24/databases/(default)/documents/devices/android-phone-1",
+                "fields": {
+                    "ownerId": {"stringValue": "firebase-user-123"},
+                    "name": {"stringValue": "Pixel Test"},
+                    "platform": {"stringValue": "Android"},
+                    "status": {"stringValue": "online"},
+                    "lastSeenAt": {"timestampValue": "2026-10-18T10:00:00Z"},
+                },
+            }},
+            {"document": {
+                "name": "projects/myncloud-24/databases/(default)/documents/devices/win-device-1",
+                "fields": {
+                    "ownerId": {"stringValue": "firebase-user-123"},
+                    "name": {"stringValue": "My PC"},
+                    "platform": {"stringValue": "Windows"},
+                },
+            }},
+            {"document": {
+                "name": "projects/myncloud-24/databases/(default)/documents/devices/android-other-user",
+                "fields": {
+                    "ownerId": {"stringValue": "somebody-else"},
+                    "name": {"stringValue": "Other phone"},
+                    "platform": {"stringValue": "Android"},
+                },
+            }},
+        ])
+
+        phones = agent.fetch_android_phone_devices(FakeSession())
+
+        self.assertEqual(len(phones), 1)
+        self.assertEqual(phones[0]["id"], "android-phone-1")
+        self.assertEqual(phones[0]["name"], "Pixel Test")
+        self.assertEqual(phones[0]["status"], "online")
+        query = post.call_args.kwargs["json"]["structuredQuery"]
+        owner_filter = query["where"]["fieldFilter"]
+        self.assertEqual(owner_filter["field"]["fieldPath"], "ownerId")
+        self.assertEqual(owner_filter["value"]["stringValue"], "firebase-user-123")
+        self.assertEqual(query["limit"], 100)
+
+
 class CommandClaimTests(unittest.TestCase):
     def setUp(self):
         self.session = FakeSession()
