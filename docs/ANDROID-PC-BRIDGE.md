@@ -56,7 +56,11 @@ dotnet build MynAI.slnx --configuration Release
 
 Installer, `MynAssistant.exe` ve `Agent\MynAgent.exe` dosyalarını ayrı ayrı pakete alır; kurulum sonunda `MynAgent` arka plan bileşenini başlatır. Eski sürümle uyumluluk için zamanlayıcı verileri `%LOCALAPPDATA%\MynAI` altında korunur. Workflow ayrıca Agent publish ve Inno Setup derlemesini doğrular. Gerçek Google OAuth girişi, Firestore güvenlik kuralları ve telefon-PC komutları fiziksel ortamda ayrıca test edilmelidir.
 
-## Yayımcı / SmartScreen notu\n\nInno Setup'taki `AppPublisher` ve PE `CompanyName` metadata'sı tek başına SmartScreen yayıncısını doğrulamaz. Yayıncı adının `MynKralus` olarak görünmesi için indirilen kurulumun güvenilir bir sertifikayla Authenticode imzalı olması gerekir. Bu nedenle üretim yayınlaması geçerli imza yoksa bloke edilir.\n\n## Güvenlik notları
+## Yayımcı / SmartScreen notu
+
+Inno Setup'taki `AppPublisher` ve PE `CompanyName` metadata'sı tek başına SmartScreen yayıncısını doğrulamaz. Yayıncı adının `MynKralus` olarak görünmesi için indirilen kurulumun güvenilir bir sertifikayla Authenticode imzalı olması gerekir. Bu nedenle üretim yayınlaması geçerli imza yoksa bloke edilir.\n\n
+
+## Güvenlik notları
 
 - OAuth istemci JSON'unu veya token'ları commit etme.
 - Desktop OAuth istemcisi uygulama için dağıtılan yapılandırmadır; Firebase service-account anahtarı değildir. Firebase service-account anahtarını hiçbir istemci paketine koyma.
