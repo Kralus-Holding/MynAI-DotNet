@@ -294,7 +294,7 @@
                 </StackPanel>
 
                 <TextBlock Grid.Row="2"
-                           Text="MynAI"
+                           Text="MynAssistant"
                            Foreground="#364356"
                            FontSize="10"
                            Margin="0,0,0,4"/>
@@ -388,7 +388,7 @@
                                    FontWeight="SemiBold"
                                    Margin="0,0,0,5"/>
 
-                        <TextBlock Text="MynAI'nin arka plan motorunu buradan yönet."
+                        <TextBlock Text="MynAssistant'ın arka plan motorunu buradan yönet."
                                    Foreground="#718096"
                                    FontSize="12"
                                    Margin="0,0,0,18"/>
@@ -740,7 +740,7 @@
 
                             <StackPanel>
 
-                                <TextBlock Text="MynAI'yi öne getir"
+                                <TextBlock Text="MynAssistant'ı öne getir"
                                            FontSize="14"
                                            FontWeight="SemiBold"/>
 
