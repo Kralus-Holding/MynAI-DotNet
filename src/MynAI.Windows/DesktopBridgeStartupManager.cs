@@ -186,6 +186,29 @@ public static class DesktopBridgeStartupManager
         StartAgent();
     }
 
+    public static void ResetAccountSession()
+    {
+        StopAgent();
+
+        var agentDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MynAssistant",
+            "DesktopAgent");
+
+        var sessionPath = Path.Combine(agentDirectory, "session.bin");
+        var phoneCachePath = Path.Combine(agentDirectory, "android_devices.json");
+
+        // Delete only the bridge refresh token and derived phone snapshot.
+        // Keep OAuth client configuration, the per-account PC IDs, and all other app settings.
+        foreach (var path in new[] { sessionPath, phoneCachePath })
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+
+        AppendLog("Google session cleared; the next bridge start will ask for Google sign-in.");
+    }
+
     private static void AppendLog(string message)
     {
         try
