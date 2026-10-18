@@ -324,8 +324,8 @@ jobs:
         if: github.event_name != 'pull_request'
         shell: pwsh
         env:
-          MYNASSISTANT_SIGNING_PFX_BASE64: __PFX_BASE64__
-          MYNASSISTANT_SIGNING_PFX_PASSWORD: __PFX_PASSWORD__
+          MYNASSISTANT_SIGNING_PFX_BASE64: ${{ secrets.MYNASSISTANT_SIGNING_PFX_BASE64 }}
+          MYNASSISTANT_SIGNING_PFX_PASSWORD: ${{ secrets.MYNASSISTANT_SIGNING_PFX_PASSWORD }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:MYNASSISTANT_SIGNING_PFX_BASE64) -or
               [string]::IsNullOrWhiteSpace($env:MYNASSISTANT_SIGNING_PFX_PASSWORD)) {
