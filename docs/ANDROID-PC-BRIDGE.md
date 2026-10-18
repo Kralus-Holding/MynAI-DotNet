@@ -22,7 +22,7 @@ Pull request doğrulamasında gerçek OAuth dosyası yerine yalnızca test amaç
 
 ## Kurulum doğrulamaları ve imzalama
 
-- Kurulum sihirbazı her seferinde hedef klasör sayfasını gösterir; varsayılan klasör `%LOCALAPPDATA%\\Programs\\MynAssistant`. Önceki kurulum klasörü sessizce yeniden kullanılmaz.
+- Kurulum sihirbazı her seferinde hedef klasör sayfasını gösterir; varsa önceki kurulum klasörü varsayılan olarak önerilir ama değiştirilebilir. İlk kurulumda varsayılan klasör `%LOCALAPPDATA%\\Programs\\MynAssistant` olur.
 - CI, kurulum paketini geçici bir klasöre sessizce yükleyip `MynAssistant.exe`, `MynAssistantDesktopBridge.exe`, `Agent\\MynAgent.exe` ve Agent bağımlılıklarını kontrol eder. Ardından `MynAgent.exe` sürecini başlatır ve `MynAI.Agent` named-pipe IPC uç noktasının hazır olduğunu sınar.
 - MynAssistant açıldığında Agent'ı kendisi başlatır; hata/çıkış günlükleri `%LOCALAPPDATA%\\MynAssistant\\Logs\\mynagent.log` dosyasına yazılır.
 - Üretim sürümü yayınlanmadan önce güvenilir kod imzalama sertifikasıyla imza doğrulaması zorunludur. Repository Actions secrets: `MYNASSISTANT_SIGNING_PFX_BASE64` (PFX dosyasının Base64 metni) ve `MYNASSISTANT_SIGNING_PFX_PASSWORD` (PFX parolası). Sertifikanın doğrulanabilir konusu `MynKralus` içermelidir. Sertifika yoksa CI testleri çalışabilir ama üretim yayınlaması engellenir.
