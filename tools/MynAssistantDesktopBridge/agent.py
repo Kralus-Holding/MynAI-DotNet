@@ -358,6 +358,7 @@ def write_android_phone_snapshot(session: FirebaseSession) -> None:
     APP_DATA.mkdir(parents=True, exist_ok=True)
     snapshot = {
         "ownerId": session.uid,
+        "email": getattr(session, "email", ""),
         "updatedAt": utc_now(),
         "devices": fetch_android_phone_devices(session),
     }

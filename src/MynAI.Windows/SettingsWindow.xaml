@@ -1,4 +1,4 @@
-﻿<Window x:Class="MynAI.Windows.SettingsWindow"
+<Window x:Class="MynAI.Windows.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="MynAssistant Ayarlar"
@@ -609,7 +609,7 @@
                                                     <TextBlock Grid.Column="1"
                                                                Text="{Binding StatusLabel}"
                                                                FontSize="11"
-                                                               Foreground="#7FD495"
+                                                               Foreground="{Binding StatusForeground}"
                                                                VerticalAlignment="Center"
                                                                Margin="12,0,0,0"/>
                                                 </Grid>

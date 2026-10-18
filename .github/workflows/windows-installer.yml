@@ -63,6 +63,12 @@ jobs:
           if (-not $settingsCode.Contains('android_devices.json') -or -not $settingsCode.Contains('UpdateAndroidPhoneDevices')) {
             throw "Windows phone-list cache integration is missing."
           }
+          if (-not $settingsCode.Contains('StatusForeground') -or -not $settingsCode.Contains('public string Email')) {
+            throw "Windows phone list must show correct status color and the active bridge account."
+          }
+          if (-not $bridgeSource.Contains('"email": getattr(session, "email", "")')) {
+            throw "Desktop bridge phone snapshot must include the authenticated account email for diagnostics."
+          }
           if ($bridgeSource -match 'SCOPES\s*=\s*\["openid",\s*"email",\s*"profile"\]') {
             throw "Legacy Google OAuth scope aliases can trigger 'Scope has changed'; use canonical Google scope URIs."
           }

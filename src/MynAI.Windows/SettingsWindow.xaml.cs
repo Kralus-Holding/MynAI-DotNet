@@ -1,4 +1,4 @@
-﻿using MessageBox = System.Windows.MessageBox;
+using MessageBox = System.Windows.MessageBox;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Color = System.Windows.Media.Color;
 using System.Diagnostics;
@@ -19,6 +19,7 @@ public partial class SettingsWindow : Window
     private sealed class AndroidPhoneSnapshot
     {
         public string OwnerId { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
         public string UpdatedAt { get; set; } = string.Empty;
         public List<AndroidPhoneDevice> Devices { get; set; } = [];
     }
@@ -39,11 +40,19 @@ public partial class SettingsWindow : Window
                     return "Çevrimdışı";
                 if (!DateTimeOffset.TryParse(LastSeenAt, out var lastSeen))
                     return "Durum bilinmiyor";
-                return DateTimeOffset.UtcNow - lastSeen.ToUniversalTime() <= TimeSpan.FromSeconds(90)
+                var age = DateTimeOffset.UtcNow - lastSeen.ToUniversalTime();
+                return age >= TimeSpan.FromSeconds(-5) && age <= TimeSpan.FromSeconds(90)
                     ? "Çevrimiçi"
                     : "Çevrimdışı";
             }
         }
+
+        public string StatusForeground => StatusLabel switch
+        {
+            "Çevrimiçi" => "#7FD495",
+            "Durum bilinmiyor" => "#D6B46B",
+            _ => "#E49A9A"
+        };
 
         public string LastSeenLabel =>
             DateTimeOffset.TryParse(LastSeenAt, out var lastSeen)
@@ -350,25 +359,38 @@ public partial class SettingsWindow : Window
                 return;
             }
 
-            var snapshotFresh = DateTimeOffset.TryParse(
+            var snapshotAge = DateTimeOffset.TryParse(
                 _lastPhoneSnapshot.UpdatedAt,
-                out var updatedAt) &&
-                DateTimeOffset.UtcNow - updatedAt.ToUniversalTime() <= TimeSpan.FromSeconds(30);
+                out var updatedAt)
+                ? DateTimeOffset.UtcNow - updatedAt.ToUniversalTime()
+                : (TimeSpan?)null;
+            var snapshotFresh = snapshotAge is not null
+                && snapshotAge >= TimeSpan.FromSeconds(-5)
+                && snapshotAge <= TimeSpan.FromSeconds(30);
 
             if (!snapshotFresh)
             {
+                // Do not keep showing a stale account's devices when the bridge stops updating its cache.
+                _androidPhones.Clear();
                 AndroidPhoneDevicesStatusText.Text = "Telefon listesi güncellenemiyor. Bağlantıyı yeniden başlatıp kontrol et.";
-            }
-            else if (_androidPhones.Count == 0)
-            {
-                AndroidPhoneDevicesStatusText.Text = "Henüz telefon bulunamadı. Android uygulamasında aynı hesapla giriş yapıp uygulamayı aç.";
             }
             else
             {
-                var onlineCount = _androidPhones.Count(phone =>
-                    phone.StatusLabel == "Çevrimiçi");
-                AndroidPhoneDevicesStatusText.Text =
-                    $"{_androidPhones.Count} Android cihaz bulundu · {onlineCount} çevrimiçi.";
+                var accountLabel = string.IsNullOrWhiteSpace(_lastPhoneSnapshot.Email)
+                    ? string.Empty
+                    : $" Windows Google hesabı: {_lastPhoneSnapshot.Email}.";
+                if (_androidPhones.Count == 0)
+                {
+                    AndroidPhoneDevicesStatusText.Text =
+                        "Henüz telefon bulunamadı. Android uygulamasını açıp aynı Google hesabıyla giriş yap." + accountLabel;
+                }
+                else
+                {
+                    var onlineCount = _androidPhones.Count(phone =>
+                        phone.StatusLabel == "Çevrimiçi");
+                    AndroidPhoneDevicesStatusText.Text =
+                        $"{_androidPhones.Count} Android cihaz bulundu · {onlineCount} çevrimiçi." + accountLabel;
+                }
             }
         }
         catch (Exception ex)

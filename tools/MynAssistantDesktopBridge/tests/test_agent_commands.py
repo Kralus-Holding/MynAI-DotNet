@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +15,7 @@ SPEC.loader.exec_module(agent)
 
 class FakeSession:
     uid = "firebase-user-123"
+    email = "phone-owner@example.test"
 
     def headers(self):
         return {"Authorization": "Bearer test-token"}
@@ -93,6 +96,25 @@ class AndroidPhoneDiscoveryTests(unittest.TestCase):
         self.assertEqual(owner_filter["field"]["fieldPath"], "ownerId")
         self.assertEqual(owner_filter["value"]["stringValue"], "firebase-user-123")
         self.assertEqual(query["limit"], 100)
+
+
+    @patch.object(agent, "fetch_android_phone_devices")
+    def test_snapshot_includes_account_identity_and_writes_atomically(self, fetch_devices):
+        fetch_devices.return_value = [
+            {"id": "android-phone-1", "name": "Pixel Test", "platform": "Android", "status": "online", "lastSeenAt": ""}
+        ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app_data = Path(temp_dir)
+            with patch.object(agent, "APP_DATA", app_data):
+                agent.write_android_phone_snapshot(FakeSession())
+                snapshot_path = app_data / "android_devices.json"
+                snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(snapshot["ownerId"], FakeSession.uid)
+            self.assertEqual(snapshot["email"], FakeSession.email)
+            self.assertEqual(snapshot["devices"], fetch_devices.return_value)
+            self.assertFalse((app_data / "android_devices.tmp").exists())
 
 
 class CommandClaimTests(unittest.TestCase):
