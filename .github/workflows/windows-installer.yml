@@ -204,14 +204,14 @@ jobs:
           } else {
             $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
             foreach ($asset in $assets) {
-              if ($asset.name -eq "MynAI-Setup.exe") {
+              if ($asset.name -eq "MynAssistant-Setup.exe") {
                 Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
               }
             }
           }
 
-          $installerPath = (Resolve-Path "build/installer/MynAI-Setup.exe").Path
-          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAI-Setup.exe"
+          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup.exe").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup.exe"
           $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
           if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
             throw "Release asset upload could not be verified."
