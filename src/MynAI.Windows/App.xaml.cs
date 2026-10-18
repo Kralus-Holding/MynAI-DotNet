@@ -28,7 +28,7 @@ public partial class App : System.Windows.Application
         {
             MessageBox.Show(
                 ex.ToString(),
-                "MynAI başlatılamadı",
+                "MynAssistant başlatılamadı",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
 
