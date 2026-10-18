@@ -244,10 +244,10 @@ jobs:
           }
 
           $setupInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($installerPath)
-          if ($setupInfo.CompanyName -ne 'MynKralus') {
+          if (($setupInfo.CompanyName).Trim() -ne 'MynKralus') {
             throw "Installer CompanyName metadata is '$($setupInfo.CompanyName)', expected MynKralus."
           }
-          if ($setupInfo.ProductName -ne 'MynAssistant') {
+          if (($setupInfo.ProductName).Trim() -ne 'MynAssistant') {
             throw "Installer ProductName metadata is '$($setupInfo.ProductName)', expected MynAssistant."
           }
 
@@ -283,11 +283,11 @@ jobs:
           }
 
           $appInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $installDir 'MynAssistant.exe'))
-          if ($appInfo.CompanyName -ne 'MynKralus' -or $appInfo.ProductName -ne 'MynAssistant') {
+          if (($appInfo.CompanyName).Trim() -ne 'MynKralus' -or ($appInfo.ProductName).Trim() -ne 'MynAssistant') {
             throw "Main EXE metadata mismatch: Company='$($appInfo.CompanyName)' Product='$($appInfo.ProductName)'."
           }
           $agentInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $installDir 'Agent\MynAgent.exe'))
-          if ($agentInfo.CompanyName -ne 'MynKralus' -or $agentInfo.ProductName -ne 'MynAssistant') {
+          if (($agentInfo.CompanyName).Trim() -ne 'MynKralus' -or ($agentInfo.ProductName).Trim() -ne 'MynAssistant') {
             throw "Agent EXE metadata mismatch: Company='$($agentInfo.CompanyName)' Product='$($agentInfo.ProductName)'."
           }
 
