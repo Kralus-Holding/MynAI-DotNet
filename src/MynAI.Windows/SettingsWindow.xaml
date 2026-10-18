@@ -564,6 +564,66 @@
                                            Margin="0,6,0,0"
                                            TextWrapping="Wrap"/>
 
+                                <Separator Margin="0,18,0,14" Background="#243247"/>
+
+                                <TextBlock Text="Telefonlarım"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+
+                                <TextBlock x:Name="AndroidPhoneDevicesStatusText"
+                                           Text="Telefon listesi bekleniyor..."
+                                           Foreground="#7E8A9D"
+                                           FontSize="11"
+                                           Margin="0,6,0,10"
+                                           TextWrapping="Wrap"/>
+
+                                <ListBox x:Name="AndroidPhonesListBox"
+                                         Height="150"
+                                         Background="#0B1118"
+                                         BorderBrush="#243247"
+                                         BorderThickness="1"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#101720"
+                                                    BorderBrush="#243247"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8"
+                                                    Padding="10"
+                                                    Margin="3">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}"
+                                                                   FontSize="12"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="#EAF0F7"/>
+                                                        <TextBlock Text="{Binding LastSeenLabel}"
+                                                                   FontSize="10"
+                                                                   Foreground="#7E8A9D"
+                                                                   Margin="0,3,0,0"/>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{Binding StatusLabel}"
+                                                               FontSize="11"
+                                                               Foreground="#7FD495"
+                                                               VerticalAlignment="Center"
+                                                               Margin="12,0,0,0"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <TextBlock Text="Eşleşme, telefonda ve Windows'ta aynı Google/Firebase hesabı kullanıldığında otomatik yapılır."
+                                           Foreground="#7E8A9D"
+                                           FontSize="10"
+                                           Margin="0,8,0,0"
+                                           TextWrapping="Wrap"/>
+
                             </StackPanel>
 
                         </Border>
