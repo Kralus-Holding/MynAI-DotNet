@@ -55,6 +55,7 @@ jobs:
         run: |
           $settingsXaml = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml" -Raw
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw
+          $bridgeManagerSource = Get-Content -LiteralPath "src/MynAI.Windows/DesktopBridgeStartupManager.cs" -Raw
           $bridgeSource = Get-Content -LiteralPath "tools/MynAssistantDesktopBridge/agent.py" -Raw
 
           if (-not $settingsXaml.Contains('Telefonlarım') -or -not $settingsXaml.Contains('x:Name="AndroidPhonesListBox"')) {
@@ -62,6 +63,9 @@ jobs:
           }
           if (-not $settingsCode.Contains('android_devices.json') -or -not $settingsCode.Contains('UpdateAndroidPhoneDevices')) {
             throw "Windows phone-list cache integration is missing."
+          }
+          if (-not $settingsXaml.Contains('Google hesabını değiştir') -or -not $settingsCode.Contains('ChangeDesktopBridgeAccount_Click') -or -not $bridgeManagerSource.Contains('ResetAccountSession')) {
+            throw "Windows pairing must offer a confirmed way to switch the saved Google account."
           }
           if (-not $settingsCode.Contains('StatusForeground') -or -not $settingsCode.Contains('public string Email')) {
             throw "Windows phone list must show correct status color and the active bridge account."
