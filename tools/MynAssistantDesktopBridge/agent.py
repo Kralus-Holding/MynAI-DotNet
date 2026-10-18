@@ -66,6 +66,18 @@ def is_device_heartbeat_fresh(last_seen_at: str | None) -> bool:
         return False
 
 
+
+def raise_for_firebase_response(operation: str, response) -> None:
+    """Retry transient Firestore/Auth failures; surface permanent client errors immediately."""
+    status_code = int(response.status_code)
+    if status_code < 400:
+        return
+    message = f"{operation} HTTP {status_code}: {str(response.text)[:600]}"
+    if status_code in {408, 425, 429} or status_code >= 500:
+        raise requests.HTTPError(message, response=response)
+    raise RuntimeError(message)
+
+
 def running_directory() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
@@ -246,8 +258,7 @@ class FirebaseSession:
             data={"grant_type": "refresh_token", "refresh_token": self.refresh_token},
             timeout=20,
         )
-        if response.status_code >= 400:
-            raise RuntimeError("Firebase oturumu yenilenemedi: " + response.text[:500])
+        raise_for_firebase_response("Firebase oturumu yenilenemedi", response)
         data = response.json()
         self.id_token = data["id_token"]
         self.refresh_token = data.get("refresh_token", self.refresh_token)
@@ -270,10 +281,7 @@ def firestore_patch(session: FirebaseSession, document_path: str, fields: dict, 
         json={"fields": fields},
         timeout=20,
     )
-    if response.status_code >= 400:
-        raise RuntimeError(
-            f"Firestore PATCH {document_path} HTTP {response.status_code}: {response.text[:500]}"
-        )
+    raise_for_firebase_response(f"Firestore PATCH {document_path}", response)
     return response.json()
 
 
@@ -297,8 +305,7 @@ def register_or_heartbeat(session: FirebaseSession, device_id: str, initial: boo
             json={"fields": fields},
             timeout=20,
         )
-        if response.status_code >= 400:
-            raise RuntimeError("Windows cihaz kaydı başarısız: " + response.text[:700])
+        raise_for_firebase_response("Windows cihaz kaydı başarısız", response)
     else:
         firestore_patch(
             session,
@@ -317,8 +324,7 @@ def read_device_state(session: FirebaseSession, device_id: str) -> dict:
         headers=session.headers(),
         timeout=15,
     )
-    if response.status_code >= 400:
-        raise RuntimeError("Windows cihaz durumu okunamadı: " + response.text[:500])
+    raise_for_firebase_response("Windows cihaz durumu okunamadı", response)
     return decode_document(response.json())
 
 
@@ -342,8 +348,7 @@ def fetch_android_phone_devices(session: FirebaseSession) -> list[dict]:
         },
         timeout=20,
     )
-    if response.status_code >= 400:
-        raise RuntimeError("Telefon cihazları okunamadı: " + response.text[:600])
+    raise_for_firebase_response("Telefon cihazları okunamadı", response)
 
     devices = []
     for result in response.json():
@@ -491,8 +496,7 @@ def fetch_device_commands(session: FirebaseSession, device_id: str) -> list[dict
         },
         timeout=25,
     )
-    if response.status_code >= 400:
-        raise RuntimeError("Komut kuyruğu okunamadı: " + response.text[:700])
+    raise_for_firebase_response("Komut kuyruğu okunamadı", response)
     documents = []
     for result in response.json():
         document = result.get("document")
@@ -754,89 +758,98 @@ def run_agent() -> int:
     last_command_poll = 0.0
     screen_active = False
     pyautogui.FAILSAFE = False
+    retry_delay = 2.0
     try:
         while True:
-            session.ensure_fresh()
-            now = time.monotonic()
+            try:
+                session.ensure_fresh()
+                now = time.monotonic()
 
-            if now - last_heartbeat >= HEARTBEAT_SECONDS:
-                register_or_heartbeat(session, device_id)
-                last_heartbeat = now
+                if now - last_heartbeat >= HEARTBEAT_SECONDS:
+                    register_or_heartbeat(session, device_id)
+                    last_heartbeat = now
 
-            if now - last_phone_discovery >= PHONE_DISCOVERY_SECONDS:
-                try:
-                    write_android_phone_snapshot(session)
-                except Exception as exc:
-                    print(f"[Telefonlar] Telefon listesi yenilenemedi: {exc}")
-                last_phone_discovery = now
-
-            screen_check_interval = 3.0 if screen_active else SCREEN_CHECK_SECONDS
-            if now - last_screen_check >= screen_check_interval:
-                device_state = read_device_state(session, device_id)
-                was_active = screen_active
-                screen_active = screen_request_is_active(device_state)
-                last_screen_check = now
-                if was_active and not screen_active:
+                if now - last_phone_discovery >= PHONE_DISCOVERY_SECONDS:
                     try:
-                        firestore_patch(
-                            session,
-                            f"devices/{device_id}",
-                            {"screenJpegBase64": encode_string(""), "screenFrameAt": encode_timestamp()},
-                            update_mask=["screenJpegBase64", "screenFrameAt"],
-                        )
+                        write_android_phone_snapshot(session)
                     except Exception as exc:
-                        print(f"[Uyarı] Önizleme alanı temizlenemedi: {exc}")
+                        print(f"[Telefonlar] Telefon listesi yenilenemedi: {exc}")
+                    last_phone_discovery = now
 
-            if screen_active and now - last_screen_frame >= SCREEN_FRAME_SECONDS:
-                try:
-                    upload_screen_frame(session, device_id)
-                    last_screen_frame = now
-                except Exception as exc:
-                    print(f"[Önizleme] Ekran karesi gönderilemedi: {exc}")
-                    last_screen_frame = now
-
-            if now - last_command_poll >= COMMAND_POLL_SECONDS:
-                for document in fetch_device_commands(session, device_id):
-                    fields = decode_document(document)
-                    if (
-                        fields.get("ownerId") != session.uid
-                        or fields.get("deviceId") != device_id
-                        or fields.get("status") != "pending"
-                    ):
-                        continue
-
-                    # Claim with the fetched updateTime so multiple Agent processes cannot
-                    # successfully transition the same pending document to running.
-                    try:
-                        claimed = claim_command(session, document)
-                    except Exception as exc:
-                        print(f"[Hata] Komut sahiplenilemedi: {exc}")
-                        continue
-                    if not claimed:
-                        continue
-
-                    command = str(fields.get("command") or "")
-                    if not command_is_supported(command):
+                screen_check_interval = 3.0 if screen_active else SCREEN_CHECK_SECONDS
+                if now - last_screen_check >= screen_check_interval:
+                    device_state = read_device_state(session, device_id)
+                    was_active = screen_active
+                    screen_active = screen_request_is_active(device_state)
+                    last_screen_check = now
+                    if was_active and not screen_active:
                         try:
-                            update_command(session, document, "failed", "Desteklenmeyen komut.")
+                            firestore_patch(
+                                session,
+                                f"devices/{device_id}",
+                                {"screenJpegBase64": encode_string(""), "screenFrameAt": encode_timestamp()},
+                                update_mask=["screenJpegBase64", "screenFrameAt"],
+                            )
                         except Exception as exc:
-                            print(f"[Hata] Desteklenmeyen komutun durumu güncellenemedi: {exc}")
-                        continue
+                            print(f"[Uyarı] Önizleme alanı temizlenemedi: {exc}")
 
+                if screen_active and now - last_screen_frame >= SCREEN_FRAME_SECONDS:
                     try:
-                        result = execute_command(command, fields)
-                        status = "failed" if result.startswith("Desteklenmeyen komut") else "completed"
-                        update_command(session, document, status, result)
-                        print(f"[Komut] {command}: {result}")
+                        upload_screen_frame(session, device_id)
+                        last_screen_frame = now
                     except Exception as exc:
-                        try:
-                            update_command(session, document, "failed", str(exc))
-                        except Exception as update_exc:
-                            print(f"[Hata] Komut durumu güncellenemedi: {update_exc}")
-                        print(f"[Hata] {command}: {exc}")
-                last_command_poll = now
+                        print(f"[Önizleme] Ekran karesi gönderilemedi: {exc}")
+                        last_screen_frame = now
 
-            time.sleep(POLL_SECONDS)
+                if now - last_command_poll >= COMMAND_POLL_SECONDS:
+                    for document in fetch_device_commands(session, device_id):
+                        fields = decode_document(document)
+                        if (
+                            fields.get("ownerId") != session.uid
+                            or fields.get("deviceId") != device_id
+                            or fields.get("status") != "pending"
+                        ):
+                            continue
+
+                        # Claim with the fetched updateTime so multiple Agent processes cannot
+                        # successfully transition the same pending document to running.
+                        try:
+                            claimed = claim_command(session, document)
+                        except Exception as exc:
+                            print(f"[Hata] Komut sahiplenilemedi: {exc}")
+                            continue
+                        if not claimed:
+                            continue
+
+                        command = str(fields.get("command") or "")
+                        if not command_is_supported(command):
+                            try:
+                                update_command(session, document, "failed", "Desteklenmeyen komut.")
+                            except Exception as exc:
+                                print(f"[Hata] Desteklenmeyen komutun durumu güncellenemedi: {exc}")
+                            continue
+
+                        try:
+                            result = execute_command(command, fields)
+                            status = "failed" if result.startswith("Desteklenmeyen komut") else "completed"
+                            update_command(session, document, status, result)
+                            print(f"[Komut] {command}: {result}")
+                        except Exception as exc:
+                            try:
+                                update_command(session, document, "failed", str(exc))
+                            except Exception as update_exc:
+                                print(f"[Hata] Komut durumu güncellenemedi: {update_exc}")
+                            print(f"[Hata] {command}: {exc}")
+                    last_command_poll = now
+
+                time.sleep(POLL_SECONDS)
+
+                retry_delay = 2.0
+            except requests.RequestException as exc:
+                delay = retry_delay
+                retry_delay = min(30.0, retry_delay * 2.0)
+                print(f"[Ağ] Firebase bağlantısı geçici olarak başarısız: {exc}. {delay:.0f} saniye sonra yeniden denenecek.")
+                time.sleep(delay)
     except KeyboardInterrupt:
         print("\nAgent kapatılıyor...")
     finally:
