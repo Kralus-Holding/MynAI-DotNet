@@ -78,6 +78,23 @@ def raise_for_firebase_response(operation: str, response) -> None:
     raise RuntimeError(message)
 
 
+
+def retry_transient_operation(operation, operation_name: str, initial_delay: float = 2.0, max_delay: float = 30.0) -> None:
+    """Retry only transient network/server failures while allowing permanent errors to surface."""
+    delay = initial_delay
+    while True:
+        try:
+            operation()
+            return
+        except requests.RequestException as exc:
+            print(
+                f"[Ağ] {operation_name} geçici olarak başarısız: {exc}. "
+                f"{delay:.0f} saniye sonra yeniden denenecek."
+            )
+            time.sleep(delay)
+            delay = min(max_delay, delay * 2.0)
+
+
 def running_directory() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
@@ -802,7 +819,10 @@ def run_agent() -> int:
         ask_install_startup()
 
     device_id = load_device_id(session.uid)
-    register_or_heartbeat(session, device_id, initial=True)
+    retry_transient_operation(
+        lambda: register_or_heartbeat(session, device_id, initial=True),
+        "Windows cihaz kaydı",
+    )
     print(f"Cihaz çevrimiçi: {platform.node()} (ID: {device_id})")
     print("Android uygulamasında Cihazlarım bölümünde otomatik görünmesi gerekir.")
     print("PC Kumandası açıkken masaüstü önizlemesi yaklaşık saniyede bir güncellenir.")
