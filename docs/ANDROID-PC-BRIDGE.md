@@ -24,11 +24,11 @@ Pull request doğrulamasında gerçek OAuth dosyası yerine yalnızca test amaç
 
 ## Son kullanıcı için ilk bağlantı
 
-1. `MynAI-Setup.exe` kurulumunu çalıştır.
+1. `MynAssistant-Setup.exe` kurulumunu çalıştır.
 2. MynAssistant'ı aç ve Ayarlar → Agent → Telefon-PC bağlantısı bölümüne git.
 3. Bağlantıyı başlat. İlk kullanımda Google tarayıcı girişi açılır; Android MynAssistant uygulamasında kullanılan aynı Google hesabını seç.
 4. Agent Firestore'a Windows cihazı kaydettiğinde Android uygulamasının cihaz listesinde görünmelidir.
-5. Bağlantı durumunu MynAssistant Ayarları'ndan kontrol et. Köprü günlükleri `%LOCALAPPDATA%\MynAI\DesktopAgent\bridge.log` konumundadır.
+5. Bağlantı durumunu MynAssistant Ayarları'ndan kontrol et. Köprü günlükleri `%LOCALAPPDATA%\MynAssistant\DesktopAgent\bridge.log` konumundadır.
 
 Son kullanıcıların Firebase CLI kurması veya Firestore indekslerini elle dağıtması gerekmez. İndeks dağıtımı geliştirici/operasyon adımıdır.
 
