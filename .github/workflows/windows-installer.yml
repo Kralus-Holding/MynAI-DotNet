@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -150,11 +150,74 @@ jobs:
             throw "MynAI-Setup.exe was not created."
           }
 
-      - name: Upload Windows installer
+      - name: Upload Windows installer as Actions artifact
+        id: upload_installer
         if: github.event_name != 'pull_request'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: MynAI-Windows-Installer
           path: build/installer/MynAI-Setup.exe
           if-no-files-found: error
           retention-days: 7
+
+      - name: Publish installer to GitHub Releases if Actions storage is unavailable
+        if: github.event_name != 'pull_request' && steps.upload_installer.outcome == 'failure'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_SHA: ${{ github.sha }}
+          GH_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $api = "https://api.github.com/repos/$env:GH_REPOSITORY"
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $tag = "mynai-installer-build-$env:GH_RUN_NUMBER"
+          $releaseUrl = "$api/releases/tags/$tag"
+          $release = $null
+
+          try {
+            $release = Invoke-RestMethod -Method Get -Uri $releaseUrl -Headers $headers
+          } catch {
+            $statusCode = 0
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+              $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+            if ($statusCode -ne 404) {
+              throw
+            }
+          }
+
+          if ($null -eq $release) {
+            $releaseBody = @{
+              tag_name = $tag
+              target_commitish = $env:GH_SHA
+              name = "MynAI Windows Installer Preview (build $env:GH_RUN_NUMBER)"
+              body = "Automated preview installer for commit $env:GH_SHA. The installer was built and validated by GitHub Actions. This prerelease is published as a fallback because Actions artifact storage was unavailable."
+              draft = $false
+              prerelease = $true
+            } | ConvertTo-Json -Depth 5
+            $release = Invoke-RestMethod -Method Post -Uri "$api/releases" -Headers $headers -ContentType "application/json" -Body $releaseBody
+          } else {
+            $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
+            foreach ($asset in $assets) {
+              if ($asset.name -eq "MynAI-Setup.exe") {
+                Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
+              }
+            }
+          }
+
+          $installerPath = (Resolve-Path "build/installer/MynAI-Setup.exe").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAI-Setup.exe"
+          $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
+          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
+            throw "Release asset upload could not be verified."
+          }
+
+          Write-Host "Installer fallback release published: $($release.html_url)"
+          Write-Host "Verified installer download URL: $($uploadedAsset.browser_download_url)"
