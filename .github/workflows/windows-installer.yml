@@ -124,9 +124,16 @@ jobs:
           $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
           [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path "build/config/client_secret.json"), $env:MYNAI_GOOGLE_OAUTH_JSON, $utf8NoBom)
 
-      - name: Install Inno Setup
+      - name: Sign application executables when a trusted certificate is configured
+        if: github.event_name != 'pull_request' && secrets.MYNASSISTANT_SIGNING_PFX_BASE64 != '' && secrets.MYNASSISTANT_SIGNING_PFX_PASSWORD != ''
         shell: pwsh
-        run: choco install innosetup --yes --no-progress
+        env:
+          MYNASSISTANT_SIGNING_PFX_BASE64: \${{ secrets.MYNASSISTANT_SIGNING_PFX_BASE64 }}
+          MYNASSISTANT_SIGNING_PFX_PASSWORD: \${{ secrets.MYNASSISTANT_SIGNING_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $signTool = Get-ChildItem (Join-Path \${env:ProgramFiles(x86)} 'Windows Kits\\10\\bin') -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\\\x64\\\\signtool\.exe
 
       - name: Compile Windows installer
         shell: pwsh
@@ -144,18 +151,26 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Inno Setup failed with exit code $LASTEXITCODE."
           }
-          if (-not (Test-Path "build/installer/MynAssistant-Setup.exe")) {
-            throw "MynAssistant-Setup.exe was not created."
+          if (-not (Test-Path "build/installer/MynAssistant-Setup-0.1.2.exe")) {
+            throw "MynAssistant-Setup-0.1.2.exe was not created."
           }
 
-      - name: Upload Windows installer as Actions artifact
-        id: upload_installer
+      - name: Sign installer when a trusted certificate is configured
+        if: github.event_name != 'pull_request' && secrets.MYNASSISTANT_SIGNING_PFX_BASE64 != '' && secrets.MYNASSISTANT_SIGNING_PFX_PASSWORD != ''
+        shell: pwsh
+        env:
+          MYNASSISTANT_SIGNING_PFX_BASE64: \${{ secrets.MYNASSISTANT_SIGNING_PFX_BASE64 }}
+          MYNASSISTANT_SIGNING_PFX_PASSWORD: \${{ secrets.MYNASSISTANT_SIGNING_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $signTool = Get-ChildItem (Join-Path \${env:ProgramFiles(x86)} 'Windows Kits\\10\\bin') -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\\\x64\\\\signtool\.exe        id: upload_installer
         if: github.event_name != 'pull_request'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: MynAssistant-Windows-Installer
-          path: build/installer/MynAssistant-Setup.exe
+          name: MynAssistant-Windows-Installer-0.1.2
+          path: build/installer/MynAssistant-Setup-0.1.2.exe
           if-no-files-found: error
           retention-days: 7
 
@@ -175,7 +190,7 @@ jobs:
             Accept = "application/vnd.github+json"
             "X-GitHub-Api-Version" = "2022-11-28"
           }
-          $tag = "mynassistant-installer-build-$env:GH_RUN_NUMBER"
+          $tag = "mynassistant-installer-v0.1.2-build-$env:GH_RUN_NUMBER"
           $releaseUrl = "$api/releases/tags/$tag"
           $release = $null
 
@@ -204,14 +219,14 @@ jobs:
           } else {
             $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
             foreach ($asset in $assets) {
-              if ($asset.name -eq "MynAssistant-Setup.exe") {
+              if ($asset.name -eq "MynAssistant-Setup-0.1.2.exe") {
                 Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
               }
             }
           }
 
-          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup.exe").Path
-          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup.exe"
+          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup-0.1.2.exe").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup-0.1.2.exe"
           $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
           if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
             throw "Release asset upload could not be verified."
@@ -219,3 +234,839 @@ jobs:
 
           Write-Host "Installer fallback release published: $($release.html_url)"
           Write-Host "Verified installer download URL: $($uploadedAsset.browser_download_url)"
+ } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signTool) { throw 'Windows SDK SignTool was not found.' }
+
+          New-Item -ItemType Directory -Force -Path build/signing | Out-Null
+          $pfxPath = Join-Path (Get-Location).Path 'build/signing/MynKralus-code-signing.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:MYNASSISTANT_SIGNING_PFX_BASE64))
+
+          $files = @(
+            'build/publish/MynAssistant.exe',
+            'build/publish/MynAssistantDesktopBridge.exe',
+            'build/agent-publish/MynAgent.exe'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path $file)) { throw "Executable to sign is missing: $file" }
+            & $signTool.FullName sign /f $pfxPath /p $env:MYNASSISTANT_SIGNING_PFX_PASSWORD /fd SHA256 /tr https://timestamp.digicert.com /td SHA256 $file
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $file (exit code $LASTEXITCODE)." }
+            & $signTool.FullName verify /pa /v $file
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $file." }
+            $signature = Get-AuthenticodeSignature -FilePath $file
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'MynKralus') {
+              throw "The signature for $file is not valid or the signing certificate subject does not contain MynKralus."
+            }
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Compile Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/installer | Out-Null
+          $compilerCandidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          )
+          $compiler = $compilerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $compiler) {
+            throw "Inno Setup compiler (ISCC.exe) was not found after installation."
+          }
+          & $compiler "installer/MynAI.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE."
+          }
+          if (-not (Test-Path "build/installer/MynAssistant-Setup-0.1.2.exe")) {
+            throw "MynAssistant-Setup-0.1.2.exe was not created."
+          }
+
+      - name: Require verified MynKralus signature for production release
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          MYNASSISTANT_SIGNING_PFX_BASE64: \${{ secrets.MYNASSISTANT_SIGNING_PFX_BASE64 }}
+          MYNASSISTANT_SIGNING_PFX_PASSWORD: \${{ secrets.MYNASSISTANT_SIGNING_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:MYNASSISTANT_SIGNING_PFX_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:MYNASSISTANT_SIGNING_PFX_PASSWORD)) {
+            throw 'Production publishing is blocked: set MYNASSISTANT_SIGNING_PFX_BASE64 and MYNASSISTANT_SIGNING_PFX_PASSWORD to a valid trusted code-signing certificate whose subject contains MynKralus. Metadata alone cannot change SmartScreen from Unknown publisher.'
+          }
+          $signature = Get-AuthenticodeSignature -FilePath 'build/installer/MynAssistant-Setup-0.1.2.exe'
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'MynKralus') {
+            throw "Production installer signature is not valid for MynKralus (status=$($signature.Status), subject=$($signature.SignerCertificate.Subject))."
+          }
+
+      - name: Upload Windows installer as Actions artifact
+        id: upload_installer
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: MynAssistant-Windows-Installer-0.1.2
+          path: build/installer/MynAssistant-Setup-0.1.2.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish installer to GitHub Releases if Actions storage is unavailable
+        if: github.event_name != 'pull_request' && steps.upload_installer.outcome == 'failure'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_SHA: ${{ github.sha }}
+          GH_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $api = "https://api.github.com/repos/$env:GH_REPOSITORY"
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $tag = "mynassistant-installer-v0.1.2-build-$env:GH_RUN_NUMBER"
+          $releaseUrl = "$api/releases/tags/$tag"
+          $release = $null
+
+          try {
+            $release = Invoke-RestMethod -Method Get -Uri $releaseUrl -Headers $headers
+          } catch {
+            $statusCode = 0
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+              $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+            if ($statusCode -ne 404) {
+              throw
+            }
+          }
+
+          if ($null -eq $release) {
+            $releaseBody = @{
+              tag_name = $tag
+              target_commitish = $env:GH_SHA
+              name = "MynAssistant Windows Installer Preview (build $env:GH_RUN_NUMBER)"
+              body = "Automated preview installer for commit $env:GH_SHA. The installer was built and validated by GitHub Actions. This prerelease is published as a fallback because Actions artifact storage was unavailable."
+              draft = $false
+              prerelease = $true
+            } | ConvertTo-Json -Depth 5
+            $release = Invoke-RestMethod -Method Post -Uri "$api/releases" -Headers $headers -ContentType "application/json" -Body $releaseBody
+          } else {
+            $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
+            foreach ($asset in $assets) {
+              if ($asset.name -eq "MynAssistant-Setup-0.1.2.exe") {
+                Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
+              }
+            }
+          }
+
+          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup-0.1.2.exe").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup-0.1.2.exe"
+          $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
+          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
+            throw "Release asset upload could not be verified."
+          }
+
+          Write-Host "Installer fallback release published: $($release.html_url)"
+          Write-Host "Verified installer download URL: $($uploadedAsset.browser_download_url)"
+ } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signTool) { throw 'Windows SDK SignTool was not found.' }
+          $pfxPath = Join-Path (Get-Location).Path 'build/signing/MynKralus-code-signing.pfx'
+          $installerPath = (Resolve-Path 'build/installer/MynAssistant-Setup-0.1.2.exe').Path
+          & $signTool.FullName sign /f $pfxPath /p $env:MYNASSISTANT_SIGNING_PFX_PASSWORD /fd SHA256 /tr https://timestamp.digicert.com /td SHA256 $installerPath
+          if ($LASTEXITCODE -ne 0) { throw "Installer signing failed (exit code $LASTEXITCODE)." }
+          & $signTool.FullName verify /pa /v $installerPath
+          if ($LASTEXITCODE -ne 0) { throw 'Installer signature verification failed.' }
+          $signature = Get-AuthenticodeSignature -FilePath $installerPath
+          if ($signature.Status -ne 'Valid') { throw "Installer signature status was $($signature.Status)." }
+          if ($signature.SignerCertificate.Subject -notmatch 'MynKralus') {
+            throw "Installer signer '$($signature.SignerCertificate.Subject)' does not match requested publisher MynKralus."
+          }
+          Write-Host "Verified signed installer publisher: $($signature.SignerCertificate.Subject)"
+
+      - name: Smoke test installed package and MynAgent IPC
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installerPath = (Resolve-Path 'build/installer/MynAssistant-Setup-0.1.2.exe').Path
+          $installerSource = Get-Content 'installer/MynAI.iss' -Raw
+          if ($installerSource -notmatch '(?m)^UsePreviousAppDir=no\\s*        id: upload_installer
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: MynAssistant-Windows-Installer-0.1.2
+          path: build/installer/MynAssistant-Setup-0.1.2.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish installer to GitHub Releases if Actions storage is unavailable
+        if: github.event_name != 'pull_request' && steps.upload_installer.outcome == 'failure'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_SHA: ${{ github.sha }}
+          GH_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $api = "https://api.github.com/repos/$env:GH_REPOSITORY"
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $tag = "mynassistant-installer-v0.1.2-build-$env:GH_RUN_NUMBER"
+          $releaseUrl = "$api/releases/tags/$tag"
+          $release = $null
+
+          try {
+            $release = Invoke-RestMethod -Method Get -Uri $releaseUrl -Headers $headers
+          } catch {
+            $statusCode = 0
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+              $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+            if ($statusCode -ne 404) {
+              throw
+            }
+          }
+
+          if ($null -eq $release) {
+            $releaseBody = @{
+              tag_name = $tag
+              target_commitish = $env:GH_SHA
+              name = "MynAssistant Windows Installer Preview (build $env:GH_RUN_NUMBER)"
+              body = "Automated preview installer for commit $env:GH_SHA. The installer was built and validated by GitHub Actions. This prerelease is published as a fallback because Actions artifact storage was unavailable."
+              draft = $false
+              prerelease = $true
+            } | ConvertTo-Json -Depth 5
+            $release = Invoke-RestMethod -Method Post -Uri "$api/releases" -Headers $headers -ContentType "application/json" -Body $releaseBody
+          } else {
+            $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
+            foreach ($asset in $assets) {
+              if ($asset.name -eq "MynAssistant-Setup-0.1.2.exe") {
+                Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
+              }
+            }
+          }
+
+          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup-0.1.2.exe").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup-0.1.2.exe"
+          $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
+          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
+            throw "Release asset upload could not be verified."
+          }
+
+          Write-Host "Installer fallback release published: $($release.html_url)"
+          Write-Host "Verified installer download URL: $($uploadedAsset.browser_download_url)"
+ } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signTool) { throw 'Windows SDK SignTool was not found.' }
+
+          New-Item -ItemType Directory -Force -Path build/signing | Out-Null
+          $pfxPath = Join-Path (Get-Location).Path 'build/signing/MynKralus-code-signing.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:MYNASSISTANT_SIGNING_PFX_BASE64))
+
+          $files = @(
+            'build/publish/MynAssistant.exe',
+            'build/publish/MynAssistantDesktopBridge.exe',
+            'build/agent-publish/MynAgent.exe'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path $file)) { throw "Executable to sign is missing: $file" }
+            & $signTool.FullName sign /f $pfxPath /p $env:MYNASSISTANT_SIGNING_PFX_PASSWORD /fd SHA256 /tr https://timestamp.digicert.com /td SHA256 $file
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $file (exit code $LASTEXITCODE)." }
+            & $signTool.FullName verify /pa /v $file
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $file." }
+            $signature = Get-AuthenticodeSignature -FilePath $file
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'MynKralus') {
+              throw "The signature for $file is not valid or the signing certificate subject does not contain MynKralus."
+            }
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Compile Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/installer | Out-Null
+          $compilerCandidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          )
+          $compiler = $compilerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $compiler) {
+            throw "Inno Setup compiler (ISCC.exe) was not found after installation."
+          }
+          & $compiler "installer/MynAI.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE."
+          }
+          if (-not (Test-Path "build/installer/MynAssistant-Setup-0.1.2.exe")) {
+            throw "MynAssistant-Setup-0.1.2.exe was not created."
+          }
+
+      - name: Upload Windows installer as Actions artifact
+        id: upload_installer
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: MynAssistant-Windows-Installer-0.1.2
+          path: build/installer/MynAssistant-Setup-0.1.2.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish installer to GitHub Releases if Actions storage is unavailable
+        if: github.event_name != 'pull_request' && steps.upload_installer.outcome == 'failure'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_SHA: ${{ github.sha }}
+          GH_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $api = "https://api.github.com/repos/$env:GH_REPOSITORY"
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $tag = "mynassistant-installer-v0.1.2-build-$env:GH_RUN_NUMBER"
+          $releaseUrl = "$api/releases/tags/$tag"
+          $release = $null
+
+          try {
+            $release = Invoke-RestMethod -Method Get -Uri $releaseUrl -Headers $headers
+          } catch {
+            $statusCode = 0
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+              $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+            if ($statusCode -ne 404) {
+              throw
+            }
+          }
+
+          if ($null -eq $release) {
+            $releaseBody = @{
+              tag_name = $tag
+              target_commitish = $env:GH_SHA
+              name = "MynAssistant Windows Installer Preview (build $env:GH_RUN_NUMBER)"
+              body = "Automated preview installer for commit $env:GH_SHA. The installer was built and validated by GitHub Actions. This prerelease is published as a fallback because Actions artifact storage was unavailable."
+              draft = $false
+              prerelease = $true
+            } | ConvertTo-Json -Depth 5
+            $release = Invoke-RestMethod -Method Post -Uri "$api/releases" -Headers $headers -ContentType "application/json" -Body $releaseBody
+          } else {
+            $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
+            foreach ($asset in $assets) {
+              if ($asset.name -eq "MynAssistant-Setup-0.1.2.exe") {
+                Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
+              }
+            }
+          }
+
+          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup-0.1.2.exe").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup-0.1.2.exe"
+          $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
+          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
+            throw "Release asset upload could not be verified."
+          }
+
+          Write-Host "Installer fallback release published: $($release.html_url)"
+          Write-Host "Verified installer download URL: $($uploadedAsset.browser_download_url)"
+) {
+            throw 'Installer must not silently reuse a previous install directory.'
+          }
+          if ($installerSource -notmatch '(?m)^DisableDirPage=no\\s*        id: upload_installer
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: MynAssistant-Windows-Installer-0.1.2
+          path: build/installer/MynAssistant-Setup-0.1.2.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish installer to GitHub Releases if Actions storage is unavailable
+        if: github.event_name != 'pull_request' && steps.upload_installer.outcome == 'failure'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_SHA: ${{ github.sha }}
+          GH_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $api = "https://api.github.com/repos/$env:GH_REPOSITORY"
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $tag = "mynassistant-installer-v0.1.2-build-$env:GH_RUN_NUMBER"
+          $releaseUrl = "$api/releases/tags/$tag"
+          $release = $null
+
+          try {
+            $release = Invoke-RestMethod -Method Get -Uri $releaseUrl -Headers $headers
+          } catch {
+            $statusCode = 0
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+              $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+            if ($statusCode -ne 404) {
+              throw
+            }
+          }
+
+          if ($null -eq $release) {
+            $releaseBody = @{
+              tag_name = $tag
+              target_commitish = $env:GH_SHA
+              name = "MynAssistant Windows Installer Preview (build $env:GH_RUN_NUMBER)"
+              body = "Automated preview installer for commit $env:GH_SHA. The installer was built and validated by GitHub Actions. This prerelease is published as a fallback because Actions artifact storage was unavailable."
+              draft = $false
+              prerelease = $true
+            } | ConvertTo-Json -Depth 5
+            $release = Invoke-RestMethod -Method Post -Uri "$api/releases" -Headers $headers -ContentType "application/json" -Body $releaseBody
+          } else {
+            $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
+            foreach ($asset in $assets) {
+              if ($asset.name -eq "MynAssistant-Setup-0.1.2.exe") {
+                Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
+              }
+            }
+          }
+
+          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup-0.1.2.exe").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup-0.1.2.exe"
+          $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
+          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
+            throw "Release asset upload could not be verified."
+          }
+
+          Write-Host "Installer fallback release published: $($release.html_url)"
+          Write-Host "Verified installer download URL: $($uploadedAsset.browser_download_url)"
+ } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signTool) { throw 'Windows SDK SignTool was not found.' }
+
+          New-Item -ItemType Directory -Force -Path build/signing | Out-Null
+          $pfxPath = Join-Path (Get-Location).Path 'build/signing/MynKralus-code-signing.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:MYNASSISTANT_SIGNING_PFX_BASE64))
+
+          $files = @(
+            'build/publish/MynAssistant.exe',
+            'build/publish/MynAssistantDesktopBridge.exe',
+            'build/agent-publish/MynAgent.exe'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path $file)) { throw "Executable to sign is missing: $file" }
+            & $signTool.FullName sign /f $pfxPath /p $env:MYNASSISTANT_SIGNING_PFX_PASSWORD /fd SHA256 /tr https://timestamp.digicert.com /td SHA256 $file
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $file (exit code $LASTEXITCODE)." }
+            & $signTool.FullName verify /pa /v $file
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $file." }
+            $signature = Get-AuthenticodeSignature -FilePath $file
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'MynKralus') {
+              throw "The signature for $file is not valid or the signing certificate subject does not contain MynKralus."
+            }
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Compile Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/installer | Out-Null
+          $compilerCandidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          )
+          $compiler = $compilerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $compiler) {
+            throw "Inno Setup compiler (ISCC.exe) was not found after installation."
+          }
+          & $compiler "installer/MynAI.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE."
+          }
+          if (-not (Test-Path "build/installer/MynAssistant-Setup-0.1.2.exe")) {
+            throw "MynAssistant-Setup-0.1.2.exe was not created."
+          }
+
+      - name: Upload Windows installer as Actions artifact
+        id: upload_installer
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: MynAssistant-Windows-Installer-0.1.2
+          path: build/installer/MynAssistant-Setup-0.1.2.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish installer to GitHub Releases if Actions storage is unavailable
+        if: github.event_name != 'pull_request' && steps.upload_installer.outcome == 'failure'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_SHA: ${{ github.sha }}
+          GH_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $api = "https://api.github.com/repos/$env:GH_REPOSITORY"
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $tag = "mynassistant-installer-v0.1.2-build-$env:GH_RUN_NUMBER"
+          $releaseUrl = "$api/releases/tags/$tag"
+          $release = $null
+
+          try {
+            $release = Invoke-RestMethod -Method Get -Uri $releaseUrl -Headers $headers
+          } catch {
+            $statusCode = 0
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+              $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+            if ($statusCode -ne 404) {
+              throw
+            }
+          }
+
+          if ($null -eq $release) {
+            $releaseBody = @{
+              tag_name = $tag
+              target_commitish = $env:GH_SHA
+              name = "MynAssistant Windows Installer Preview (build $env:GH_RUN_NUMBER)"
+              body = "Automated preview installer for commit $env:GH_SHA. The installer was built and validated by GitHub Actions. This prerelease is published as a fallback because Actions artifact storage was unavailable."
+              draft = $false
+              prerelease = $true
+            } | ConvertTo-Json -Depth 5
+            $release = Invoke-RestMethod -Method Post -Uri "$api/releases" -Headers $headers -ContentType "application/json" -Body $releaseBody
+          } else {
+            $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
+            foreach ($asset in $assets) {
+              if ($asset.name -eq "MynAssistant-Setup-0.1.2.exe") {
+                Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
+              }
+            }
+          }
+
+          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup-0.1.2.exe").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup-0.1.2.exe"
+          $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
+          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
+            throw "Release asset upload could not be verified."
+          }
+
+          Write-Host "Installer fallback release published: $($release.html_url)"
+          Write-Host "Verified installer download URL: $($uploadedAsset.browser_download_url)"
+) {
+            throw 'Installer must show the destination-folder selection page.'
+          }
+
+          $setupInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($installerPath)
+          if ($setupInfo.CompanyName -ne 'MynKralus') {
+            throw "Installer CompanyName metadata is '$($setupInfo.CompanyName)', expected MynKralus."
+          }
+          if ($setupInfo.ProductName -ne 'MynAssistant') {
+            throw "Installer ProductName metadata is '$($setupInfo.ProductName)', expected MynAssistant."
+          }
+
+          $signature = Get-AuthenticodeSignature -FilePath $installerPath
+          if ($signature.Status -eq 'Valid') {
+            if ($signature.SignerCertificate.Subject -notmatch 'MynKralus') {
+              throw "Signed installer publisher is '$($signature.SignerCertificate.Subject)', not MynKralus."
+            }
+            Write-Host "Installer Authenticode signature is valid: $($signature.SignerCertificate.Subject)"
+          } else {
+            Write-Warning "Installer signature status is $($signature.Status). This unsigned build cannot show a verified SmartScreen publisher."
+          }
+
+          $installDir = Join-Path (Get-Location).Path 'build/install-smoke'
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+          & $installerPath /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installDir"
+          if ($LASTEXITCODE -ne 0) { throw "Silent install smoke test failed with exit code $LASTEXITCODE." }
+
+          $requiredFiles = @(
+            'MynAssistant.exe',
+            'MynAssistantDesktopBridge.exe',
+            'Agent\\MynAgent.exe',
+            'Agent\\MynAgent.dll',
+            'Agent\\MynAgent.deps.json',
+            'Agent\\MynAgent.runtimeconfig.json'
+          )
+          foreach ($relativePath in $requiredFiles) {
+            $fullPath = Join-Path $installDir $relativePath
+            if (-not (Test-Path $fullPath -PathType Leaf)) {
+              throw "Installed package is missing required file: $relativePath"
+            }
+            Write-Host "Verified installed file: $relativePath"
+          }
+
+          $appInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $installDir 'MynAssistant.exe'))
+          if ($appInfo.CompanyName -ne 'MynKralus' -or $appInfo.ProductName -ne 'MynAssistant') {
+            throw "Main EXE metadata mismatch: Company='$($appInfo.CompanyName)' Product='$($appInfo.ProductName)'."
+          }
+          $agentInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $installDir 'Agent\\MynAgent.exe'))
+          if ($agentInfo.CompanyName -ne 'MynKralus' -or $agentInfo.ProductName -ne 'MynAssistant') {
+            throw "Agent EXE metadata mismatch: Company='$($agentInfo.CompanyName)' Product='$($agentInfo.ProductName)'."
+          }
+
+          $agentExe = Join-Path $installDir 'Agent\\MynAgent.exe'
+          $agentProcess = $null
+          $pipe = $null
+          try {
+            $agentProcess = Start-Process -FilePath $agentExe -WorkingDirectory (Split-Path $agentExe) -PassThru -WindowStyle Hidden
+            $pipeConnected = $false
+            for ($attempt = 0; $attempt -lt 20; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              $agentProcess.Refresh()
+              if ($agentProcess.HasExited) {
+                throw "MynAgent exited during startup with code $($agentProcess.ExitCode)."
+              }
+              $pipe = [System.IO.Pipes.NamedPipeClientStream]::new('.', 'MynAI.Agent', [System.IO.Pipes.PipeDirection]::InOut)
+              try {
+                $pipe.Connect(500)
+                if ($pipe.IsConnected) { $pipeConnected = $true; break }
+              } catch {
+              } finally {
+                if ($pipe) { $pipe.Dispose(); $pipe = $null }
+              }
+            }
+            if (-not $pipeConnected) {
+              throw 'MynAgent process stayed alive but the MynAI.Agent IPC pipe never became available.'
+            }
+            Write-Host 'Verified MynAgent process and named-pipe IPC endpoint.'
+          } finally {
+            if ($pipe) { $pipe.Dispose() }
+            if ($agentProcess) {
+              $agentProcess.Refresh()
+              if (-not $agentProcess.HasExited) {
+                Stop-Process -Id $agentProcess.Id -Force -ErrorAction SilentlyContinue
+                $agentProcess.WaitForExit()
+              }
+            }
+          }
+
+          Write-Host 'Installer smoke test passed: install path, branding metadata, MynAgent files, and IPC startup verified.'
+
+      - name: Upload Windows installer as Actions artifact
+        id: upload_installer
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: MynAssistant-Windows-Installer-0.1.2
+          path: build/installer/MynAssistant-Setup-0.1.2.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish installer to GitHub Releases if Actions storage is unavailable
+        if: github.event_name != 'pull_request' && steps.upload_installer.outcome == 'failure'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_SHA: ${{ github.sha }}
+          GH_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $api = "https://api.github.com/repos/$env:GH_REPOSITORY"
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $tag = "mynassistant-installer-v0.1.2-build-$env:GH_RUN_NUMBER"
+          $releaseUrl = "$api/releases/tags/$tag"
+          $release = $null
+
+          try {
+            $release = Invoke-RestMethod -Method Get -Uri $releaseUrl -Headers $headers
+          } catch {
+            $statusCode = 0
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+              $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+            if ($statusCode -ne 404) {
+              throw
+            }
+          }
+
+          if ($null -eq $release) {
+            $releaseBody = @{
+              tag_name = $tag
+              target_commitish = $env:GH_SHA
+              name = "MynAssistant Windows Installer Preview (build $env:GH_RUN_NUMBER)"
+              body = "Automated preview installer for commit $env:GH_SHA. The installer was built and validated by GitHub Actions. This prerelease is published as a fallback because Actions artifact storage was unavailable."
+              draft = $false
+              prerelease = $true
+            } | ConvertTo-Json -Depth 5
+            $release = Invoke-RestMethod -Method Post -Uri "$api/releases" -Headers $headers -ContentType "application/json" -Body $releaseBody
+          } else {
+            $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
+            foreach ($asset in $assets) {
+              if ($asset.name -eq "MynAssistant-Setup-0.1.2.exe") {
+                Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
+              }
+            }
+          }
+
+          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup-0.1.2.exe").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup-0.1.2.exe"
+          $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
+          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
+            throw "Release asset upload could not be verified."
+          }
+
+          Write-Host "Installer fallback release published: $($release.html_url)"
+          Write-Host "Verified installer download URL: $($uploadedAsset.browser_download_url)"
+ } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signTool) { throw 'Windows SDK SignTool was not found.' }
+
+          New-Item -ItemType Directory -Force -Path build/signing | Out-Null
+          $pfxPath = Join-Path (Get-Location).Path 'build/signing/MynKralus-code-signing.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:MYNASSISTANT_SIGNING_PFX_BASE64))
+
+          $files = @(
+            'build/publish/MynAssistant.exe',
+            'build/publish/MynAssistantDesktopBridge.exe',
+            'build/agent-publish/MynAgent.exe'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path $file)) { throw "Executable to sign is missing: $file" }
+            & $signTool.FullName sign /f $pfxPath /p $env:MYNASSISTANT_SIGNING_PFX_PASSWORD /fd SHA256 /tr https://timestamp.digicert.com /td SHA256 $file
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $file (exit code $LASTEXITCODE)." }
+            & $signTool.FullName verify /pa /v $file
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $file." }
+            $signature = Get-AuthenticodeSignature -FilePath $file
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'MynKralus') {
+              throw "The signature for $file is not valid or the signing certificate subject does not contain MynKralus."
+            }
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Compile Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/installer | Out-Null
+          $compilerCandidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          )
+          $compiler = $compilerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $compiler) {
+            throw "Inno Setup compiler (ISCC.exe) was not found after installation."
+          }
+          & $compiler "installer/MynAI.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE."
+          }
+          if (-not (Test-Path "build/installer/MynAssistant-Setup-0.1.2.exe")) {
+            throw "MynAssistant-Setup-0.1.2.exe was not created."
+          }
+
+      - name: Upload Windows installer as Actions artifact
+        id: upload_installer
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: MynAssistant-Windows-Installer-0.1.2
+          path: build/installer/MynAssistant-Setup-0.1.2.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish installer to GitHub Releases if Actions storage is unavailable
+        if: github.event_name != 'pull_request' && steps.upload_installer.outcome == 'failure'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_SHA: ${{ github.sha }}
+          GH_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $api = "https://api.github.com/repos/$env:GH_REPOSITORY"
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $tag = "mynassistant-installer-v0.1.2-build-$env:GH_RUN_NUMBER"
+          $releaseUrl = "$api/releases/tags/$tag"
+          $release = $null
+
+          try {
+            $release = Invoke-RestMethod -Method Get -Uri $releaseUrl -Headers $headers
+          } catch {
+            $statusCode = 0
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+              $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+            if ($statusCode -ne 404) {
+              throw
+            }
+          }
+
+          if ($null -eq $release) {
+            $releaseBody = @{
+              tag_name = $tag
+              target_commitish = $env:GH_SHA
+              name = "MynAssistant Windows Installer Preview (build $env:GH_RUN_NUMBER)"
+              body = "Automated preview installer for commit $env:GH_SHA. The installer was built and validated by GitHub Actions. This prerelease is published as a fallback because Actions artifact storage was unavailable."
+              draft = $false
+              prerelease = $true
+            } | ConvertTo-Json -Depth 5
+            $release = Invoke-RestMethod -Method Post -Uri "$api/releases" -Headers $headers -ContentType "application/json" -Body $releaseBody
+          } else {
+            $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
+            foreach ($asset in $assets) {
+              if ($asset.name -eq "MynAssistant-Setup-0.1.2.exe") {
+                Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
+              }
+            }
+          }
+
+          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup-0.1.2.exe").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup-0.1.2.exe"
+          $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
+          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
+            throw "Release asset upload could not be verified."
+          }
+
+          Write-Host "Installer fallback release published: $($release.html_url)"
+          Write-Host "Verified installer download URL: $($uploadedAsset.browser_download_url)"
+
+      - name: Remove temporary code-signing certificate
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path 'build/signing/MynKralus-code-signing.pfx') {
+            Remove-Item 'build/signing/MynKralus-code-signing.pfx' -Force
+            Write-Host 'Removed temporary signing certificate from workspace.'
+          }
