@@ -633,6 +633,11 @@ def normalize_text_command(text: str) -> str:
 
 
 
+def execute_text_command(text: str) -> str:
+    command = normalize_text_command(text)
+    if not command:
+        return "Önce bir komut yaz."
+
     if command in {
         "dosyalari listele",
         "dosya listesini iste",
@@ -643,11 +648,6 @@ def normalize_text_command(text: str) -> str:
         "dosyalari goster",
     }:
         return list_user_files()
-
-def execute_text_command(text: str) -> str:
-    command = normalize_text_command(text)
-    if not command:
-        return "Önce bir komut yaz."
 
     if command in {"sesi kapa", "sesi kapat", "sessize al", "sesi sustur", "mute"}:
         press_virtual_key(VK_VOLUME_MUTE)
