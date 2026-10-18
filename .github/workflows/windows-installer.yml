@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "fix/mynassistant-installer-smoke-tests"]
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
@@ -368,7 +368,7 @@ jobs:
           Write-Host 'Installer smoke test passed: install path, branding metadata, MynAgent files, and IPC startup verified.'
 
       - name: Require verified MynKralus signature for production release
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           MYNASSISTANT_SIGNING_PFX_BASE64: ${{ secrets.MYNASSISTANT_SIGNING_PFX_BASE64 }}
