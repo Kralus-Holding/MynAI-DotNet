@@ -86,10 +86,9 @@ def retry_transient_operation(operation, operation_name: str, initial_delay: flo
         try:
             return operation()
         except requests.RequestException as exc:
-            print(
-                f"[Ağ] {operation_name} geçici olarak başarısız: {exc}. "
-                f"{delay:.0f} saniye sonra yeniden denenecek."
-            )
+            safe_operation = str(operation_name).encode("ascii", "backslashreplace").decode("ascii")
+            safe_error = str(exc).encode("ascii", "backslashreplace").decode("ascii")
+            print(f"[Network] {safe_operation} transient failure: {safe_error}. Retry in {delay:.0f}s.")
             time.sleep(delay)
             delay = min(max_delay, delay * 2.0)
 
@@ -936,7 +935,8 @@ def run_agent() -> int:
             except requests.RequestException as exc:
                 delay = retry_delay
                 retry_delay = min(30.0, retry_delay * 2.0)
-                print(f"[Ağ] Firebase bağlantısı geçici olarak başarısız: {exc}. {delay:.0f} saniye sonra yeniden denenecek.")
+                safe_error = str(exc).encode("ascii", "backslashreplace").decode("ascii")
+                print(f"[Network] Firebase transient failure: {safe_error}. Retry in {delay:.0f}s.")
                 time.sleep(delay)
     except KeyboardInterrupt:
         print("\nAgent kapatılıyor...")
