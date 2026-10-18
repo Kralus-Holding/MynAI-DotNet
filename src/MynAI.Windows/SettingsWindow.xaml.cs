@@ -2,6 +2,7 @@
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Color = System.Windows.Media.Color;
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -43,11 +44,16 @@ public partial class SettingsWindow : Window
             };
 
         _agentTimer.Tick +=
-            (_, _) => UpdateAgentStatus();
+            (_, _) =>
+            {
+                UpdateAgentStatus();
+                UpdateDesktopBridgeStatus();
+            };
 
         _agentTimer.Start();
 
         UpdateAgentStatus();
+        UpdateDesktopBridgeStatus();
     }
 
     private void LoadSettings()
@@ -63,6 +69,9 @@ public partial class SettingsWindow : Window
 
         AgentStartupGeneralCheckBox.IsChecked =
             AgentStartupManager.IsEnabled();
+
+        DesktopBridgeStartupCheckBox.IsChecked =
+            DesktopBridgeStartupManager.IsEnabled();
 
         MicrophoneCheckBox.IsChecked =
             settings.MicrophoneEnabled;
@@ -210,6 +219,91 @@ public partial class SettingsWindow : Window
             AgentStartupManager
                 .TryGetAgentExecutablePath()
             ?? "Agent executable bulunamadı.";
+    }
+
+    private void UpdateDesktopBridgeStatus()
+    {
+        var running = DesktopBridgeStartupManager.IsRunning();
+        var executablePath = DesktopBridgeStartupManager.TryGetExecutablePath();
+        var oauthPath = DesktopBridgeStartupManager.GetOAuthConfigPath();
+        var hasOAuthConfig = File.Exists(oauthPath);
+
+        DesktopBridgeStatusText.Text = running
+            ? "Çalışıyor"
+            : executablePath is null
+                ? "Bridge bileşeni bulunamadı"
+                : !hasOAuthConfig
+                    ? "Google OAuth yapılandırması eksik"
+                    : "Hazır — bağlantı başlatılmadı";
+
+        DesktopBridgeStatusText.Foreground =
+            new SolidColorBrush(
+                running
+                    ? Colors.LightGreen
+                    : executablePath is not null && hasOAuthConfig
+                        ? Colors.Goldenrod
+                        : Colors.IndianRed);
+
+        DesktopBridgeStatusDot.Fill =
+            new SolidColorBrush(
+                running
+                    ? Colors.LimeGreen
+                    : executablePath is not null && hasOAuthConfig
+                        ? Colors.Goldenrod
+                        : Colors.DimGray);
+
+        DesktopBridgeExecutablePathText.Text =
+            executablePath ?? "MynAssistantDesktopBridge.exe bulunamadı.";
+
+        DesktopBridgeOAuthPathText.Text = hasOAuthConfig
+            ? "Google OAuth yapılandırması bulundu."
+            : $"OAuth dosyası bulunamadı: {oauthPath}";
+    }
+
+    private void StartDesktopBridge_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        try
+        {
+            DesktopBridgeStartupManager.StartAgent();
+            UpdateDesktopBridgeStatus();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Telefon-PC bağlantısı başlatılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "MynAI",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private void StopDesktopBridge_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        DesktopBridgeStartupManager.StopAgent();
+        UpdateDesktopBridgeStatus();
+    }
+
+    private void RestartDesktopBridge_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        try
+        {
+            DesktopBridgeStartupManager.RestartAgent();
+            UpdateDesktopBridgeStatus();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Telefon-PC bağlantısı yeniden başlatılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "MynAI",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     private void StartAgent_Click(
@@ -425,11 +519,20 @@ public partial class SettingsWindow : Window
             AgentStartupManager.SetEnabled(
                 startAgent);
 
+            var startDesktopBridge =
+                DesktopBridgeStartupCheckBox.IsChecked == true;
+
+            DesktopBridgeStartupManager.SetEnabled(
+                startDesktopBridge);
+
             var settings =
                 _settingsStore.Load();
 
             settings.StartAgentWithWindows =
                 startAgent;
+
+            settings.StartDesktopBridgeWithWindows =
+                startDesktopBridge;
 
             settings.WindowsNotifications =
                 NotificationsCheckBox.IsChecked == true;

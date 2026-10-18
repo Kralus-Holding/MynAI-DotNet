@@ -31,3 +31,10 @@ secrets/
 *.pem
 *.p12
 *.key
+
+
+# Packaged application outputs
+build/
+dist/
+tools/MynAssistantDesktopBridge/__pycache__/
+tools/MynAssistantDesktopBridge/tests/__pycache__/
