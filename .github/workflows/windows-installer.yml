@@ -295,13 +295,32 @@ jobs:
           $agentProcess = $null
           $pipe = $null
           try {
-            $agentProcess = Start-Process -FilePath $agentExe -WorkingDirectory (Split-Path $agentExe) -PassThru -WindowStyle Hidden
+            # Do not launch Agent from the test script: the installer itself must have started it.
+            for ($attempt = 0; $attempt -lt 20; $attempt++) {
+              $agentProcess = Get-Process -Name 'MynAgent' -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($agentProcess) { break }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $agentProcess) {
+              throw 'Installer completed but did not start the MynAgent background process.'
+            }
+
+            $agentProcess.Refresh()
+            if ($agentProcess.HasExited) {
+              throw "MynAgent exited immediately after install with code $($agentProcess.ExitCode)."
+            }
+
+            $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $($agentProcess.Id)"
+            if ($processInfo.ExecutablePath -ne $agentExe) {
+              throw "The running MynAgent process is not from the install directory. Expected '$agentExe', got '$($processInfo.ExecutablePath)'."
+            }
+            Write-Host "Verified installer-started MynAgent PID=$($agentProcess.Id), path=$($processInfo.ExecutablePath)"
+
             $pipeConnected = $false
             for ($attempt = 0; $attempt -lt 20; $attempt++) {
-              Start-Sleep -Milliseconds 500
               $agentProcess.Refresh()
               if ($agentProcess.HasExited) {
-                throw "MynAgent exited during startup with code $($agentProcess.ExitCode)."
+                throw "MynAgent exited before IPC became ready with code $($agentProcess.ExitCode)."
               }
               $pipe = [System.IO.Pipes.NamedPipeClientStream]::new('.', 'MynAI.Agent', [System.IO.Pipes.PipeDirection]::InOut)
               try {
@@ -311,11 +330,12 @@ jobs:
               } finally {
                 if ($pipe) { $pipe.Dispose(); $pipe = $null }
               }
+              Start-Sleep -Milliseconds 250
             }
             if (-not $pipeConnected) {
-              throw 'MynAgent process stayed alive but the MynAI.Agent IPC pipe never became available.'
+              throw 'Installer started MynAgent but the MynAI.Agent IPC endpoint never became available.'
             }
-            Write-Host 'Verified MynAgent process and named-pipe IPC endpoint.'
+            Write-Host 'Verified MynAgent named-pipe IPC endpoint.'
           } finally {
             if ($pipe) { $pipe.Dispose() }
             if ($agentProcess) {
