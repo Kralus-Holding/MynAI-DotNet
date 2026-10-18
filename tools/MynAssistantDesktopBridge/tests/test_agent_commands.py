@@ -64,7 +64,7 @@ class AndroidPhoneDiscoveryTests(unittest.TestCase):
                     "name": {"stringValue": "Pixel Test"},
                     "platform": {"stringValue": "Android"},
                     "status": {"stringValue": "online"},
-                    "lastSeenAt": {"timestampValue": "2026-10-18T10:00:00Z"},
+                    "lastSeenAt": {"timestampValue": agent.utc_now()},
                 },
             }},
             {"document": {
@@ -97,6 +97,26 @@ class AndroidPhoneDiscoveryTests(unittest.TestCase):
         self.assertEqual(owner_filter["value"]["stringValue"], "firebase-user-123")
         self.assertEqual(query["limit"], 100)
 
+
+    @patch.object(agent.requests, "post")
+    def test_stale_android_device_is_reported_offline(self, post):
+        post.return_value = FakeResponse(200, [
+            {"document": {
+                "name": "projects/myncloud-24/databases/(default)/documents/devices/android-stale-phone",
+                "fields": {
+                    "ownerId": {"stringValue": "firebase-user-123"},
+                    "name": {"stringValue": "Stale phone"},
+                    "platform": {"stringValue": "Android"},
+                    "status": {"stringValue": "online"},
+                    "lastSeenAt": {"timestampValue": "2000-01-01T00:00:00Z"},
+                },
+            }},
+        ])
+
+        phones = agent.fetch_android_phone_devices(FakeSession())
+
+        self.assertEqual(len(phones), 1)
+        self.assertEqual(phones[0]["status"], "offline")
 
     @patch.object(agent, "fetch_android_phone_devices")
     def test_snapshot_includes_account_identity_and_writes_atomically(self, fetch_devices):
@@ -163,9 +183,9 @@ class OAuthScopeTests(unittest.TestCase):
         self.assertEqual(
             agent.SCOPES,
             [
+                "openid",
                 "https://www.googleapis.com/auth/userinfo.email",
                 "https://www.googleapis.com/auth/userinfo.profile",
-                "openid",
             ],
         )
 
