@@ -136,6 +136,18 @@ class CommandClaimTests(unittest.TestCase):
             agent.claim_command(self.session, self.document)
 
 
+class OAuthScopeTests(unittest.TestCase):
+    def test_google_sign_in_uses_canonical_scope_uris(self):
+        self.assertEqual(
+            agent.SCOPES,
+            [
+                "https://www.googleapis.com/auth/userinfo.email",
+                "https://www.googleapis.com/auth/userinfo.profile",
+                "openid",
+            ],
+        )
+
+
 class OAuthConfigPathTests(unittest.TestCase):
     def _make_config_tree(self, root: Path):
         install_dir = root / "install"
