@@ -101,7 +101,7 @@ public static class DesktopBridgeStartupManager
         if (executablePath is null)
         {
             throw new FileNotFoundException(
-                $"{ExecutableName} bulunamadı. MynAI kurulumunu onar veya yeniden yükle.");
+                $"{ExecutableName} bulunamadı. MynAssistant kurulumunu onar veya yeniden yükle.");
         }
 
         var oauthPath = GetOAuthConfigPath();
