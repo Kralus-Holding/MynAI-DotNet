@@ -88,6 +88,19 @@ public partial class MainWindow : Window
         RoutedEventArgs e)
     {
         DockNormal();
+
+        try
+        {
+            // Start the packaged Agent when MynAssistant launches; the installer checkbox is optional.
+            AgentStartupManager.StartAgent();
+        }
+        catch (Exception ex)
+        {
+            AgentStartupManager.LogStartupFailure(
+                "Automatic Agent startup failed",
+                ex);
+        }
+
         await RefreshTasksAsync();
     }
 
