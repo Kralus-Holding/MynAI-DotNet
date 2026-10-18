@@ -236,7 +236,9 @@ jobs:
             throw 'The settings UI still contains an old MynAI product label.'
           }
           $installerSource = Get-Content 'installer/MynAI.iss' -Raw
-          if ($installerSource -notmatch '(?m)^UsePreviousAppDir=yes\s*
+          if ($installerSource -notmatch '(?m)^UsePreviousAppDir=yes\s*$') {
+            throw 'Installer must preserve the previous install location during upgrades.'
+          }
           if ($installerSource -notmatch '(?m)^DisableDirPage=no\s*$') {
             throw 'Installer must show the destination-folder selection page.'
           }
