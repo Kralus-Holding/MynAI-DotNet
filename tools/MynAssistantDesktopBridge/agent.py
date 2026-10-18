@@ -575,12 +575,74 @@ def press_virtual_key(vk: int, repeat: int = 1) -> None:
         user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
 
 
+
+def list_user_files(home: Path | None = None, max_entries_per_folder: int = 15) -> str:
+    """Return a bounded, non-recursive listing of the user's common folders."""
+    root = home or Path.home()
+    targets = (
+        ("Masaüstü", (root / "Desktop", root / "OneDrive" / "Desktop")),
+        ("Belgeler", (root / "Documents", root / "OneDrive" / "Documents")),
+        ("İndirilenler", (root / "Downloads", root / "OneDrive" / "Downloads")),
+    )
+    limit = max(1, min(int(max_entries_per_folder), 20))
+    sections = []
+
+    for label, candidates in targets:
+        directory = next((candidate for candidate in candidates if candidate.is_dir()), None)
+        if directory is None:
+            continue
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            sections.append(f"{label}: klasör okunamadı.")
+            continue
+
+        def entry_sort_key(entry: Path) -> tuple[bool, str]:
+            try:
+                is_directory = entry.is_dir()
+            except OSError:
+                is_directory = False
+            return (not is_directory, entry.name.casefold())
+
+        entries.sort(key=entry_sort_key)
+        lines = [f"{label} ({directory}):"]
+        if not entries:
+            lines.append("  (boş)")
+        else:
+            for entry in entries[:limit]:
+                try:
+                    kind = "Klasör" if entry.is_dir() else "Dosya"
+                except OSError:
+                    kind = "Öğe"
+                lines.append(f"  [{kind}] {entry.name}")
+            if len(entries) > limit:
+                lines.append(f"  … ve {len(entries) - limit} öğe daha")
+        sections.append("\n".join(lines))
+
+    if not sections:
+        return "Masaüstü, Belgeler veya İndirilenler klasörü bulunamadı."
+    result = "\n\n".join(sections)
+    return result if len(result) <= 6500 else result[:6450] + "\n… liste kısaltıldı."
+
+
 def normalize_text_command(text: str) -> str:
     normalized = unicodedata.normalize("NFKD", text.casefold())
     normalized = "".join(char for char in normalized if not unicodedata.combining(char))
     normalized = normalized.replace("ı", "i")
     return " ".join(normalized.split())
 
+
+
+    if command in {
+        "dosyalari listele",
+        "dosya listesini iste",
+        "dosya listesini goster",
+        "bilgisayar dosyalarini listele",
+        "bilgisayar dosyalarini goster",
+        "bilgisayarin dosyalarini listele",
+        "dosyalari goster",
+    }:
+        return list_user_files()
 
 def execute_text_command(text: str) -> str:
     command = normalize_text_command(text)
