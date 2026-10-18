@@ -16,8 +16,6 @@ MynAssistant Windows kurulum paketi Android MynAssistant'ın Firebase tabanlı W
 1. Google Cloud Console'da `myncloud-24` projesindeki **Desktop app / installed** OAuth istemcisinin JSON dosyasını indir.
 2. GitHub'da `MynAI-DotNet` deposunun Settings → Secrets and variables → Actions bölümünde `MYNAI_GOOGLE_OAUTH_JSON` adlı repository secret oluştur. Secret'ın değeri tam OAuth JSON içeriği olmalı. Bu dosyayı kaynak koda, ZIP'e veya sohbete ekleme.
 3. Workflow artık `main` dalında kullanılabilir: `main` dalındaki ilgili kaynak değişiklikleri otomatik build başlatır. İstersen Actions → **Build MynAssistant Windows Installer** → **Run workflow** ile manuel build de başlatabilirsin. Gerçek dağıtım için `MYNAI_GOOGLE_OAUTH_JSON` secret'ı gerekir.
-   - `main` dalına gelen değişiklikler paketi otomatik oluşturur.
-   - Actions → **Build MynAssistant Windows Installer** → **Run workflow** üzerinden uygun bir dal seçilerek manuel paket derlemesi başlatılabilir. Manuel dağıtım için de `MYNAI_GOOGLE_OAUTH_JSON` secret'ı gerekir.
 4. Workflow Windows uygulamasını, .NET Agent'ı ve köprü EXE'sini derler; `MynAssistant-Setup.exe` üretip `MynAssistant-Windows-Installer` adıyla Actions artifact'ı olarak yükler. Pull request doğrulaması sahte OAuth yapılandırması kullanır ve dağıtılabilir artifact yüklemez. Artifact saklama süresi 7 gündür.
 
 Pull request doğrulamasında gerçek OAuth dosyası yerine yalnızca test amaçlı sahte yapılandırma kullanılır; PR artifact'ı yayımlanmaz.
