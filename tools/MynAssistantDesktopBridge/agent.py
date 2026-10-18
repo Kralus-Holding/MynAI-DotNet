@@ -39,6 +39,8 @@ APP_DATA = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MynAssistan
 OAUTH_FILE_NAME = "client_secret.json"
 SESSION_FILE = APP_DATA / "session.bin"
 DEVICE_FILE = APP_DATA / "devices.json"
+PHONE_DISCOVERY_SECONDS = 8.0
+PHONE_DEVICE_CACHE_NAME = "android_devices.json"
 
 VK_VOLUME_MUTE = 0xAD
 VK_VOLUME_DOWN = 0xAE
@@ -304,6 +306,65 @@ def read_device_state(session: FirebaseSession, device_id: str) -> dict:
     if response.status_code >= 400:
         raise RuntimeError("Windows cihaz durumu okunamadı: " + response.text[:500])
     return decode_document(response.json())
+
+
+def fetch_android_phone_devices(session: FirebaseSession) -> list[dict]:
+    """Fetch this account's Android device records for the Windows pairing list."""
+    response = requests.post(
+        f"{FIRESTORE}:runQuery",
+        headers=session.headers(),
+        json={
+            "structuredQuery": {
+                "from": [{"collectionId": "devices"}],
+                "where": {
+                    "fieldFilter": {
+                        "field": {"fieldPath": "ownerId"},
+                        "op": "EQUAL",
+                        "value": {"stringValue": session.uid},
+                    }
+                },
+                "limit": 100,
+            }
+        },
+        timeout=20,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError("Telefon cihazları okunamadı: " + response.text[:600])
+
+    devices = []
+    for result in response.json():
+        document = result.get("document")
+        if not document:
+            continue
+        fields = decode_document(document)
+        platform_name = str(fields.get("platform") or fields.get("type") or "").strip()
+        if fields.get("ownerId") != session.uid or platform_name.casefold() != "android":
+            continue
+        full_name = str(document.get("name") or "")
+        devices.append({
+            "id": full_name.rsplit("/", 1)[-1],
+            "name": str(fields.get("name") or fields.get("deviceName") or "Android telefon"),
+            "platform": platform_name,
+            "status": str(fields.get("status") or "offline"),
+            "lastSeenAt": fields.get("lastSeenAt") if isinstance(fields.get("lastSeenAt"), str) else "",
+        })
+
+    devices.sort(key=lambda item: (item["name"].casefold(), item["id"]))
+    return devices
+
+
+def write_android_phone_snapshot(session: FirebaseSession) -> None:
+    """Atomically publish a small local cache consumed by the WPF phone list."""
+    APP_DATA.mkdir(parents=True, exist_ok=True)
+    snapshot = {
+        "ownerId": session.uid,
+        "updatedAt": utc_now(),
+        "devices": fetch_android_phone_devices(session),
+    }
+    destination = APP_DATA / PHONE_DEVICE_CACHE_NAME
+    temporary = destination.with_suffix(".tmp")
+    temporary.write_text(json.dumps(snapshot, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(destination)
 
 
 def screen_request_is_active(fields: dict) -> bool:
@@ -661,7 +722,13 @@ def run_agent() -> int:
     print("PC Kumandası açıkken masaüstü önizlemesi yaklaşık saniyede bir güncellenir.")
     print("Durdurmak için Ctrl+C.")
 
+    try:
+        write_android_phone_snapshot(session)
+    except Exception as exc:
+        print(f"[Telefonlar] İlk telefon listesi alınamadı: {exc}")
+
     last_heartbeat = time.monotonic()
+    last_phone_discovery = time.monotonic()
     last_screen_check = 0.0
     last_screen_frame = 0.0
     last_command_poll = 0.0
@@ -675,6 +742,13 @@ def run_agent() -> int:
             if now - last_heartbeat >= HEARTBEAT_SECONDS:
                 register_or_heartbeat(session, device_id)
                 last_heartbeat = now
+
+            if now - last_phone_discovery >= PHONE_DISCOVERY_SECONDS:
+                try:
+                    write_android_phone_snapshot(session)
+                except Exception as exc:
+                    print(f"[Telefonlar] Telefon listesi yenilenemedi: {exc}")
+                last_phone_discovery = now
 
             screen_check_interval = 3.0 if screen_active else SCREEN_CHECK_SECONDS
             if now - last_screen_check >= screen_check_interval:
