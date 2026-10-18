@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using Microsoft.Win32;
 
 namespace MynAI.Windows;
@@ -17,6 +18,15 @@ public static class AgentStartupManager
 
     private static readonly string[] AgentProcessNames =
         ["MynAgent", "MynAI.Agent"];
+
+    private static readonly object LogLock = new();
+
+    private static string LogPath =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MynAssistant",
+            "Logs",
+            "mynagent.log");
 
     public static bool IsEnabled()
     {
@@ -47,7 +57,7 @@ public static class AgentStartupManager
                 "MynAgent.exe bulunamadı. MynAssistant kurulumunu onar veya yeniden yükle.");
         }
 
-        key.SetValue(ValueName, $"\"{agentPath}\"", RegistryValueKind.String);
+        key.SetValue(ValueName, $"\\"{agentPath}\\"", RegistryValueKind.String);
         key.DeleteValue(LegacyValueName, throwOnMissingValue: false);
     }
 
@@ -58,7 +68,7 @@ public static class AgentStartupManager
             Path.Combine(AppContext.BaseDirectory, "Agent", "MynAgent.exe"),
             Path.Combine(AppContext.BaseDirectory, "MynAgent.exe"),
 
-            // Compatibility with existing installs made before the rename.
+            // Compatibility with older installations.
             Path.Combine(AppContext.BaseDirectory, "Agent", "MynAI.Agent.exe"),
             Path.Combine(AppContext.BaseDirectory, "MynAI.Agent.exe")
         };
@@ -97,13 +107,18 @@ public static class AgentStartupManager
     public static void StartAgent()
     {
         if (IsRunning())
+        {
+            AppendLog("MynAgent start skipped: a compatible Agent process is already running.");
             return;
+        }
 
         var agentPath = TryGetAgentExecutablePath();
         if (agentPath is null)
         {
-            throw new FileNotFoundException(
+            var error = new FileNotFoundException(
                 "MynAgent.exe bulunamadı. MynAssistant kurulumunu onar veya yeniden yükle.");
+            AppendLog("MynAgent start failed: " + error);
+            throw error;
         }
 
         var startInfo = new ProcessStartInfo
@@ -111,11 +126,64 @@ public static class AgentStartupManager
             FileName = agentPath,
             WorkingDirectory = Path.GetDirectoryName(agentPath) ?? AppContext.BaseDirectory,
             UseShellExecute = false,
-            CreateNoWindow = true
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
         };
 
-        Process.Start(startInfo);
+        var process = new Process
+        {
+            StartInfo = startInfo,
+            EnableRaisingEvents = true
+        };
+
+        process.OutputDataReceived += (_, eventArgs) =>
+        {
+            if (eventArgs.Data is not null)
+                AppendLog(eventArgs.Data);
+        };
+
+        process.ErrorDataReceived += (_, eventArgs) =>
+        {
+            if (eventArgs.Data is not null)
+                AppendLog("[stderr] " + eventArgs.Data);
+        };
+
+        process.Exited += (_, _) =>
+        {
+            try
+            {
+                AppendLog($"MynAgent exited with code {process.ExitCode}.");
+            }
+            catch (Exception ex)
+            {
+                AppendLog("Could not read MynAgent exit code: " + ex.Message);
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        };
+
+        try
+        {
+            if (!process.Start())
+                throw new InvalidOperationException("MynAgent process could not be started.");
+
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            AppendLog($"MynAgent launched. PID={process.Id}; path={agentPath}");
+        }
+        catch (Exception ex)
+        {
+            AppendLog("MynAgent launch failed: " + ex);
+            process.Dispose();
+            throw;
+        }
     }
+
+    public static void LogStartupFailure(string context, Exception exception) =>
+        AppendLog($"{context}: {exception}");
 
     public static void StopAgent()
     {
@@ -127,9 +195,11 @@ public static class AgentStartupManager
                 {
                     process.Kill(entireProcessTree: true);
                     process.WaitForExit(3000);
+                    AppendLog($"Stopped Agent process {processName}, PID={process.Id}.");
                 }
-                catch
+                catch (Exception ex)
                 {
+                    AppendLog($"Could not stop Agent process {processName}: {ex.Message}");
                 }
                 finally
                 {
@@ -144,5 +214,24 @@ public static class AgentStartupManager
         StopAgent();
         Thread.Sleep(400);
         StartAgent();
+    }
+
+    private static void AppendLog(string message)
+    {
+        try
+        {
+            lock (LogLock)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+                File.AppendAllText(
+                    LogPath,
+                    $"[{DateTimeOffset.Now:O}] {message}{Environment.NewLine}",
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            }
+        }
+        catch
+        {
+            // Diagnostic logging must never stop the Agent from starting.
+        }
     }
 }
