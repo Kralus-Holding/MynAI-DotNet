@@ -190,6 +190,41 @@ class FirebaseResponseHandlingTests(unittest.TestCase):
             agent.raise_for_firebase_response("Firestore", response)
 
 
+class FileListingCommandTests(unittest.TestCase):
+    def test_phone_file_list_command_returns_server_relayable_listing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            desktop = home / "Desktop"
+            documents = home / "Documents"
+            desktop.mkdir()
+            documents.mkdir()
+            (desktop / "sample.txt").write_text("not uploaded", encoding="utf-8")
+            (documents / "project").mkdir()
+
+            with patch.object(agent.Path, "home", return_value=home):
+                result = agent.execute_text_command("bilgisayar dosyalarını listele")
+
+        self.assertIn("Masaüstü", result)
+        self.assertIn("sample.txt", result)
+        self.assertIn("project", result)
+        self.assertNotIn("not uploaded", result)
+
+    def test_file_listing_is_bounded_and_non_recursive(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            desktop = home / "Desktop"
+            desktop.mkdir()
+            for index in range(25):
+                (desktop / f"item-{index:02d}.txt").write_text("x", encoding="utf-8")
+            (desktop / "nested").mkdir()
+            (desktop / "nested" / "secret.txt").write_text("x", encoding="utf-8")
+
+            result = agent.list_user_files(home, max_entries_per_folder=5)
+
+        self.assertIn("ve 21 öğe daha", result)
+        self.assertNotIn("secret.txt", result)
+
+
 class OAuthScopeTests(unittest.TestCase):
     def test_google_sign_in_uses_canonical_scope_uris(self):
         self.assertEqual(
