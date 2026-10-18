@@ -79,13 +79,12 @@ def raise_for_firebase_response(operation: str, response) -> None:
 
 
 
-def retry_transient_operation(operation, operation_name: str, initial_delay: float = 2.0, max_delay: float = 30.0) -> None:
+def retry_transient_operation(operation, operation_name: str, initial_delay: float = 2.0, max_delay: float = 30.0):
     """Retry only transient network/server failures while allowing permanent errors to surface."""
     delay = initial_delay
     while True:
         try:
-            operation()
-            return
+            return operation()
         except requests.RequestException as exc:
             print(
                 f"[Ağ] {operation_name} geçici olarak başarısız: {exc}. "
@@ -213,19 +212,23 @@ def google_oauth_credentials():
 
 def firebase_exchange_google_access_token(access_token: str) -> dict:
     post_body = urlencode({"access_token": access_token, "providerId": "google.com"})
-    response = requests.post(
-        f"{IDENTITY_TOOLKIT}/accounts:signInWithIdp",
-        params={"key": FIREBASE_API_KEY},
-        json={
-            "postBody": post_body,
-            "requestUri": "http://localhost",
-            "returnSecureToken": True,
-            "returnIdpCredential": False,
-        },
-        timeout=25,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError("Firebase Google girişi başarısız: " + response.text[:700])
+
+    def exchange():
+        response = requests.post(
+            f"{IDENTITY_TOOLKIT}/accounts:signInWithIdp",
+            params={"key": FIREBASE_API_KEY},
+            json={
+                "postBody": post_body,
+                "requestUri": "http://localhost",
+                "returnSecureToken": True,
+                "returnIdpCredential": False,
+            },
+            timeout=25,
+        )
+        raise_for_firebase_response("Firebase Google girişi başarısız", response)
+        return response
+
+    response = retry_transient_operation(exchange, "Firebase Google token exchange")
     data = response.json()
     payload = {
         "uid": data["localId"],
@@ -807,7 +810,10 @@ def run_agent() -> int:
     session = None
     if session_state:
         try:
-            session = FirebaseSession(session_state)
+            session = retry_transient_operation(
+                lambda: FirebaseSession(session_state),
+                "Firebase kayıtlı oturum yenileme",
+            )
             print(f"Kaydedilmiş Firebase oturumu kullanılıyor: {session.email or session.uid}")
         except Exception as exc:
             print(f"[Auth] Kayıtlı oturum yenilenemedi; Google girişi yeniden açılacak. Ayrıntı: {exc}")
