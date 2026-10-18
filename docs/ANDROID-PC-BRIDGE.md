@@ -18,6 +18,8 @@ MynAssistant Windows 0.1.2 paketi Android MynAssistant'ın Firebase tabanlı Win
 3. Workflow artık `main` dalında kullanılabilir: `main` dalındaki ilgili kaynak değişiklikleri otomatik build başlatır. İstersen Actions → **Build MynAssistant Windows Installer** → **Run workflow** ile manuel build de başlatabilirsin. Gerçek dağıtım için `MYNAI_GOOGLE_OAUTH_JSON` secret'ı gerekir.
 4. Workflow Windows uygulamasını, .NET Agent'ı ve köprü EXE'sini derler; `MynAssistant-Setup-0.1.2.exe` üretip `MynAssistant-Windows-Installer-0.1.2` adıyla Actions artifact'ı olarak yükler. Pull request doğrulaması sahte OAuth yapılandırması kullanır ve dağıtılabilir artifact yüklemez. Artifact saklama süresi 7 gündür.
 
+Actions artifact depolama kotası dolarsa GitHub Release yedeği için `GH_RELEASE_TOKEN` adlı repository Actions secret gerekir. Değer, yalnızca `MynAI-DotNet` deposuna erişen fine-grained token olmalı ve **Contents: Read and write** yetkisine sahip olmalıdır. Normal Actions artifact yüklemesi için bu token kullanılmaz.
+
 Pull request doğrulamasında gerçek OAuth dosyası yerine yalnızca test amaçlı sahte yapılandırma kullanılır; PR artifact'ı yayımlanmaz.
 
 ## Kurulum doğrulamaları ve imzalama
