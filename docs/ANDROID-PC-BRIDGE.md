@@ -1,6 +1,6 @@
 # Android–Windows bağlantısı (MynAssistant)
 
-MynAssistant Windows kurulum paketi Android MynAssistant'ın Firebase tabanlı Windows köprüsünü ayrıca kurar. Mevcut .NET zamanlayıcı Agent'ı değiştirilmez; bileşenler ayrı süreçlerde çalışır.
+MynAssistant Windows 0.1.2 paketi Android MynAssistant'ın Firebase tabanlı Windows köprüsünü ve .NET zamanlayıcı bileşeni MynAgent'ı ayrı ayrı kurar. Mevcut .NET zamanlayıcı Agent'ı değiştirilmez; bileşenler ayrı süreçlerde çalışır.
 
 ## Geliştirme durumu
 
@@ -16,13 +16,26 @@ MynAssistant Windows kurulum paketi Android MynAssistant'ın Firebase tabanlı W
 1. Google Cloud Console'da `myncloud-24` projesindeki **Desktop app / installed** OAuth istemcisinin JSON dosyasını indir.
 2. GitHub'da `MynAI-DotNet` deposunun Settings → Secrets and variables → Actions bölümünde `MYNAI_GOOGLE_OAUTH_JSON` adlı repository secret oluştur. Secret'ın değeri tam OAuth JSON içeriği olmalı. Bu dosyayı kaynak koda, ZIP'e veya sohbete ekleme.
 3. Workflow artık `main` dalında kullanılabilir: `main` dalındaki ilgili kaynak değişiklikleri otomatik build başlatır. İstersen Actions → **Build MynAssistant Windows Installer** → **Run workflow** ile manuel build de başlatabilirsin. Gerçek dağıtım için `MYNAI_GOOGLE_OAUTH_JSON` secret'ı gerekir.
-4. Workflow Windows uygulamasını, .NET Agent'ı ve köprü EXE'sini derler; `MynAssistant-Setup.exe` üretip `MynAssistant-Windows-Installer` adıyla Actions artifact'ı olarak yükler. Pull request doğrulaması sahte OAuth yapılandırması kullanır ve dağıtılabilir artifact yüklemez. Artifact saklama süresi 7 gündür.
+4. Workflow Windows uygulamasını, .NET Agent'ı ve köprü EXE'sini derler; `MynAssistant-Setup-0.1.2.exe` üretip `MynAssistant-Windows-Installer-0.1.2` adıyla Actions artifact'ı olarak yükler. Pull request doğrulaması sahte OAuth yapılandırması kullanır ve dağıtılabilir artifact yüklemez. Artifact saklama süresi 7 gündür.
 
 Pull request doğrulamasında gerçek OAuth dosyası yerine yalnızca test amaçlı sahte yapılandırma kullanılır; PR artifact'ı yayımlanmaz.
 
+## Kurulum doğrulamaları ve imzalama
+
+- Kurulum sihirbazı her seferinde hedef klasör sayfasını gösterir; varsayılan klasör `%LOCALAPPDATA%\\Programs\\MynAssistant`. Önceki kurulum klasörü sessizce yeniden kullanılmaz.
+- CI, kurulum paketini geçici bir klasöre sessizce yükleyip `MynAssistant.exe`, `MynAssistantDesktopBridge.exe`, `Agent\\MynAgent.exe` ve Agent bağımlılıklarını kontrol eder. Ardından `MynAgent.exe` sürecini başlatır ve `MynAI.Agent` named-pipe IPC uç noktasının hazır olduğunu sınar.
+- MynAssistant açıldığında Agent'ı kendisi başlatır; hata/çıkış günlükleri `%LOCALAPPDATA%\\MynAssistant\\Logs\\mynagent.log` dosyasına yazılır.
+- Üretim sürümü yayınlanmadan önce güvenilir kod imzalama sertifikasıyla imza doğrulaması zorunludur. Repository Actions secrets: `MYNASSISTANT_SIGNING_PFX_BASE64` (PFX dosyasının Base64 metni) ve `MYNASSISTANT_SIGNING_PFX_PASSWORD` (PFX parolası). Sertifikanın doğrulanabilir konusu `MynKralus` içermelidir. Sertifika yoksa CI testleri çalışabilir ama üretim yayınlaması engellenir.
+
+PowerShell'de PFX dosyasını Base64'e çevirmek için (dosya yolunu kendine göre değiştir):
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\\path\\MynKralus-CodeSigning.pfx")) | Set-Clipboard
+```
+Bu çıktıyı yalnızca `MYNASSISTANT_SIGNING_PFX_BASE64` secret'ına koy; PFX dosyasını depoya commit etme.
+
 ## Son kullanıcı için ilk bağlantı
 
-1. `MynAssistant-Setup.exe` kurulumunu çalıştır.
+1. `MynAssistant-Setup-0.1.2.exe` kurulumunu çalıştır.
 2. MynAssistant'ı aç ve Ayarlar → Agent → Telefon-PC bağlantısı bölümüne git.
 3. Bağlantıyı başlat. İlk kullanımda Google tarayıcı girişi açılır; Android MynAssistant uygulamasında kullanılan aynı Google hesabını seç.
 4. Agent Firestore'a Windows cihazı kaydettiğinde Android uygulamasının cihaz listesinde görünmelidir.
@@ -43,7 +56,7 @@ dotnet build MynAI.slnx --configuration Release
 
 Installer, `MynAssistant.exe` ve `Agent\MynAgent.exe` dosyalarını ayrı ayrı pakete alır; kurulum sonunda `MynAgent` arka plan bileşenini başlatır. Eski sürümle uyumluluk için zamanlayıcı verileri `%LOCALAPPDATA%\MynAI` altında korunur. Workflow ayrıca Agent publish ve Inno Setup derlemesini doğrular. Gerçek Google OAuth girişi, Firestore güvenlik kuralları ve telefon-PC komutları fiziksel ortamda ayrıca test edilmelidir.
 
-## Güvenlik notları
+## Yayımcı / SmartScreen notu\n\nInno Setup'taki `AppPublisher` ve PE `CompanyName` metadata'sı tek başına SmartScreen yayıncısını doğrulamaz. Yayıncı adının `MynKralus` olarak görünmesi için indirilen kurulumun güvenilir bir sertifikayla Authenticode imzalı olması gerekir. Bu nedenle üretim yayınlaması geçerli imza yoksa bloke edilir.\n\n## Güvenlik notları
 
 - OAuth istemci JSON'unu veya token'ları commit etme.
 - Desktop OAuth istemcisi uygulama için dağıtılan yapılandırmadır; Firebase service-account anahtarı değildir. Firebase service-account anahtarını hiçbir istemci paketine koyma.
