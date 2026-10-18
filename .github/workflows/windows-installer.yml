@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -438,12 +438,16 @@ jobs:
         if: github.event_name != 'pull_request' && steps.upload_installer.outcome == 'failure'
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+          GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
           GH_REPOSITORY: ${{ github.repository }}
           GH_SHA: ${{ github.sha }}
           GH_RUN_NUMBER: ${{ github.run_number }}
         run: |
           $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:GH_RELEASE_TOKEN)) {
+            throw "Actions artifact storage is unavailable and GH_RELEASE_TOKEN is not configured. Add a fine-grained PAT as a repository Actions secret with Contents: Read and write, then rerun the workflow."
+          }
           $api = "https://api.github.com/repos/$env:GH_REPOSITORY"
           $headers = @{
             Authorization = "Bearer $env:GH_TOKEN"
