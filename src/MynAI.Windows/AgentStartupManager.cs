@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using Microsoft.Win32;
 
@@ -10,165 +10,131 @@ public static class AgentStartupManager
         @"Software\Microsoft\Windows\CurrentVersion\Run";
 
     private const string ValueName =
+        "MynAssistant.Agent";
+
+    private const string LegacyValueName =
         "MynAI.Agent";
+
+    private static readonly string[] AgentProcessNames =
+        ["MynAgent", "MynAI.Agent"];
 
     public static bool IsEnabled()
     {
-        using var key =
-            Registry.CurrentUser.OpenSubKey(
-                RunKey,
-                writable: false);
+        using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: false);
+        var value = key?.GetValue(ValueName) as string;
+        var legacyValue = key?.GetValue(LegacyValueName) as string;
 
-        var value =
-            key?.GetValue(
-                ValueName) as string;
-
-        return !string.IsNullOrWhiteSpace(
-            value);
+        return !string.IsNullOrWhiteSpace(value)
+            || !string.IsNullOrWhiteSpace(legacyValue);
     }
 
-    public static void SetEnabled(
-        bool enabled)
+    public static void SetEnabled(bool enabled)
     {
-        using var key =
-            Registry.CurrentUser.OpenSubKey(
-                RunKey,
-                writable: true)
-            ?? Registry.CurrentUser.CreateSubKey(
-                RunKey);
+        using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true)
+            ?? Registry.CurrentUser.CreateSubKey(RunKey);
 
         if (!enabled)
         {
-            key.DeleteValue(
-                ValueName,
-                throwOnMissingValue: false);
-
+            key.DeleteValue(ValueName, throwOnMissingValue: false);
+            key.DeleteValue(LegacyValueName, throwOnMissingValue: false);
             return;
         }
 
-        var agentPath =
-            TryGetAgentExecutablePath();
-
+        var agentPath = TryGetAgentExecutablePath();
         if (agentPath is null)
         {
             throw new FileNotFoundException(
-                "MynAI.Agent.exe bulunamadı. " +
-                "Önce Agent'i build edin.");
+                "MynAgent.exe bulunamadı. MynAssistant kurulumunu onar veya yeniden yükle.");
         }
 
-        key.SetValue(
-            ValueName,
-            $"\"{agentPath}\"",
-            RegistryValueKind.String);
+        key.SetValue(ValueName, $"\\"{agentPath}\\"", RegistryValueKind.String);
+        key.DeleteValue(LegacyValueName, throwOnMissingValue: false);
     }
 
     public static string? TryGetAgentExecutablePath()
     {
-        var candidates =
-            new List<string>();
+        var candidates = new List<string>
+        {
+            Path.Combine(AppContext.BaseDirectory, "Agent", "MynAgent.exe"),
+            Path.Combine(AppContext.BaseDirectory, "MynAgent.exe"),
 
-        candidates.Add(
-            Path.Combine(
-                AppContext.BaseDirectory,
-                "MynAI.Agent.exe"));
+            // Compatibility with existing installs made before the rename.
+            Path.Combine(AppContext.BaseDirectory, "Agent", "MynAI.Agent.exe"),
+            Path.Combine(AppContext.BaseDirectory, "MynAI.Agent.exe")
+        };
 
-        candidates.Add(
-            Path.Combine(
-                AppContext.BaseDirectory,
-                "Agent",
-                "MynAI.Agent.exe"));
-
-        var directory =
-            new DirectoryInfo(
-                AppContext.BaseDirectory);
-
-        var repositoryRoot =
-            directory;
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        var repositoryRoot = directory;
 
         for (var i = 0; i < 5; i++)
         {
-            repositoryRoot =
-                repositoryRoot.Parent
-                ?? repositoryRoot;
+            repositoryRoot = repositoryRoot.Parent ?? repositoryRoot;
         }
 
-        candidates.Add(
-            Path.Combine(
-                repositoryRoot.FullName,
-                "src",
-                "MynAI.Agent",
-                "bin",
-                "Debug",
-                "net10.0-windows10.0.19041.0",
-                "MynAI.Agent.exe"));
+        var debugDirectory = Path.Combine(
+            repositoryRoot.FullName,
+            "src",
+            "MynAI.Agent",
+            "bin",
+            "Debug",
+            "net10.0-windows10.0.19041.0");
+
+        candidates.Add(Path.Combine(debugDirectory, "MynAgent.exe"));
+        candidates.Add(Path.Combine(debugDirectory, "MynAI.Agent.exe"));
 
         foreach (var candidate in candidates)
         {
             if (File.Exists(candidate))
-                return Path.GetFullPath(
-                    candidate);
+                return Path.GetFullPath(candidate);
         }
 
         return null;
     }
 
-    public static bool IsRunning()
-    {
-        return Process
-            .GetProcessesByName("MynAI.Agent")
-            .Length > 0;
-    }
+    public static bool IsRunning() =>
+        AgentProcessNames.Any(name => Process.GetProcessesByName(name).Length > 0);
 
     public static void StartAgent()
     {
         if (IsRunning())
             return;
 
-        var agentPath =
-            TryGetAgentExecutablePath();
-
+        var agentPath = TryGetAgentExecutablePath();
         if (agentPath is null)
         {
             throw new FileNotFoundException(
-                "MynAI.Agent.exe bulunamadı.");
+                "MynAgent.exe bulunamadı. MynAssistant kurulumunu onar veya yeniden yükle.");
         }
 
-        var startInfo =
-            new ProcessStartInfo
-            {
-                FileName = agentPath,
-                WorkingDirectory =
-                    Path.GetDirectoryName(
-                        agentPath)
-                    ?? AppContext.BaseDirectory,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = agentPath,
+            WorkingDirectory = Path.GetDirectoryName(agentPath) ?? AppContext.BaseDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
 
-        Process.Start(
-            startInfo);
+        Process.Start(startInfo);
     }
 
     public static void StopAgent()
     {
-        foreach (var process in
-                 Process.GetProcessesByName(
-                     "MynAI.Agent"))
+        foreach (var processName in AgentProcessNames)
         {
-            try
+            foreach (var process in Process.GetProcessesByName(processName))
             {
-                process.Kill(
-                    entireProcessTree: true);
-
-                process.WaitForExit(
-                    3000);
-            }
-            catch
-            {
-            }
-            finally
-            {
-                process.Dispose();
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit(3000);
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    process.Dispose();
+                }
             }
         }
     }
@@ -176,9 +142,7 @@ public static class AgentStartupManager
     public static void RestartAgent()
     {
         StopAgent();
-
         Thread.Sleep(400);
-
         StartAgent();
     }
 }
