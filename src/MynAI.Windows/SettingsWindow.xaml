@@ -1,7 +1,7 @@
 ﻿<Window x:Class="MynAI.Windows.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="MynAI Ayarlar"
+        Title="MynAssistant Ayarlar"
         Icon="Resources/myn.ico"
         Width="900"
         Height="640"
@@ -262,7 +262,7 @@
 
                     </Border>
 
-                    <TextBlock Text="MynAI"
+                    <TextBlock Text="MynAssistant"
                                FontSize="20"
                                FontWeight="SemiBold"/>
 
@@ -294,7 +294,7 @@
                 </StackPanel>
 
                 <TextBlock Grid.Row="2"
-                           Text="MynAI"
+                           Text="MynAssistant"
                            Foreground="#364356"
                            FontSize="10"
                            Margin="0,0,0,4"/>
@@ -328,7 +328,7 @@
                                    FontWeight="SemiBold"
                                    Margin="0,0,0,5"/>
 
-                        <TextBlock Text="MynAI'nin genel çalışma davranışları."
+                        <TextBlock Text="MynAssistant'ın genel çalışma davranışları."
                                    Foreground="#718096"
                                    FontSize="12"
                                    Margin="0,0,0,18"/>
@@ -363,7 +363,7 @@
                                            FontWeight="SemiBold"/>
 
                                 <CheckBox x:Name="AgentStartupGeneralCheckBox"
-                                          Content="Windows açılışında MynAI Agent'i çalıştır"
+                                          Content="Windows açılışında MynAgent'i çalıştır"
                                           Margin="0,12,0,0"/>
 
                                 <TextBlock Text="Agent zamanlayıcı ve arka plan görevlerini UI'dan bağımsız yürütür."
@@ -388,7 +388,7 @@
                                    FontWeight="SemiBold"
                                    Margin="0,0,0,5"/>
 
-                        <TextBlock Text="MynAI'nin arka plan motorunu buradan yönet."
+                        <TextBlock Text="MynAssistant'ın arka plan motorunu buradan yönet."
                                    Foreground="#718096"
                                    FontSize="12"
                                    Margin="0,0,0,18"/>
@@ -685,7 +685,7 @@
                                            FontWeight="SemiBold"/>
 
                                 <CheckBox x:Name="MicrophoneCheckBox"
-                                          Content="MynAI mikrofon özelliğini etkinleştir"
+                                          Content="MynAssistant mikrofon özelliğini etkinleştir"
                                           Margin="0,12,0,10"/>
 
                                 <Button Content="Windows mikrofon gizlilik ayarlarını aç"
@@ -706,7 +706,7 @@
                                            FontWeight="SemiBold"/>
 
                                 <CheckBox x:Name="CameraCheckBox"
-                                          Content="MynAI kamera özelliğini etkinleştir"
+                                          Content="MynAssistant kamera özelliğini etkinleştir"
                                           Margin="0,12,0,10"/>
 
                                 <Button Content="Windows kamera gizlilik ayarlarını aç"
@@ -730,7 +730,7 @@
                                    FontWeight="SemiBold"
                                    Margin="0,0,0,5"/>
 
-                        <TextBlock Text="MynAI'yi başka uygulamadayken öne getirmek için global kısayol."
+                        <TextBlock Text="MynAssistant'ı başka uygulamadayken öne getirmek için global kısayol."
                                    Foreground="#718096"
                                    FontSize="12"
                                    Margin="0,0,0,18"
@@ -740,7 +740,7 @@
 
                             <StackPanel>
 
-                                <TextBlock Text="MynAI'yi öne getir"
+                                <TextBlock Text="MynAssistant'ı öne getir"
                                            FontSize="14"
                                            FontWeight="SemiBold"/>
 

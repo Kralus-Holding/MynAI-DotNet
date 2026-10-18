@@ -40,7 +40,7 @@ Console.CancelKeyPress += (_, e) =>
 await scheduler.InitializeAsync(
     cancellationTokenSource.Token);
 
-Console.WriteLine("=== MynAI Agent ===");
+Console.WriteLine("=== MynAgent (MynAssistant) ===");
 Console.WriteLine(
     $"Saat: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
 Console.WriteLine(
@@ -48,7 +48,7 @@ Console.WriteLine(
 Console.WriteLine(
     $"Yüklü görev sayısı: {scheduler.GetTasks().Count}");
 Console.WriteLine("Scheduler aktif.");
-Console.WriteLine("Named Pipe aktif: MynAI.Agent");
+Console.WriteLine("Scheduler IPC kanalı aktif.");
 Console.WriteLine("Durdurmak için Ctrl+C.");
 
 var schedulerTask = scheduler.RunAsync(
@@ -65,5 +65,5 @@ try
 }
 catch (OperationCanceledException)
 {
-    Console.WriteLine("MynAI Agent durduruldu.");
+    Console.WriteLine("MynAgent durduruldu.");
 }

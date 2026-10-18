@@ -1,4 +1,4 @@
-name: Build MynAI Windows Installer
+name: Build MynAssistant Windows Installer
 
 concurrency:
   group: mynai-windows-${{ github.head_ref || github.ref_name }}
@@ -65,22 +65,20 @@ jobs:
           dotnet restore MynAI.slnx
           dotnet build MynAI.slnx --configuration Release --no-restore
 
-      - name: Publish MynAI Windows application
+      - name: Publish MynAssistant Windows application
         shell: pwsh
         run: |
           dotnet publish src/MynAI.Windows/MynAI.Windows.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false --output build/publish
 
           dotnet publish src/MynAI.Agent/MynAI.Agent.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -p:WindowsAppSDKSelfContained=true --output build/agent-publish
 
-          New-Item -ItemType Directory -Force -Path "build/publish/Agent" | Out-Null
-          Copy-Item "build/agent-publish/*" "build/publish/Agent" -Recurse -Force
           Copy-Item "build/bridge-dist/MynAssistantDesktopBridge.exe" "build/publish/MynAssistantDesktopBridge.exe" -Force
 
-          if (-not (Test-Path "build/publish/MynAI.Windows.exe")) {
-            throw "MynAI Windows application EXE was not published."
+          if (-not (Test-Path "build/publish/MynAssistant.exe")) {
+            throw "MynAssistant.exe was not published."
           }
-          if (-not (Test-Path "build/publish/Agent/MynAI.Agent.exe")) {
-            throw "MynAI.Agent.exe was not published into the Agent subdirectory."
+          if (-not (Test-Path "build/agent-publish/MynAgent.exe")) {
+            throw "MynAgent.exe was not published; refusing to create an installer without the background Agent."
           }
           if (-not (Test-Path "build/publish/MynAssistantDesktopBridge.exe")) {
             throw "MynAssistantDesktopBridge.exe was not published."
@@ -146,8 +144,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Inno Setup failed with exit code $LASTEXITCODE."
           }
-          if (-not (Test-Path "build/installer/MynAI-Setup.exe")) {
-            throw "MynAI-Setup.exe was not created."
+          if (-not (Test-Path "build/installer/MynAssistant-Setup.exe")) {
+            throw "MynAssistant-Setup.exe was not created."
           }
 
       - name: Upload Windows installer as Actions artifact
@@ -156,8 +154,8 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: MynAI-Windows-Installer
-          path: build/installer/MynAI-Setup.exe
+          name: MynAssistant-Windows-Installer
+          path: build/installer/MynAssistant-Setup.exe
           if-no-files-found: error
           retention-days: 7
 
@@ -177,7 +175,7 @@ jobs:
             Accept = "application/vnd.github+json"
             "X-GitHub-Api-Version" = "2022-11-28"
           }
-          $tag = "mynai-installer-build-$env:GH_RUN_NUMBER"
+          $tag = "mynassistant-installer-build-$env:GH_RUN_NUMBER"
           $releaseUrl = "$api/releases/tags/$tag"
           $release = $null
 
@@ -197,7 +195,7 @@ jobs:
             $releaseBody = @{
               tag_name = $tag
               target_commitish = $env:GH_SHA
-              name = "MynAI Windows Installer Preview (build $env:GH_RUN_NUMBER)"
+              name = "MynAssistant Windows Installer Preview (build $env:GH_RUN_NUMBER)"
               body = "Automated preview installer for commit $env:GH_SHA. The installer was built and validated by GitHub Actions. This prerelease is published as a fallback because Actions artifact storage was unavailable."
               draft = $false
               prerelease = $true
@@ -206,14 +204,14 @@ jobs:
           } else {
             $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
             foreach ($asset in $assets) {
-              if ($asset.name -eq "MynAI-Setup.exe") {
+              if ($asset.name -eq "MynAssistant-Setup.exe") {
                 Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
               }
             }
           }
 
-          $installerPath = (Resolve-Path "build/installer/MynAI-Setup.exe").Path
-          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAI-Setup.exe"
+          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup.exe").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup.exe"
           $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
           if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
             throw "Release asset upload could not be verified."

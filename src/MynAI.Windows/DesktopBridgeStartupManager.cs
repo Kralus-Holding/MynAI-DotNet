@@ -8,12 +8,19 @@ namespace MynAI.Windows;
 public static class DesktopBridgeStartupManager
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "MynAI.DesktopBridge";
+    private const string ValueName = "MynAssistant.DesktopBridge";
+    private const string LegacyValueName = "MynAI.DesktopBridge";
     private const string ExecutableName = "MynAssistantDesktopBridge.exe";
     private const string OAuthFileName = "client_secret.json";
     private static readonly object LogLock = new();
 
     private static string GoogleDirectory =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MynAssistant",
+            "Google");
+
+    private static string LegacyGoogleDirectory =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "MynAI",
@@ -22,7 +29,7 @@ public static class DesktopBridgeStartupManager
     private static string LogPath =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "MynAI",
+            "MynAssistant",
             "DesktopAgent",
             "bridge.log");
 
@@ -30,7 +37,9 @@ public static class DesktopBridgeStartupManager
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: false);
         var value = key?.GetValue(ValueName) as string;
-        return !string.IsNullOrWhiteSpace(value);
+        var legacyValue = key?.GetValue(LegacyValueName) as string;
+        return !string.IsNullOrWhiteSpace(value)
+            || !string.IsNullOrWhiteSpace(legacyValue);
     }
 
     public static void SetEnabled(bool enabled)
@@ -41,6 +50,7 @@ public static class DesktopBridgeStartupManager
         if (!enabled)
         {
             key.DeleteValue(ValueName, throwOnMissingValue: false);
+            key.DeleteValue(LegacyValueName, throwOnMissingValue: false);
             return;
         }
 
@@ -48,7 +58,7 @@ public static class DesktopBridgeStartupManager
         if (executablePath is null)
         {
             throw new FileNotFoundException(
-                $"{ExecutableName} bulunamadı. MynAI kurulumunu onar veya yeniden yükle.");
+                $"{ExecutableName} bulunamadı. MynAssistant kurulumunu onar veya yeniden yükle.");
         }
 
         var oauthPath = GetOAuthConfigPath();
@@ -59,6 +69,7 @@ public static class DesktopBridgeStartupManager
         }
 
         key.SetValue(ValueName, $"{(char)34}{executablePath}{(char)34}", RegistryValueKind.String);
+        key.DeleteValue(LegacyValueName, throwOnMissingValue: false);
     }
 
     public static string? TryGetExecutablePath()
@@ -67,8 +78,16 @@ public static class DesktopBridgeStartupManager
         return File.Exists(candidate) ? Path.GetFullPath(candidate) : null;
     }
 
-    public static string GetOAuthConfigPath() =>
-        Path.Combine(GoogleDirectory, OAuthFileName);
+    public static string GetOAuthConfigPath()
+    {
+        var currentPath = Path.Combine(GoogleDirectory, OAuthFileName);
+        if (File.Exists(currentPath))
+            return currentPath;
+
+        // Preserve OAuth configuration from the previous MynAI-branded install.
+        var legacyPath = Path.Combine(LegacyGoogleDirectory, OAuthFileName);
+        return File.Exists(legacyPath) ? legacyPath : currentPath;
+    }
 
     public static bool IsRunning() =>
         Process.GetProcessesByName(Path.GetFileNameWithoutExtension(ExecutableName)).Length > 0;
@@ -82,14 +101,14 @@ public static class DesktopBridgeStartupManager
         if (executablePath is null)
         {
             throw new FileNotFoundException(
-                $"{ExecutableName} bulunamadı. MynAI kurulumunu onar veya yeniden yükle.");
+                $"{ExecutableName} bulunamadı. MynAssistant kurulumunu onar veya yeniden yükle.");
         }
 
         var oauthPath = GetOAuthConfigPath();
         if (!File.Exists(oauthPath))
         {
             throw new FileNotFoundException(
-                "Google OAuth yapılandırması bulunamadı. MynAI kurulumunda Google bağlantı ayarını kontrol et.",
+                "Google OAuth yapılandırması bulunamadı. MynAssistant kurulumunda Google bağlantı ayarını kontrol et.",
                 oauthPath);
         }
 

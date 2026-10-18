@@ -220,7 +220,7 @@ public partial class MainWindow : Window
                 {
                     Icon = _trayIconImage,
                     Visible = true,
-                    Text = "MynAI"
+                    Text = "MynAssistant"
                 };
 
             var menu =
@@ -228,7 +228,7 @@ public partial class MainWindow : Window
 
             var openItem =
                 new System.Windows.Forms.ToolStripMenuItem(
-                    "MynAI'yi aç");
+                    "MynAssistant'ı aç");
 
             openItem.Click +=
                 (_, _) => RestoreFromTray();

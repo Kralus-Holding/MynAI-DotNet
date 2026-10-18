@@ -273,7 +273,7 @@ public partial class SettingsWindow : Window
         {
             MessageBox.Show(
                 $"Telefon-PC bağlantısı başlatılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
-                "MynAI",
+                "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
@@ -300,7 +300,7 @@ public partial class SettingsWindow : Window
         {
             MessageBox.Show(
                 $"Telefon-PC bağlantısı yeniden başlatılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
-                "MynAI",
+                "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
@@ -324,7 +324,7 @@ public partial class SettingsWindow : Window
         {
             MessageBox.Show(
                 $"Agent başlatılamadı:\n\n{ex.Message}",
-                "MynAI",
+                "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
@@ -361,7 +361,7 @@ public partial class SettingsWindow : Window
         {
             MessageBox.Show(
                 $"Agent yeniden başlatılamadı:\n\n{ex.Message}",
-                "MynAI",
+                "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
@@ -396,7 +396,7 @@ public partial class SettingsWindow : Window
 
             MessageBox.Show(
                 $"Google bağlantısı başarısız:\n\n{ex.Message}",
-                "MynAI",
+                "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
@@ -585,7 +585,7 @@ public partial class SettingsWindow : Window
 
             MessageBox.Show(
                 $"Ayarlar kaydedilemedi:\n\n{ex.Message}",
-                "MynAI",
+                "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
@@ -635,7 +635,7 @@ public partial class SettingsWindow : Window
         {
             MessageBox.Show(
                 $"Windows ayarları açılamadı:\n\n{ex.Message}",
-                "MynAI",
+                "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
