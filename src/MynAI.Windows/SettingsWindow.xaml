@@ -552,6 +552,11 @@
                                             Click="RestartDesktopBridge_Click"
                                             Margin="0,0,0,8"/>
 
+                                    <Button Content="Google hesabını değiştir"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="ChangeDesktopBridgeAccount_Click"
+                                            Margin="0,0,8,8"/>
+
                                 </WrapPanel>
 
                                 <CheckBox x:Name="DesktopBridgeStartupCheckBox"
