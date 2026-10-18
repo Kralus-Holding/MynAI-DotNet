@@ -226,6 +226,10 @@ class FileListingCommandTests(unittest.TestCase):
 
 
 class StartupRetryTests(unittest.TestCase):
+    def test_retry_returns_operation_result(self):
+        self.assertEqual("ok", agent.retry_transient_operation(lambda: "ok", "test operation"))
+
+
     def test_transient_network_failure_retries_and_recovers(self):
         attempts = []
 
