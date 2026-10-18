@@ -57,7 +57,7 @@ public static class AgentStartupManager
                 "MynAgent.exe bulunamadı. MynAssistant kurulumunu onar veya yeniden yükle.");
         }
 
-        key.SetValue(ValueName, $"\\"{agentPath}\\"", RegistryValueKind.String);
+        key.SetValue(ValueName, $"\"{agentPath}\"", RegistryValueKind.String);
         key.DeleteValue(LegacyValueName, throwOnMissingValue: false);
     }
 
