@@ -225,6 +225,36 @@ class FileListingCommandTests(unittest.TestCase):
         self.assertNotIn("secret.txt", result)
 
 
+class StartupRetryTests(unittest.TestCase):
+    def test_transient_network_failure_retries_and_recovers(self):
+        attempts = []
+
+        def operation():
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise agent.requests.ConnectionError("offline")
+
+        with patch.object(agent.time, "sleep") as sleep:
+            agent.retry_transient_operation(operation, "device registration")
+
+        self.assertEqual(len(attempts), 2)
+        sleep.assert_called_once_with(2.0)
+
+    def test_permanent_error_is_not_retried(self):
+        attempts = []
+
+        def operation():
+            attempts.append(1)
+            raise RuntimeError("HTTP 403: permission denied")
+
+        with patch.object(agent.time, "sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "HTTP 403"):
+                agent.retry_transient_operation(operation, "device registration")
+
+        self.assertEqual(len(attempts), 1)
+        sleep.assert_not_called()
+
+
 class OAuthScopeTests(unittest.TestCase):
     def test_google_sign_in_uses_canonical_scope_uris(self):
         self.assertEqual(
