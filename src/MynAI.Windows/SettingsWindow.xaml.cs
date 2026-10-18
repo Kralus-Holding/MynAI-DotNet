@@ -446,6 +446,40 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void ChangeDesktopBridgeAccount_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var answer = MessageBox.Show(
+            "Telefon-PC bağlantısında kayıtlı Google oturumu silinecek. " +
+            "Köprü yeniden başlatılacak ve tarayıcıda hesabını tekrar seçebileceksin. " +
+            "MynAssistant'ın diğer ayarları korunur.",
+            "Google hesabını değiştir",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (answer != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            DesktopBridgeStartupManager.ResetAccountSession();
+            AndroidPhoneDevicesStatusText.Text = "Google hesabı yeniden seçiliyor...";
+            UpdateDesktopBridgeStatus();
+            DesktopBridgeStartupManager.StartAgent();
+            UpdateDesktopBridgeStatus();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Google hesabı değiştirilemedi:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            UpdateDesktopBridgeStatus();
+        }
+    }
+
     private void StartAgent_Click(
         object sender,
         RoutedEventArgs e)
