@@ -2,6 +2,8 @@
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Color = System.Windows.Media.Color;
 using System.Diagnostics;
+using System.Collections.ObjectModel;
+using System.Text.Json;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
@@ -14,6 +16,49 @@ namespace MynAI.Windows;
 
 public partial class SettingsWindow : Window
 {
+    private sealed class AndroidPhoneSnapshot
+    {
+        public string OwnerId { get; set; } = string.Empty;
+        public string UpdatedAt { get; set; } = string.Empty;
+        public List<AndroidPhoneDevice> Devices { get; set; } = [];
+    }
+
+    private sealed class AndroidPhoneDevice
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = "Android telefon";
+        public string Platform { get; set; } = "Android";
+        public string Status { get; set; } = "offline";
+        public string LastSeenAt { get; set; } = string.Empty;
+
+        public string StatusLabel
+        {
+            get
+            {
+                if (!Status.Equals("online", StringComparison.OrdinalIgnoreCase))
+                    return "Çevrimdışı";
+                if (!DateTimeOffset.TryParse(LastSeenAt, out var lastSeen))
+                    return "Durum bilinmiyor";
+                return DateTimeOffset.UtcNow - lastSeen.ToUniversalTime() <= TimeSpan.FromSeconds(90)
+                    ? "Çevrimiçi"
+                    : "Çevrimdışı";
+            }
+        }
+
+        public string LastSeenLabel =>
+            DateTimeOffset.TryParse(LastSeenAt, out var lastSeen)
+                ? "Son görülme: " + lastSeen.ToLocalTime().ToString("HH:mm:ss")
+                : "Henüz görülmedi";
+    }
+
+    private readonly ObservableCollection<AndroidPhoneDevice> _androidPhones = [];
+    private AndroidPhoneSnapshot? _lastPhoneSnapshot;
+    private DateTime _phoneCacheLastWriteUtc = DateTime.MinValue;
+    private static readonly JsonSerializerOptions PhoneSnapshotJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly GoogleOAuthService _googleOAuthService;
     private readonly GoogleAccountStore _googleAccountStore;
     private readonly MynAISettingsStore _settingsStore;
@@ -43,17 +88,21 @@ public partial class SettingsWindow : Window
                     TimeSpan.FromSeconds(1)
             };
 
+        AndroidPhonesListBox.ItemsSource = _androidPhones;
+
         _agentTimer.Tick +=
             (_, _) =>
             {
                 UpdateAgentStatus();
                 UpdateDesktopBridgeStatus();
+                UpdateAndroidPhoneDevices();
             };
 
         _agentTimer.Start();
 
         UpdateAgentStatus();
         UpdateDesktopBridgeStatus();
+        UpdateAndroidPhoneDevices();
     }
 
     private void LoadSettings()
@@ -258,6 +307,75 @@ public partial class SettingsWindow : Window
         DesktopBridgeOAuthPathText.Text = hasOAuthConfig
             ? "Google OAuth yapılandırması bulundu."
             : $"OAuth dosyası bulunamadı: {oauthPath}";
+    }
+
+    private void UpdateAndroidPhoneDevices()
+    {
+        var cachePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MynAssistant",
+            "DesktopAgent",
+            "android_devices.json");
+
+        try
+        {
+            if (!File.Exists(cachePath))
+            {
+                _lastPhoneSnapshot = null;
+                _androidPhones.Clear();
+                AndroidPhoneDevicesStatusText.Text = DesktopBridgeStartupManager.IsRunning()
+                    ? "Köprü çalışıyor; aynı hesapla giriş yapmış Android telefon bekleniyor."
+                    : "Önce 'Bağlantıyı başlat' düğmesine basıp telefondaki hesapla aynı hesapta giriş yap.";
+                return;
+            }
+
+            var lastWriteUtc = File.GetLastWriteTimeUtc(cachePath);
+            if (_lastPhoneSnapshot is null || lastWriteUtc != _phoneCacheLastWriteUtc)
+            {
+                var json = File.ReadAllText(cachePath);
+                _lastPhoneSnapshot = JsonSerializer.Deserialize<AndroidPhoneSnapshot>(
+                    json,
+                    PhoneSnapshotJsonOptions);
+                _phoneCacheLastWriteUtc = lastWriteUtc;
+                _androidPhones.Clear();
+                foreach (var phone in _lastPhoneSnapshot?.Devices ?? [])
+                {
+                    _androidPhones.Add(phone);
+                }
+            }
+
+            if (_lastPhoneSnapshot is null)
+            {
+                AndroidPhoneDevicesStatusText.Text = "Telefon listesi okunamadı; köprüyü yeniden başlat.";
+                return;
+            }
+
+            var snapshotFresh = DateTimeOffset.TryParse(
+                _lastPhoneSnapshot.UpdatedAt,
+                out var updatedAt) &&
+                DateTimeOffset.UtcNow - updatedAt.ToUniversalTime() <= TimeSpan.FromSeconds(30);
+
+            if (!snapshotFresh)
+            {
+                AndroidPhoneDevicesStatusText.Text = "Telefon listesi güncellenemiyor. Bağlantıyı yeniden başlatıp kontrol et.";
+            }
+            else if (_androidPhones.Count == 0)
+            {
+                AndroidPhoneDevicesStatusText.Text = "Henüz telefon bulunamadı. Android uygulamasında aynı hesapla giriş yapıp uygulamayı aç.";
+            }
+            else
+            {
+                var onlineCount = _androidPhones.Count(phone =>
+                    phone.StatusLabel == "Çevrimiçi");
+                AndroidPhoneDevicesStatusText.Text =
+                    $"{_androidPhones.Count} Android cihaz bulundu · {onlineCount} çevrimiçi.";
+            }
+        }
+        catch (Exception ex)
+        {
+            AndroidPhoneDevicesStatusText.Text =
+                "Telefon listesi okunamadı: " + ex.Message;
+        }
     }
 
     private void StartDesktopBridge_Click(
