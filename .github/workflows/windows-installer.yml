@@ -235,6 +235,17 @@ jobs:
           if ($settingsUi -match 'Title="MynAI|Text="MynAI|Content="MynAI|MynAI''yi') {
             throw 'The settings UI still contains an old MynAI product label.'
           }
+          $visibleBrandChecks = @(
+            @{ Path = 'src/MynAI.Windows/App.xaml.cs'; Pattern = 'MynAI başlatılamadı' },
+            @{ Path = 'src/MynAI.Windows/GlobalHotkeyService.cs'; Pattern = 'MynAI penceresi henüz hazır değil' },
+            @{ Path = 'src/MynAI.Agent/Notifications/AgentNotificationService.cs'; Pattern = '\.AddText\("MynAi"\)' }
+          )
+          foreach ($check in $visibleBrandChecks) {
+            $text = Get-Content $check.Path -Raw
+            if ($text -match $check.Pattern) {
+              throw "Old product branding '$($check.Pattern)' remains in $($check.Path)."
+            }
+          }
           $installerSource = Get-Content 'installer/MynAI.iss' -Raw
           if ($installerSource -notmatch '(?m)^UsePreviousAppDir=yes\s*$') {
             throw 'Installer must preserve the previous install location during upgrades.'
