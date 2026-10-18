@@ -75,7 +75,16 @@ jobs:
           if (-not $bridgeSource.Contains('https://www.googleapis.com/auth/userinfo.email') -or -not $bridgeSource.Contains('https://www.googleapis.com/auth/userinfo.profile')) {
             throw "Canonical Google OAuth scopes were not found in the desktop bridge."
           }
-          Write-Host "Validated Windows phone pairing UI, local phone discovery cache, and canonical OAuth scopes."
+          if (-not $bridgeSource.Contains('PHONE_DEVICE_CACHE_NAME = "android_devices.json"')) {
+            throw "Desktop bridge must use the same Android-device cache filename as the WPF UI."
+          }
+          if (-not $bridgeSource.Contains('if now - last_phone_discovery >= PHONE_DISCOVERY_SECONDS:')) {
+            throw "Desktop bridge must refresh Android phone discovery periodically."
+          }
+          if (-not $bridgeSource.Contains('write_android_phone_snapshot(session)')) {
+            throw "Desktop bridge must publish the phone snapshot used by the WPF list."
+          }
+          Write-Host "Validated Windows phone pairing UI, periodic phone discovery cache, account diagnostics, and canonical OAuth scopes."
 
       - name: Build desktop bridge executable
         shell: pwsh
