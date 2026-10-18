@@ -50,6 +50,27 @@ jobs:
       - name: Test desktop bridge command handling
         run: python -m unittest discover -s tools/MynAssistantDesktopBridge/tests -v
 
+      - name: Validate phone pairing UI and bridge integration
+        shell: pwsh
+        run: |
+          $settingsXaml = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml" -Raw
+          $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw
+          $bridgeSource = Get-Content -LiteralPath "tools/MynAssistantDesktopBridge/agent.py" -Raw
+
+          if (-not $settingsXaml.Contains('Telefonlarım') -or -not $settingsXaml.Contains('x:Name="AndroidPhonesListBox"')) {
+            throw "Windows phone-list UI is missing; refusing to publish an installer without the pairing view."
+          }
+          if (-not $settingsCode.Contains('android_devices.json') -or -not $settingsCode.Contains('UpdateAndroidPhoneDevices')) {
+            throw "Windows phone-list cache integration is missing."
+          }
+          if ($bridgeSource -match 'SCOPES\s*=\s*\["openid",\s*"email",\s*"profile"\]') {
+            throw "Legacy Google OAuth scope aliases can trigger 'Scope has changed'; use canonical Google scope URIs."
+          }
+          if (-not $bridgeSource.Contains('https://www.googleapis.com/auth/userinfo.email') -or -not $bridgeSource.Contains('https://www.googleapis.com/auth/userinfo.profile')) {
+            throw "Canonical Google OAuth scopes were not found in the desktop bridge."
+          }
+          Write-Host "Validated Windows phone pairing UI, local phone discovery cache, and canonical OAuth scopes."
+
       - name: Build desktop bridge executable
         shell: pwsh
         run: |
