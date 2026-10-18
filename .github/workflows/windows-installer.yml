@@ -88,7 +88,36 @@ jobs:
           if (-not $bridgeSource.Contains('write_android_phone_snapshot(session)')) {
             throw "Desktop bridge must publish the phone snapshot used by the WPF list."
           }
-          Write-Host "Validated Windows phone pairing UI, periodic phone discovery cache, account diagnostics, and canonical OAuth scopes."
+
+          $requiredServerQueue = @(
+            'def fetch_device_commands(session: FirebaseSession, device_id: str) -> list[dict]:',
+            'def claim_command(session: FirebaseSession, document: dict) -> bool:',
+            'def update_command(session: FirebaseSession, document: dict, status: str, result: str) -> None:',
+            '"connectionMode": encode_string("firebase-agent")',
+            'def list_user_files('
+          )
+          $missingServerFlow = @($requiredServerQueue | Where-Object { -not $bridgeSource.Contains($_) })
+          if ($missingServerFlow.Count -gt 0) {
+            throw "Server-only phone-PC flow is incomplete in the packaged Agent: $($missingServerFlow -join ', ')"
+          }
+
+          $forbiddenLocalServers = @(
+            'BaseHTTPRequestHandler',
+            'ThreadingHTTPServer',
+            'HTTPServer(',
+            'HttpListener',
+            'TcpListener',
+            'Flask(__name__',
+            'FastAPI(',
+            'uvicorn.run(',
+            'app.run('
+          )
+          $localServerMarkers = @($forbiddenLocalServers | Where-Object { $bridgeSource.Contains($_) })
+          if ($localServerMarkers.Count -gt 0) {
+            throw "Direct phone-to-PC server/listener code is forbidden; use the Firebase command queue only: $($localServerMarkers -join ', ')"
+          }
+
+          Write-Host "Validated server-only Firebase command queue, command claim/result updates, file-list command, periodic phone discovery cache, account diagnostics, and canonical OAuth scopes."
 
       - name: Build desktop bridge executable
         shell: pwsh
