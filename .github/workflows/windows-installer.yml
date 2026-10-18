@@ -235,7 +235,7 @@ jobs:
           if ($settingsUi -match 'Title="MynAI|Text="MynAI|Content="MynAI|MynAI''yi') {
             throw 'The settings UI still contains an old MynAI product label.'
           }
-                    $installerSource = Get-Content 'installer/MynAI.iss' -Raw
+          $installerSource = Get-Content 'installer/MynAI.iss' -Raw
           if ($installerSource -notmatch '(?m)^UsePreviousAppDir=yes\s*
           if ($installerSource -notmatch '(?m)^DisableDirPage=no\s*$') {
             throw 'Installer must show the destination-folder selection page.'
