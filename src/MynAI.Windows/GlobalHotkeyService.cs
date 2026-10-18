@@ -42,7 +42,7 @@ public static class GlobalHotkeyService
         if (_handle == IntPtr.Zero)
         {
             error =
-                "MynAI penceresi henüz hazır değil.";
+                "MynAssistant penceresi henüz hazır değil.";
 
             return false;
         }
