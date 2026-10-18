@@ -2,6 +2,10 @@
 
 MynAssistant Windows 0.1.2 paketi Android MynAssistant'ın Firebase tabanlı Windows köprüsünü ve .NET zamanlayıcı bileşeni MynAgent'ı ayrı ayrı kurar. Mevcut .NET zamanlayıcı Agent'ı değiştirilmez; bileşenler ayrı süreçlerde çalışır.
 
+## Zorunlu iletişim mimarisi: sunucu üzerinden
+
+Android telefon ve Windows bilgisayar birbirine IP adresi, yerel HTTP uç noktası veya aynı Wi-Fi ağı üzerinden doğrudan bağlanmaz. İkisi de Firebase'e ayrı istemci olarak bağlanır. Telefon komutu sahibi ve hedef cihaz kimliğiyle Firestore `commands` kuyruğuna yazar; Windows Desktop Bridge Agent sunucudan kendi cihazına ait bekleyen komutları alır, komutu yerel bilgisayarda yürütür ve sonucu yine sunucuya `completed`/`failed` olarak yazar. Telefon sonucu aynı komut belgesinin sunucu tarafındaki durumundan okur. Cihaz keşfi `devices` koleksiyonundaki kullanıcıya ait kayıtlardan yapılır. Android tarafındaki yerel PC URL/token ayarları artık kullanılmaz; doğrudan taşıma yolu CI tarafından yasaklanır.
+
 ## Geliştirme durumu
 
 - Windows köprüsü: `MynAssistantDesktopBridge.exe`
