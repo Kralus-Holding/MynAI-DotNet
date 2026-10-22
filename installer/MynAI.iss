@@ -1,5 +1,5 @@
 #define MyAppName "MynAssistant"
-#define MyAppVersion "0.1.1"
+#define MyAppVersion "0.1.2"
 #define MyAppPublisher "MynKralus"
 #define MyAppExeName "MynAssistant.exe"
 #define MyAgentExeName "MynAgent.exe"
@@ -13,11 +13,12 @@ AppPublisherURL=https://github.com/MynKralus/MynAI-DotNet
 AppSupportURL=https://github.com/MynKralus/MynAI-DotNet/issues
 DefaultDirName={localappdata}\Programs\MynAssistant
 UsePreviousAppDir=yes
+DisableDirPage=no
 DefaultGroupName=MynAssistant
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=..\src\MynAI.Windows\Resources\myn.ico
 OutputDir=..\build\installer
-OutputBaseFilename=MynAssistant-Setup
+OutputBaseFilename=MynAssistant-Setup-0.1.2
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=lowest
@@ -31,11 +32,11 @@ VersionInfoCompany=MynKralus
 VersionInfoDescription=MynAssistant Windows Installer
 VersionInfoProductName=MynAssistant
 VersionInfoProductVersion={#MyAppVersion}
-VersionInfoVersion=0.1.1.0
+VersionInfoVersion=0.1.2.0
 VersionInfoCopyright=Copyright (C) MynKralus
 
 [Tasks]
-Name: "desktopicon"; Description: "Masaüstüne kısayol oluştur"; GroupDescription: "Ek kısayollar:"; Flags: unchecked
+Name: "desktopicon"; Description: "Masaüstüne kısayol oluştur"; GroupDescription: "Ek kısayollar:"
 
 [Files]
 Source: "..\build\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -47,7 +48,7 @@ Name: "{autoprograms}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingD
 Name: "{autodesktop}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\Agent\{#MyAgentExeName}"; Description: "MynAgent arka plan hizmetini başlat"; WorkingDir: "{app}\Agent"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Agent\{#MyAgentExeName}"; Description: "MynAgent arka plan hizmetini başlat"; WorkingDir: "{app}\Agent"; Flags: nowait runhidden
 Filename: "{app}\{#MyAppExeName}"; Description: "MynAssistant'ı şimdi başlat"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 
 [Code]
@@ -60,6 +61,8 @@ begin
     Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM MynAssistantDesktopBridge.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM MynAgent.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM MynAI.Agent.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM MynAssistant.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM MynAI.Windows.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'MynAssistant.DesktopBridge');
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'MynAssistant.Agent');
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'MynAI.DesktopBridge');

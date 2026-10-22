@@ -66,7 +66,7 @@ public sealed class AgentNotificationService
 
             var notification =
                 new AppNotificationBuilder()
-                    .AddText("MynAi")
+                    .AddText("MynAssistant")
                     .AddText(
                         $"{remainingText} sonra " +
                         $"{actionText} işlemi gerçekleştirilecek.")
@@ -118,7 +118,7 @@ public sealed class AgentNotificationService
 
             var notification =
                 new AppNotificationBuilder()
-                    .AddText("MynAi")
+                    .AddText("MynAssistant")
                     .AddText(
                         $"5 dakika sonra {actionText} işlemi gerçekleştirilecek.")
                     .BuildNotification();

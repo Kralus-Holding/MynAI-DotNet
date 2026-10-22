@@ -1,7 +1,9 @@
-﻿using MessageBox = System.Windows.MessageBox;
+using MessageBox = System.Windows.MessageBox;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Color = System.Windows.Media.Color;
 using System.Diagnostics;
+using System.Collections.ObjectModel;
+using System.Text.Json;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
@@ -14,6 +16,58 @@ namespace MynAI.Windows;
 
 public partial class SettingsWindow : Window
 {
+    private sealed class AndroidPhoneSnapshot
+    {
+        public string OwnerId { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string UpdatedAt { get; set; } = string.Empty;
+        public List<AndroidPhoneDevice> Devices { get; set; } = [];
+    }
+
+    private sealed class AndroidPhoneDevice
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = "Android telefon";
+        public string Platform { get; set; } = "Android";
+        public string Status { get; set; } = "offline";
+        public string LastSeenAt { get; set; } = string.Empty;
+
+        public string StatusLabel
+        {
+            get
+            {
+                if (!Status.Equals("online", StringComparison.OrdinalIgnoreCase))
+                    return "Çevrimdışı";
+                if (!DateTimeOffset.TryParse(LastSeenAt, out var lastSeen))
+                    return "Durum bilinmiyor";
+                var age = DateTimeOffset.UtcNow - lastSeen.ToUniversalTime();
+                return age >= TimeSpan.FromSeconds(-5) && age <= TimeSpan.FromSeconds(90)
+                    ? "Çevrimiçi"
+                    : "Çevrimdışı";
+            }
+        }
+
+        public string StatusForeground => StatusLabel switch
+        {
+            "Çevrimiçi" => "#7FD495",
+            "Durum bilinmiyor" => "#D6B46B",
+            _ => "#E49A9A"
+        };
+
+        public string LastSeenLabel =>
+            DateTimeOffset.TryParse(LastSeenAt, out var lastSeen)
+                ? "Son görülme: " + lastSeen.ToLocalTime().ToString("HH:mm:ss")
+                : "Henüz görülmedi";
+    }
+
+    private readonly ObservableCollection<AndroidPhoneDevice> _androidPhones = [];
+    private AndroidPhoneSnapshot? _lastPhoneSnapshot;
+    private DateTime _phoneCacheLastWriteUtc = DateTime.MinValue;
+    private static readonly JsonSerializerOptions PhoneSnapshotJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly GoogleOAuthService _googleOAuthService;
     private readonly GoogleAccountStore _googleAccountStore;
     private readonly MynAISettingsStore _settingsStore;
@@ -43,17 +97,21 @@ public partial class SettingsWindow : Window
                     TimeSpan.FromSeconds(1)
             };
 
+        AndroidPhonesListBox.ItemsSource = _androidPhones;
+
         _agentTimer.Tick +=
             (_, _) =>
             {
                 UpdateAgentStatus();
                 UpdateDesktopBridgeStatus();
+                UpdateAndroidPhoneDevices();
             };
 
         _agentTimer.Start();
 
         UpdateAgentStatus();
         UpdateDesktopBridgeStatus();
+        UpdateAndroidPhoneDevices();
     }
 
     private void LoadSettings()
@@ -260,6 +318,88 @@ public partial class SettingsWindow : Window
             : $"OAuth dosyası bulunamadı: {oauthPath}";
     }
 
+    private void UpdateAndroidPhoneDevices()
+    {
+        var cachePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MynAssistant",
+            "DesktopAgent",
+            "android_devices.json");
+
+        try
+        {
+            if (!File.Exists(cachePath))
+            {
+                _lastPhoneSnapshot = null;
+                _androidPhones.Clear();
+                AndroidPhoneDevicesStatusText.Text = DesktopBridgeStartupManager.IsRunning()
+                    ? "Köprü çalışıyor; aynı hesapla giriş yapmış Android telefon bekleniyor."
+                    : "Önce 'Bağlantıyı başlat' düğmesine basıp telefondaki hesapla aynı hesapta giriş yap.";
+                return;
+            }
+
+            var lastWriteUtc = File.GetLastWriteTimeUtc(cachePath);
+            if (_lastPhoneSnapshot is null || lastWriteUtc != _phoneCacheLastWriteUtc)
+            {
+                var json = File.ReadAllText(cachePath);
+                _lastPhoneSnapshot = JsonSerializer.Deserialize<AndroidPhoneSnapshot>(
+                    json,
+                    PhoneSnapshotJsonOptions);
+                _phoneCacheLastWriteUtc = lastWriteUtc;
+                _androidPhones.Clear();
+                foreach (var phone in _lastPhoneSnapshot?.Devices ?? [])
+                {
+                    _androidPhones.Add(phone);
+                }
+            }
+
+            if (_lastPhoneSnapshot is null)
+            {
+                AndroidPhoneDevicesStatusText.Text = "Telefon listesi okunamadı; köprüyü yeniden başlat.";
+                return;
+            }
+
+            var snapshotAge = DateTimeOffset.TryParse(
+                _lastPhoneSnapshot.UpdatedAt,
+                out var updatedAt)
+                ? DateTimeOffset.UtcNow - updatedAt.ToUniversalTime()
+                : (TimeSpan?)null;
+            var snapshotFresh = snapshotAge is not null
+                && snapshotAge >= TimeSpan.FromSeconds(-5)
+                && snapshotAge <= TimeSpan.FromSeconds(30);
+
+            if (!snapshotFresh)
+            {
+                // Do not keep showing a stale account's devices when the bridge stops updating its cache.
+                _androidPhones.Clear();
+                AndroidPhoneDevicesStatusText.Text = "Telefon listesi güncellenemiyor. Bağlantıyı yeniden başlatıp kontrol et.";
+            }
+            else
+            {
+                var accountLabel = string.IsNullOrWhiteSpace(_lastPhoneSnapshot.Email)
+                    ? string.Empty
+                    : $" Windows Google hesabı: {_lastPhoneSnapshot.Email}.";
+                if (_androidPhones.Count == 0)
+                {
+                    AndroidPhoneDevicesStatusText.Text =
+                        "Henüz telefon bulunamadı. Android uygulamasını açıp aynı Google hesabıyla giriş yap." + accountLabel;
+                }
+                else
+                {
+                    var onlineCount = _androidPhones.Count(phone =>
+                        phone.StatusLabel == "Çevrimiçi");
+                    AndroidPhoneDevicesStatusText.Text =
+                        $"{_androidPhones.Count} Android cihaz bulundu · {onlineCount} çevrimiçi." + accountLabel;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AndroidPhoneDevicesStatusText.Text =
+                "Telefon listesi okunamadı: " + ex.Message;
+        }
+    }
+
     private void StartDesktopBridge_Click(
         object sender,
         RoutedEventArgs e)
@@ -303,6 +443,40 @@ public partial class SettingsWindow : Window
                 "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
+        }
+    }
+
+    private void ChangeDesktopBridgeAccount_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var answer = MessageBox.Show(
+            "Telefon-PC bağlantısında kayıtlı Google oturumu silinecek. " +
+            "Köprü yeniden başlatılacak ve tarayıcıda hesabını tekrar seçebileceksin. " +
+            "MynAssistant'ın diğer ayarları korunur.",
+            "Google hesabını değiştir",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (answer != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            DesktopBridgeStartupManager.ResetAccountSession();
+            AndroidPhoneDevicesStatusText.Text = "Google hesabı yeniden seçiliyor...";
+            UpdateDesktopBridgeStatus();
+            DesktopBridgeStartupManager.StartAgent();
+            UpdateDesktopBridgeStatus();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Google hesabı değiştirilemedi:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            UpdateDesktopBridgeStatus();
         }
     }
 

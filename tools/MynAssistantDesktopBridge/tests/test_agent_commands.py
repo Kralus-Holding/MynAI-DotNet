@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +15,7 @@ SPEC.loader.exec_module(agent)
 
 class FakeSession:
     uid = "firebase-user-123"
+    email = "phone-owner@example.test"
 
     def headers(self):
         return {"Authorization": "Bearer test-token"}
@@ -48,6 +51,90 @@ class DeviceCommandQueryTests(unittest.TestCase):
         self.assertEqual(values["status"], "pending")
         self.assertEqual(query["orderBy"][0]["field"]["fieldPath"], "createdAt")
         self.assertEqual(query["orderBy"][0]["direction"], "ASCENDING")
+
+
+class AndroidPhoneDiscoveryTests(unittest.TestCase):
+    @patch.object(agent.requests, "post")
+    def test_query_returns_only_android_devices_owned_by_current_user(self, post):
+        post.return_value = FakeResponse(200, [
+            {"document": {
+                "name": "projects/myncloud-24/databases/(default)/documents/devices/android-phone-1",
+                "fields": {
+                    "ownerId": {"stringValue": "firebase-user-123"},
+                    "name": {"stringValue": "Pixel Test"},
+                    "platform": {"stringValue": "Android"},
+                    "status": {"stringValue": "online"},
+                    "lastSeenAt": {"timestampValue": agent.utc_now()},
+                },
+            }},
+            {"document": {
+                "name": "projects/myncloud-24/databases/(default)/documents/devices/win-device-1",
+                "fields": {
+                    "ownerId": {"stringValue": "firebase-user-123"},
+                    "name": {"stringValue": "My PC"},
+                    "platform": {"stringValue": "Windows"},
+                },
+            }},
+            {"document": {
+                "name": "projects/myncloud-24/databases/(default)/documents/devices/android-other-user",
+                "fields": {
+                    "ownerId": {"stringValue": "somebody-else"},
+                    "name": {"stringValue": "Other phone"},
+                    "platform": {"stringValue": "Android"},
+                },
+            }},
+        ])
+
+        phones = agent.fetch_android_phone_devices(FakeSession())
+
+        self.assertEqual(len(phones), 1)
+        self.assertEqual(phones[0]["id"], "android-phone-1")
+        self.assertEqual(phones[0]["name"], "Pixel Test")
+        self.assertEqual(phones[0]["status"], "online")
+        query = post.call_args.kwargs["json"]["structuredQuery"]
+        owner_filter = query["where"]["fieldFilter"]
+        self.assertEqual(owner_filter["field"]["fieldPath"], "ownerId")
+        self.assertEqual(owner_filter["value"]["stringValue"], "firebase-user-123")
+        self.assertEqual(query["limit"], 100)
+
+
+    @patch.object(agent.requests, "post")
+    def test_stale_android_device_is_reported_offline(self, post):
+        post.return_value = FakeResponse(200, [
+            {"document": {
+                "name": "projects/myncloud-24/databases/(default)/documents/devices/android-stale-phone",
+                "fields": {
+                    "ownerId": {"stringValue": "firebase-user-123"},
+                    "name": {"stringValue": "Stale phone"},
+                    "platform": {"stringValue": "Android"},
+                    "status": {"stringValue": "online"},
+                    "lastSeenAt": {"timestampValue": "2000-01-01T00:00:00Z"},
+                },
+            }},
+        ])
+
+        phones = agent.fetch_android_phone_devices(FakeSession())
+
+        self.assertEqual(len(phones), 1)
+        self.assertEqual(phones[0]["status"], "offline")
+
+    @patch.object(agent, "fetch_android_phone_devices")
+    def test_snapshot_includes_account_identity_and_writes_atomically(self, fetch_devices):
+        fetch_devices.return_value = [
+            {"id": "android-phone-1", "name": "Pixel Test", "platform": "Android", "status": "online", "lastSeenAt": ""}
+        ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app_data = Path(temp_dir)
+            with patch.object(agent, "APP_DATA", app_data):
+                agent.write_android_phone_snapshot(FakeSession())
+                snapshot_path = app_data / "android_devices.json"
+                snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(snapshot["ownerId"], FakeSession.uid)
+            self.assertEqual(snapshot["email"], FakeSession.email)
+            self.assertEqual(snapshot["devices"], fetch_devices.return_value)
+            self.assertFalse((app_data / "android_devices.tmp").exists())
 
 
 class CommandClaimTests(unittest.TestCase):
@@ -89,6 +176,99 @@ class CommandClaimTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(RuntimeError, "HTTP 500"):
             agent.claim_command(self.session, self.document)
+
+
+class FirebaseResponseHandlingTests(unittest.TestCase):
+    def test_transient_server_failure_is_retryable(self):
+        response = FakeResponse(503, {"error": {"status": "UNAVAILABLE"}}, "service unavailable")
+        with self.assertRaisesRegex(agent.requests.HTTPError, "HTTP 503"):
+            agent.raise_for_firebase_response("Firestore", response)
+
+    def test_permanent_client_failure_is_not_marked_retryable(self):
+        response = FakeResponse(403, {"error": {"status": "PERMISSION_DENIED"}}, "permission denied")
+        with self.assertRaisesRegex(RuntimeError, "HTTP 403"):
+            agent.raise_for_firebase_response("Firestore", response)
+
+
+class FileListingCommandTests(unittest.TestCase):
+    def test_phone_file_list_command_returns_server_relayable_listing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            desktop = home / "Desktop"
+            documents = home / "Documents"
+            desktop.mkdir()
+            documents.mkdir()
+            (desktop / "sample.txt").write_text("not uploaded", encoding="utf-8")
+            (documents / "project").mkdir()
+
+            with patch.object(agent.Path, "home", return_value=home):
+                result = agent.execute_text_command("bilgisayar dosyalarını listele")
+
+        self.assertIn("Masaüstü", result)
+        self.assertIn("sample.txt", result)
+        self.assertIn("project", result)
+        self.assertNotIn("not uploaded", result)
+
+    def test_file_listing_is_bounded_and_non_recursive(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            desktop = home / "Desktop"
+            desktop.mkdir()
+            for index in range(25):
+                (desktop / f"item-{index:02d}.txt").write_text("x", encoding="utf-8")
+            (desktop / "nested").mkdir()
+            (desktop / "nested" / "secret.txt").write_text("x", encoding="utf-8")
+
+            result = agent.list_user_files(home, max_entries_per_folder=5)
+
+        self.assertIn("ve 21 öğe daha", result)
+        self.assertNotIn("secret.txt", result)
+
+
+class StartupRetryTests(unittest.TestCase):
+    def test_retry_returns_operation_result(self):
+        self.assertEqual("ok", agent.retry_transient_operation(lambda: "ok", "test operation"))
+
+
+    def test_transient_network_failure_retries_and_recovers(self):
+        attempts = []
+
+        def operation():
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise agent.requests.ConnectionError("offline")
+
+        with patch.object(agent.time, "sleep") as sleep:
+            agent.retry_transient_operation(operation, "device registration")
+
+        self.assertEqual(len(attempts), 2)
+        sleep.assert_called_once_with(2.0)
+
+    def test_permanent_error_is_not_retried(self):
+        attempts = []
+
+        def operation():
+            attempts.append(1)
+            raise RuntimeError("HTTP 403: permission denied")
+
+        with patch.object(agent.time, "sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "HTTP 403"):
+                agent.retry_transient_operation(operation, "device registration")
+
+        self.assertEqual(len(attempts), 1)
+        sleep.assert_not_called()
+
+
+class OAuthScopeTests(unittest.TestCase):
+    def test_google_sign_in_uses_canonical_scope_uris(self):
+        self.assertEqual(
+            agent.SCOPES,
+            [
+                "openid",
+                "https://www.googleapis.com/auth/userinfo.email",
+                "https://www.googleapis.com/auth/userinfo.profile",
+            ],
+        )
 
 
 class OAuthConfigPathTests(unittest.TestCase):
