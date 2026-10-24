@@ -1,5 +1,5 @@
 #define MyAppName "MynAssistant"
-#define MyAppVersion "0.1.2"
+#define MyAppVersion "0.1.3"
 #define MyAppPublisher "MynKralus"
 #define MyAppExeName "MynAssistant.exe"
 #define MyAgentExeName "MynAgent.exe"
@@ -35,7 +35,7 @@ VersionInfoCompany=MynKralus
 VersionInfoDescription=MynAssistant Windows Installer
 VersionInfoProductName=MynAssistant
 VersionInfoProductVersion={#MyAppVersion}
-VersionInfoVersion=0.1.2.0
+VersionInfoVersion=0.1.3.0
 VersionInfoCopyright=Copyright (C) MynKralus
 
 [Languages]
