@@ -77,10 +77,38 @@ public partial class MainWindow : Window
             "myn.jpg");
 
         if (!File.Exists(path))
+        {
+            System.Diagnostics.Trace.TraceWarning(
+                $"MynAssistant logo was not found: {path}");
             return;
+        }
 
-        LogoImage.Source = new BitmapImage(
-            new Uri(path, UriKind.Absolute));
+        try
+        {
+            // Decode the image inside this method so a corrupt or unsupported
+            // image cannot terminate application startup.
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read);
+
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+            bitmap.StreamSource = stream;
+            bitmap.EndInit();
+            bitmap.Freeze();
+
+            LogoImage.Source = bitmap;
+        }
+        catch (Exception ex)
+        {
+            LogoImage.Source = null;
+            System.Diagnostics.Trace.TraceWarning(
+                $"MynAssistant logo could not be loaded from '{path}': {ex}");
+        }
     }
 
     private async void MainWindow_Loaded(
