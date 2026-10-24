@@ -77,10 +77,35 @@ public partial class MainWindow : Window
             "myn.jpg");
 
         if (!File.Exists(path))
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"MynAssistant logo file was not found: {path}");
             return;
+        }
 
-        LogoImage.Source = new BitmapImage(
-            new Uri(path, UriKind.Absolute));
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.UriSource = new Uri(path, UriKind.Absolute);
+            image.EndInit();
+            image.Freeze();
+
+            LogoImage.Source = image;
+
+            // Use the already-supported JPEG for the WPF window icon.
+            // The .ico remains the executable/tray icon, but is not decoded
+            // by WPF's BitmapImage converter during XAML initialization.
+            Icon = image;
+        }
+        catch (Exception ex)
+        {
+            // Branding is optional: a bad/missing image must never prevent
+            // the assistant window from opening.
+            System.Diagnostics.Debug.WriteLine(
+                $"MynAssistant window logo could not be loaded: {ex}");
+        }
     }
 
     private async void MainWindow_Loaded(

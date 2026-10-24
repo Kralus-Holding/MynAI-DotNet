@@ -59,6 +59,28 @@ jobs:
             throw "Desktop Bridge EXE was not created."
           }
 
+      - name: Verify WPF window icon loading remains non-fatal
+        shell: pwsh
+        run: |
+          $windowXaml = @(
+            "src/MynAI.Windows/MainWindow.xaml",
+            "src/MynAI.Windows/SettingsWindow.xaml"
+          )
+          foreach ($path in $windowXaml) {
+            if (Select-String -Path $path -Pattern 'Icon="Resources/myn.ico"' -Quiet) {
+              throw "Do not load .ico via the WPF XAML ImageSource converter in $path."
+            }
+          }
+          if (-not (Test-Path "src/MynAI.Windows/Resources/myn.jpg")) {
+            throw "Fallback window image is missing."
+          }
+          if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern 'image.CacheOption = BitmapCacheOption.OnLoad' -Quiet)) {
+            throw "The main-window image must be decoded safely with OnLoad."
+          }
+          if (-not (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml.cs" -Pattern 'LoadWindowIconSafely' -Quiet)) {
+            throw "The settings-window icon must use the safe loader."
+          }
+
       - name: Restore and build .NET solution
         shell: pwsh
         run: |
