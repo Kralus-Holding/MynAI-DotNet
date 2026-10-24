@@ -1,5 +1,5 @@
 #define MyAppName "MynAssistant"
-#define MyAppVersion "0.1.1"
+#define MyAppVersion "0.1.2"
 #define MyAppPublisher "MynKralus"
 #define MyAppExeName "MynAssistant.exe"
 #define MyAgentExeName "MynAgent.exe"
@@ -16,6 +16,10 @@ UsePreviousAppDir=yes
 DefaultGroupName=MynAssistant
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=..\src\MynAI.Windows\Resources\myn.ico
+LicenseFile=LICENSE-AGREEMENT.rtf
+WizardSmallImageFile=..\build\installer\MynAssistantWizardSmall.bmp
+WizardSmallImageBackColor=clWhite
+
 OutputDir=..\build\installer
 OutputBaseFilename=MynAssistant-Setup
 ArchitecturesAllowed=x64
@@ -31,8 +35,12 @@ VersionInfoCompany=MynKralus
 VersionInfoDescription=MynAssistant Windows Installer
 VersionInfoProductName=MynAssistant
 VersionInfoProductVersion={#MyAppVersion}
-VersionInfoVersion=0.1.1.0
+VersionInfoVersion=0.1.2.0
 VersionInfoCopyright=Copyright (C) MynKralus
+
+[Languages]
+Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
+
 
 [Tasks]
 Name: "desktopicon"; Description: "Masaüstüne kısayol oluştur"; GroupDescription: "Ek kısayollar:"; Flags: unchecked
