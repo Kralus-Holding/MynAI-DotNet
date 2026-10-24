@@ -24,6 +24,8 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
 
+        LoadWindowIconSafely();
+
         _googleOAuthService =
             new GoogleOAuthService();
 
@@ -54,6 +56,35 @@ public partial class SettingsWindow : Window
 
         UpdateAgentStatus();
         UpdateDesktopBridgeStatus();
+    }
+
+    private void LoadWindowIconSafely()
+    {
+        var path = Path.Combine(
+            AppContext.BaseDirectory,
+            "Resources",
+            "myn.jpg");
+
+        if (!File.Exists(path))
+            return;
+
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.UriSource = new Uri(path, UriKind.Absolute);
+            image.EndInit();
+            image.Freeze();
+            Icon = image;
+        }
+        catch (Exception ex)
+        {
+            // The window icon is decorative; settings must remain usable if
+            // an image is damaged or unavailable on a target computer.
+            Debug.WriteLine(
+                $"MynAssistant settings icon could not be loaded: {ex}");
+        }
     }
 
     private void LoadSettings()
