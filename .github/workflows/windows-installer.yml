@@ -131,7 +131,50 @@ jobs:
       - name: Compile Windows installer
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path build/installer | Out-Null
+
+          # Validate all installer assets before invoking Inno Setup.
+          $licensePath = "installer/LICENSE-AGREEMENT.rtf"
+          $iconPath = "src/MynAI.Windows/Resources/myn.ico"
+          if (-not (Test-Path $licensePath)) { throw "License agreement file is missing: $licensePath" }
+          if (-not (Test-Path $iconPath)) { throw "MynAssistant application icon is missing: $iconPath" }
+
+          # Generate only the 55x58 top-right wizard logo from the same app ICO.
+          # Avoids the old large custom wizard artwork that had scaling/rendering issues.
+          Add-Type -AssemblyName System.Drawing
+          $icon = [System.Drawing.Icon]::new((Resolve-Path $iconPath).Path)
+          $sourceBitmap = $icon.ToBitmap()
+          $wizardBitmap = [System.Drawing.Bitmap]::new(
+            55, 58, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb
+          )
+          $graphics = [System.Drawing.Graphics]::FromImage($wizardBitmap)
+          $wizardSmallImage = "build/installer/MynAssistantWizardSmall.bmp"
+          try {
+            $graphics.Clear([System.Drawing.Color]::White)
+            $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+            $scale = [Math]::Min(48.0 / $sourceBitmap.Width, 50.0 / $sourceBitmap.Height)
+            $logoWidth = [Math]::Max(1, [int][Math]::Round($sourceBitmap.Width * $scale))
+            $logoHeight = [Math]::Max(1, [int][Math]::Round($sourceBitmap.Height * $scale))
+            $logoX = [int](($wizardBitmap.Width - $logoWidth) / 2)
+            $logoY = [int](($wizardBitmap.Height - $logoHeight) / 2)
+            $graphics.DrawImage(
+              $sourceBitmap,
+              [System.Drawing.Rectangle]::new($logoX, $logoY, $logoWidth, $logoHeight)
+            )
+            $wizardBitmap.Save($wizardSmallImage, [System.Drawing.Imaging.ImageFormat]::Bmp)
+          }
+          finally {
+            $graphics.Dispose()
+            $wizardBitmap.Dispose()
+            $sourceBitmap.Dispose()
+            $icon.Dispose()
+          }
+          if (-not (Test-Path $wizardSmallImage) -or (Get-Item $wizardSmallImage).Length -lt 100) {
+            throw "MynAssistant wizard icon could not be generated."
+          }
+
           $compilerCandidates = @(
             "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
             "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
