@@ -172,8 +172,7 @@ begin
 
     SelectedInstallDir := ExpandConstant('{app}');
     if MsgBox(
-      'MynAssistant bilgisayarınızda zaten kurulu. Mevcut kurulumu güncellemek ister misiniz?' +
-      #13#10#13#10 +
+      'MynAssistant bilgisayarınızda zaten kurulu. Mevcut kurulumu güncellemek ister misiniz?' + #13#10#13#10 +
       'Konum: ' + ExistingInstallDir + #13#10 +
       'Sürüm: ' + ExistingInstallVersion,
       mbConfirmation,
