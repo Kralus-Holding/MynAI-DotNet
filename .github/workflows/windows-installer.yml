@@ -11,6 +11,7 @@ on:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
       - "installer/**"
+      - "scripts/**"
       - ".github/workflows/windows-installer.yml"
   pull_request:
     branches: ["main"]
