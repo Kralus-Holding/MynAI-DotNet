@@ -55,12 +55,14 @@ public partial class SettingsWindow : Window
             {
                 UpdateAgentStatus();
                 UpdateDesktopBridgeStatus();
+                UpdateAccountDesktopBridgeStatus();
             };
 
         _agentTimer.Start();
 
         UpdateAgentStatus();
         UpdateDesktopBridgeStatus();
+        UpdateAccountDesktopBridgeStatus();
     }
 
     private void LoadWindowIconSafely()
@@ -342,8 +344,7 @@ public partial class SettingsWindow : Window
         var authRequired = !hasSession || state == "auth_required";
         var connecting = running && (state == "starting" || state == "connecting");
 
-        // Preserve the existing Agent tab diagnostics wording and layout.
-        var agentStatusText = connected
+        DesktopBridgeStatusText.Text = connected
             ? "Bağlandı — PC Android uygulaması için çevrimiçi"
             : authRequired
                 ? "Telefon işlemleri için giriş gerekli"
@@ -365,15 +366,36 @@ public partial class SettingsWindow : Window
                     ? Colors.Goldenrod
                     : Colors.LightBlue;
 
-        var agentMessageText = isFresh && !string.IsNullOrWhiteSpace(runtime?.Message)
-            ? runtime.Message
-            : !hasSession
-                ? "Bu bilgisayarda kayıtlı telefon-PC oturumu bulunamadı. Bu sürümde ilk eşleştirmeyi tamamlayan sunucu akışı henüz mevcut değil."
-                : hasError
-                    ? "Köprü başlatılamadı. Agent günlüklerini ve Windows güvenlik günlüklerini kontrol edin."
-                    : "Yerel Agent bu hesaptan bağımsız çalışır.";
+        DesktopBridgeStatusText.Foreground = new SolidColorBrush(color);
+        DesktopBridgeStatusDot.Fill = new SolidColorBrush(color);
+        DesktopBridgeExecutablePathText.Text =
+            executablePath ?? "MynAssistantDesktopBridge.exe bulunamadı.";
+        DesktopBridgeMessageText.Text =
+            isFresh && !string.IsNullOrWhiteSpace(runtime?.Message)
+                ? runtime.Message
+                : !hasSession
+                    ? "Telefon-PC bağlantısı için bu bilgisayarda kayıtlı oturum gerekli. İlk eşleştirme sunucu akışı bu sürümde henüz mevcut değil."
+                    : hasError
+                        ? "Köprü başlatılamadı. Agent günlüklerini ve Windows güvenlik günlüklerini kontrol edin."
+                        : "Yerel Agent bu hesaptan bağımsız çalışır.";
+    }
 
-        var accountStatusText = connected
+    private void UpdateAccountDesktopBridgeStatus()
+    {
+        var running = DesktopBridgeStartupManager.IsRunning();
+        var executablePath = DesktopBridgeStartupManager.TryGetExecutablePath();
+        var hasSession = FirebaseDesktopSessionStore.HasValidStoredSession();
+        var runtime = DesktopBridgeStartupManager.ReadRuntimeStatus();
+        var isFresh = runtime is not null
+            && DateTimeOffset.Now - runtime.UpdatedAt < TimeSpan.FromSeconds(90);
+        var state = isFresh ? runtime?.State?.ToLowerInvariant() : null;
+
+        var connected = running && state == "online";
+        var hasError = state == "error";
+        var authRequired = !hasSession || state == "auth_required";
+        var connecting = running && (state == "starting" || state == "connecting");
+
+        var statusText = connected
             ? "Telefon-PC bağlantısı hazır"
             : authRequired
                 ? "Eşleştirme gerekli"
@@ -387,7 +409,15 @@ public partial class SettingsWindow : Window
                                 ? "Bağlantı bileşeni bulunamadı"
                                 : "Bağlantı henüz başlamadı";
 
-        var accountMessageText = connected
+        var color = connected
+            ? Colors.LightGreen
+            : hasError
+                ? Colors.IndianRed
+                : authRequired
+                    ? Colors.Goldenrod
+                    : Colors.LightBlue;
+
+        var messageText = connected
             ? "Android uygulamasıyla bilgisayar bağlantısı kuruldu."
             : authRequired
                 ? "Bu bilgisayarda güvenli telefon-PC oturumu yok. İlk eşleştirme sunucu akışı bu sürümde henüz bulunmadığından bağlantı başlatılamaz."
@@ -401,17 +431,10 @@ public partial class SettingsWindow : Window
                                 ? "Kurulum dosyaları eksik görünüyor. MynAssistant kurulumunu onar veya yeniden yükle."
                                 : "Bağlantıyı başlatmak veya yeniden denemek için Bağlantıyı yenile'ye bas.";
 
-        DesktopBridgeStatusText.Text = agentStatusText;
-        DesktopBridgeStatusText.Foreground = new SolidColorBrush(color);
-        DesktopBridgeStatusDot.Fill = new SolidColorBrush(color);
-        DesktopBridgeExecutablePathText.Text =
-            executablePath ?? "MynAssistantDesktopBridge.exe bulunamadı.";
-        DesktopBridgeMessageText.Text = agentMessageText;
-
-        AccountDesktopBridgeStatusText.Text = accountStatusText;
+        AccountDesktopBridgeStatusText.Text = statusText;
         AccountDesktopBridgeStatusText.Foreground = new SolidColorBrush(color);
         AccountDesktopBridgeStatusDot.Fill = new SolidColorBrush(color);
-        AccountDesktopBridgeMessageText.Text = accountMessageText;
+        AccountDesktopBridgeMessageText.Text = messageText;
     }
 
     private void UpdateLogoPreview(MynAISettings settings)
@@ -861,6 +884,8 @@ public partial class SettingsWindow : Window
             }
 
             SetSaveStatus("Ayarlar kaydedildi.", Colors.LightGreen);
+            UpdateDesktopBridgeStatus();
+            UpdateAccountDesktopBridgeStatus();
             UpdateDesktopBridgeStatus();
         }
         catch (Exception ex)
