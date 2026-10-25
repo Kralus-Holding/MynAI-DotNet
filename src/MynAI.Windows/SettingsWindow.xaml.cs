@@ -63,7 +63,7 @@ public partial class SettingsWindow : Window
         var path = Path.Combine(
             AppContext.BaseDirectory,
             "Resources",
-            "myn.jpg");
+            "mynassistant.png");
 
         if (!File.Exists(path))
             return;
