@@ -588,7 +588,7 @@ public partial class MainWindow : Window
                 _scheduledTasks.Count.ToString();
 
             AgentStatusText.Text =
-                "Yerel Agent: bağlı";
+                "Agent: bağlı";
             UpdateDesktopBridgeStatus();
 
             AgentStatusText.Foreground =
@@ -606,7 +606,7 @@ public partial class MainWindow : Window
         catch
         {
             AgentStatusText.Text =
-                "Yerel Agent: kapalı";
+                "Agent: kapalı";
             UpdateDesktopBridgeStatus();
 
             AgentStatusText.Foreground =
@@ -682,6 +682,32 @@ public partial class MainWindow : Window
     private void SetStatus(string text)
     {
         StatusText.Text = text;
+    }
+
+    private void BridgeStatusBorder_MouseLeftButtonUp(
+        object sender,
+        MouseButtonEventArgs e)
+    {
+        if (DesktopBridgeStartupManager.IsRunning())
+        {
+            SettingsButton_Click(sender, e);
+            return;
+        }
+
+        try
+        {
+            DesktopBridgeStartupManager.StartAgent();
+            UpdateDesktopBridgeStatus();
+        }
+        catch (Exception ex)
+        {
+            UpdateDesktopBridgeStatus();
+            MessageBox.Show(
+                $"Telefon/web PC bağlantısı başlatılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
     }
 
     private void UpdateDesktopBridgeStatus()
