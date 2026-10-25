@@ -63,7 +63,7 @@ public partial class SettingsWindow : Window
         var path = Path.Combine(
             AppContext.BaseDirectory,
             "Resources",
-            "myn.jpg");
+            "mynassistant-app-icon.png");
 
         if (!File.Exists(path))
             return;
@@ -260,7 +260,7 @@ public partial class SettingsWindow : Window
         var hasOAuthConfig = File.Exists(oauthPath);
 
         DesktopBridgeStatusText.Text = running
-            ? "Çalışıyor"
+            ? "Bağlantı köprüsü işlemi çalışıyor"
             : executablePath is null
                 ? "Bridge bileşeni bulunamadı"
                 : !hasOAuthConfig
@@ -274,6 +274,16 @@ public partial class SettingsWindow : Window
                     : executablePath is not null && hasOAuthConfig
                         ? Colors.Goldenrod
                         : Colors.IndianRed);
+
+        var cloudStatus = DesktopBridgeStartupManager.GetCloudConnectionStatus();
+        DesktopBridgeCloudStatusText.Text = cloudStatus;
+        DesktopBridgeCloudStatusText.Foreground = new SolidColorBrush(
+            cloudStatus.StartsWith("Buluta kayıtlı:", StringComparison.OrdinalIgnoreCase)
+                ? Colors.LightGreen
+                : cloudStatus.Contains("hata", StringComparison.OrdinalIgnoreCase) ||
+                  cloudStatus.Contains("çevrimdışı", StringComparison.OrdinalIgnoreCase)
+                    ? Colors.IndianRed
+                    : Colors.Goldenrod);
 
         DesktopBridgeStatusDot.Fill =
             new SolidColorBrush(
@@ -297,6 +307,7 @@ public partial class SettingsWindow : Window
     {
         try
         {
+            DesktopBridgeStartupManager.MarkConnectionConsentPrompted();
             DesktopBridgeStartupManager.StartAgent();
             UpdateDesktopBridgeStatus();
         }
@@ -314,8 +325,27 @@ public partial class SettingsWindow : Window
         object sender,
         RoutedEventArgs e)
     {
-        DesktopBridgeStartupManager.StopAgent();
-        UpdateDesktopBridgeStatus();
+        try
+        {
+            // Stop means stop now and remove the Run-at-logon entry as well.
+            DesktopBridgeStartupManager.MarkConnectionConsentPrompted();
+            DesktopBridgeStartupManager.SetEnabled(false);
+            DesktopBridgeStartupManager.StopAgent();
+            DesktopBridgeStartupCheckBox.IsChecked = false;
+
+            var settings = _settingsStore.Load();
+            settings.StartDesktopBridgeWithWindows = false;
+            _settingsStore.Save(settings);
+            UpdateDesktopBridgeStatus();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Telefon-PC bağlantısı durdurulamadı:\n\n{ex.Message}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     private void RestartDesktopBridge_Click(
@@ -324,6 +354,7 @@ public partial class SettingsWindow : Window
     {
         try
         {
+            DesktopBridgeStartupManager.MarkConnectionConsentPrompted();
             DesktopBridgeStartupManager.RestartAgent();
             UpdateDesktopBridgeStatus();
         }

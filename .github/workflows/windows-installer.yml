@@ -59,6 +59,58 @@ jobs:
             throw "Desktop Bridge EXE was not created."
           }
 
+      - name: Generate executable, taskbar, and installer ICO from the approved full icon
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $appIconPath = "src/MynAI.Windows/Resources/mynassistant-app-icon.png"
+          $icoPath = "src/MynAI.Windows/Resources/myn.ico"
+          if (-not (Test-Path $appIconPath)) {
+            throw "The approved MynAssistant application icon is missing: $appIconPath"
+          }
+
+          # Wrap the approved full-color PNG in an ICO container without decoding legacy ICO frames.
+          $pngBytes = [System.IO.File]::ReadAllBytes((Resolve-Path $appIconPath).Path)
+          if ($pngBytes.Length -lt 100 -or
+              $pngBytes[0] -ne 137 -or $pngBytes[1] -ne 80 -or
+              $pngBytes[2] -ne 78 -or $pngBytes[3] -ne 71) {
+            throw "The application icon is not a valid PNG."
+          }
+
+          $memory = [System.IO.MemoryStream]::new()
+          $writer = [System.IO.BinaryWriter]::new($memory)
+          try {
+            $writer.Write([UInt16]0) # Reserved
+            $writer.Write([UInt16]1) # ICO resource type
+            $writer.Write([UInt16]1) # One image
+            $writer.Write([Byte]96)
+            $writer.Write([Byte]96)
+            $writer.Write([Byte]0)
+            $writer.Write([Byte]0)
+            $writer.Write([UInt16]1)
+            $writer.Write([UInt16]32)
+            $writer.Write([UInt32]$pngBytes.Length)
+            $writer.Write([UInt32]22)
+            $writer.Write($pngBytes)
+            $writer.Flush()
+            [System.IO.File]::WriteAllBytes($icoPath, $memory.ToArray())
+          }
+          finally {
+            $writer.Dispose()
+            $memory.Dispose()
+          }
+
+          $icoBytes = [System.IO.File]::ReadAllBytes((Resolve-Path $icoPath).Path)
+          if ($icoBytes.Length -ne ($pngBytes.Length + 22) -or
+              $icoBytes[0] -ne 0 -or $icoBytes[1] -ne 0 -or
+              $icoBytes[2] -ne 1 -or $icoBytes[3] -ne 0 -or
+              $icoBytes[4] -ne 1 -or $icoBytes[5] -ne 0) {
+            throw "Generated MynAssistant ICO failed structural validation."
+          }
+          Write-Host "Using approved app icon: $appIconPath"
+          Write-Host "Generated executable/tray/installer ICO: $icoPath"
+          Write-Host "Icon PNG bytes: $($pngBytes.Length); ICO bytes: $($icoBytes.Length)"
+
       - name: Verify WPF window icon loading remains non-fatal
         shell: pwsh
         run: |
@@ -71,8 +123,16 @@ jobs:
               throw "Do not load .ico via the WPF XAML ImageSource converter in $path."
             }
           }
-          if (-not (Test-Path "src/MynAI.Windows/Resources/myn.jpg")) {
-            throw "Fallback window image is missing."
+          $logoPath = "src/MynAI.Windows/Resources/mynassistant.png"
+          if (-not (Test-Path $logoPath)) {
+            throw "Canonical MynAssistant logo PNG is missing: $logoPath"
+          }
+          $appIconPath = "src/MynAI.Windows/Resources/mynassistant-app-icon.png"
+          if (-not (Test-Path $appIconPath)) {
+            throw "Full MynAssistant application icon PNG is missing: $appIconPath"
+          }
+          if (Select-String -Path ".github/workflows/windows-installer.yml" -Pattern '\.ToBitmap\(' -Quiet) {
+            throw "Installer logo must be generated from the canonical PNG, not converted from the ICO file."
           }
           if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern 'image.CacheOption = BitmapCacheOption.OnLoad' -Quiet)) {
             throw "The main-window image must be decoded safely with OnLoad."
@@ -159,14 +219,14 @@ jobs:
           # Validate all installer assets before invoking Inno Setup.
           $licensePath = "installer/LICENSE-AGREEMENT.rtf"
           $iconPath = "src/MynAI.Windows/Resources/myn.ico"
+          $logoPath = "src/MynAI.Windows/Resources/mynassistant-app-icon.png"
           if (-not (Test-Path $licensePath)) { throw "License agreement file is missing: $licensePath" }
           if (-not (Test-Path $iconPath)) { throw "MynAssistant application icon is missing: $iconPath" }
 
-          # Generate only the 55x58 top-right wizard logo from the same app ICO.
-          # Avoids the old large custom wizard artwork that had scaling/rendering issues.
+          # Generate the wizard logo from the same canonical PNG used by the WPF app.
+          # Read the PNG directly; some ICO encoders create frames GDI+ cannot convert.
           Add-Type -AssemblyName System.Drawing
-          $icon = [System.Drawing.Icon]::new((Resolve-Path $iconPath).Path)
-          $sourceBitmap = $icon.ToBitmap()
+          $sourceBitmap = [System.Drawing.Image]::FromFile((Resolve-Path $logoPath).Path)
           $wizardBitmap = [System.Drawing.Bitmap]::new(
             55, 58, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb
           )
@@ -191,7 +251,6 @@ jobs:
             $graphics.Dispose()
             $wizardBitmap.Dispose()
             $sourceBitmap.Dispose()
-            $icon.Dispose()
           }
           if (-not (Test-Path $wizardSmallImage) -or (Get-Item $wizardSmallImage).Length -lt 100) {
             throw "MynAssistant wizard icon could not be generated."

@@ -186,5 +186,55 @@ class ScreenFrameSizeTests(unittest.TestCase):
         )
 
 
+class RemoteKeyboardCommandTests(unittest.TestCase):
+    def test_keyboard_commands_are_allowlisted(self):
+        for command in ("type_text", "key_backspace", "key_enter"):
+            with self.subTest(command=command):
+                self.assertTrue(agent.command_is_supported(command))
+
+    def test_type_text_uses_unicode_sender_and_optional_enter(self):
+        with patch.object(agent, "send_unicode_text") as send_text:
+            with patch.object(agent.pyautogui, "press") as press:
+                result = agent.execute_command(
+                    "type_text",
+                    {"text": "İyi günler, ğüşiöç", "pressEnter": True},
+                )
+
+        send_text.assert_called_once_with("İyi günler, ğüşiöç")
+        press.assert_called_once_with("enter")
+        self.assertIn("Metin bilgisayara yazıldı", result)
+        self.assertIn("Enter gönderildi", result)
+
+    def test_type_text_rejects_empty_or_too_long_text(self):
+        with patch.object(agent, "send_unicode_text") as send_text:
+            empty_result = agent.execute_command("type_text", {"text": "   "})
+            long_result = agent.execute_command(
+                "type_text",
+                {"text": "x" * (agent.MAX_REMOTE_TEXT_LENGTH + 1)},
+            )
+
+        send_text.assert_not_called()
+        self.assertIn("Metni gir", empty_result)
+        self.assertIn("en fazla", long_result)
+
+    def test_backspace_and_enter_press_the_expected_keys(self):
+        with patch.object(agent.pyautogui, "press") as press:
+            backspace_result = agent.execute_command("key_backspace", {})
+            enter_result = agent.execute_command("key_enter", {})
+
+        self.assertEqual([call.args[0] for call in press.call_args_list], ["backspace", "enter"])
+        self.assertIn("Backspace", backspace_result)
+        self.assertIn("Enter", enter_result)
+
+
+class OAuthScopeTests(unittest.TestCase):
+    def test_google_oauth_uses_canonical_scope_uris(self):
+        self.assertIn("openid", agent.SCOPES)
+        self.assertIn("https://www.googleapis.com/auth/userinfo.email", agent.SCOPES)
+        self.assertIn("https://www.googleapis.com/auth/userinfo.profile", agent.SCOPES)
+        self.assertNotIn("email", agent.SCOPES)
+        self.assertNotIn("profile", agent.SCOPES)
+
+
 if __name__ == "__main__":
     unittest.main()

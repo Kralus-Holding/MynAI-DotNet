@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Win32;
 
 namespace MynAI.Windows;
@@ -12,6 +13,9 @@ public static class DesktopBridgeStartupManager
     private const string LegacyValueName = "MynAI.DesktopBridge";
     private const string ExecutableName = "MynAssistantDesktopBridge.exe";
     private const string OAuthFileName = "client_secret.json";
+    private const string ConsentKeyPath = @"Software\MynAssistant\DesktopBridge";
+    private const string ConsentValueName = "ConnectionConsentPrompted";
+    private const string StatusFileName = "status.json";
     private static readonly object LogLock = new();
 
     private static string GoogleDirectory =>
@@ -26,12 +30,14 @@ public static class DesktopBridgeStartupManager
             "MynAI",
             "Google");
 
-    private static string LogPath =>
+    private static string AgentDataDirectory =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "MynAssistant",
-            "DesktopAgent",
-            "bridge.log");
+            "DesktopAgent");
+
+    private static string LogPath => Path.Combine(AgentDataDirectory, "bridge.log");
+    private static string StatusPath => Path.Combine(AgentDataDirectory, StatusFileName);
 
     public static bool IsEnabled()
     {
@@ -40,6 +46,65 @@ public static class DesktopBridgeStartupManager
         var legacyValue = key?.GetValue(LegacyValueName) as string;
         return !string.IsNullOrWhiteSpace(value)
             || !string.IsNullOrWhiteSpace(legacyValue);
+    }
+
+    public static bool HasConnectionConsentPrompted()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(ConsentKeyPath, writable: false);
+        return key?.GetValue(ConsentValueName) is int value && value == 1;
+    }
+
+    public static void MarkConnectionConsentPrompted()
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(ConsentKeyPath);
+        if (key is null)
+            throw new InvalidOperationException("Telefon-PC bağlantısı onayı kaydedilemedi.");
+
+        key.SetValue(ConsentValueName, 1, RegistryValueKind.DWord);
+    }
+
+    public static string GetCloudConnectionStatus()
+    {
+        if (!IsRunning())
+            return "Bulut durumu: bağlantı köprüsü çalışmıyor.";
+
+        try
+        {
+            if (!File.Exists(StatusPath))
+                return "Firebase cihaz kaydı henüz doğrulanmadı. İlk Google girişi veya Firestore kaydı bekleniyor; bridge.log dosyasını kontrol et.";
+
+            using var document = JsonDocument.Parse(File.ReadAllText(StatusPath));
+            var root = document.RootElement;
+            var state = root.TryGetProperty("status", out var stateNode) ? stateNode.GetString() : null;
+            var updatedAtText = root.TryGetProperty("updatedAt", out var timeNode) ? timeNode.GetString() : null;
+            var deviceName = root.TryGetProperty("deviceName", out var nameNode) ? nameNode.GetString() : null;
+
+            if (!DateTimeOffset.TryParse(updatedAtText, out var updatedAt))
+                return "Bulut durumu okunamadı. bridge.log dosyasını kontrol et.";
+
+            var age = DateTimeOffset.UtcNow - updatedAt.ToUniversalTime();
+            if (age < TimeSpan.FromSeconds(-10) || age > TimeSpan.FromSeconds(90))
+                return $"Son Firebase sinyali eski ({Math.Max(0, (int)age.TotalSeconds)} sn). Google girişi ve ağ bağlantısını kontrol et.";
+
+            if (string.Equals(state, "online", StringComparison.OrdinalIgnoreCase))
+                return $"Buluta kayıtlı: {string.IsNullOrWhiteSpace(deviceName) ? "Windows bilgisayar" : deviceName} · son sinyal {(int)Math.Max(0, age.TotalSeconds)} sn önce.";
+
+            if (string.Equals(state, "offline", StringComparison.OrdinalIgnoreCase))
+                return "Son Firebase durumu çevrimdışı.";
+
+            if (string.Equals(state, "connecting", StringComparison.OrdinalIgnoreCase))
+                return "Google/Firebase bağlantısı kuruluyor. İlk giriş için tarayıcıdaki onayı tamamla.";
+
+            if (string.Equals(state, "error", StringComparison.OrdinalIgnoreCase))
+                return "Firebase bağlantısı hata verdi. %LOCALAPPDATA%\\MynAssistant\\DesktopAgent\\bridge.log dosyasındaki son hatayı kontrol et.";
+
+            return "Firebase cihaz durumu henüz doğrulanmadı.";
+        }
+        catch (Exception ex)
+        {
+            AppendLog("Bulut durum dosyası okunamadı: " + ex.Message);
+            return "Firebase bağlantı durumu okunamadı. bridge.log dosyasını kontrol et.";
+        }
     }
 
     public static void SetEnabled(bool enabled)

@@ -26,8 +26,12 @@ FIREBASE_API_KEY = "AIzaSyB0z1b5OOMh8Pqn2GPd1ZuWoHEhRoKSrRM"
 IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1"
 SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token"
 FIRESTORE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents"
-SCOPES = ["openid", "email", "profile"]
-AGENT_VERSION = "0.2.0"
+SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+]
+AGENT_VERSION = "0.2.2"
 POLL_SECONDS = 2.0
 COMMAND_POLL_SECONDS = 2.0
 SCREEN_CHECK_SECONDS = 8.0
@@ -39,11 +43,92 @@ APP_DATA = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MynAssistan
 OAUTH_FILE_NAME = "client_secret.json"
 SESSION_FILE = APP_DATA / "session.bin"
 DEVICE_FILE = APP_DATA / "devices.json"
+STATUS_FILE = APP_DATA / "status.json"
 
 VK_VOLUME_MUTE = 0xAD
 VK_VOLUME_DOWN = 0xAE
 VK_VOLUME_UP = 0xAF
 KEYEVENTF_KEYUP = 0x0002
+
+KEYEVENTF_UNICODE = 0x0004
+INPUT_KEYBOARD = 1
+MAX_REMOTE_TEXT_LENGTH = 1000
+
+
+class _KeyboardInput(ctypes.Structure):
+    _fields_ = [
+        ("wVk", ctypes.c_ushort),
+        ("wScan", ctypes.c_ushort),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
+
+
+class _MouseInput(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_int32),
+        ("dy", ctypes.c_int32),
+        ("mouseData", ctypes.c_uint32),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
+
+
+class _HardwareInput(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", ctypes.c_uint32),
+        ("wParamL", ctypes.c_ushort),
+        ("wParamH", ctypes.c_ushort),
+    ]
+
+
+class _InputUnion(ctypes.Union):
+    _fields_ = [
+        ("mi", _MouseInput),
+        ("ki", _KeyboardInput),
+        ("hi", _HardwareInput),
+    ]
+
+
+class _Input(ctypes.Structure):
+    _fields_ = [
+        ("type", ctypes.c_uint32),
+        ("union", _InputUnion),
+    ]
+
+
+def send_unicode_text(text: str) -> None:
+    """Type Unicode text through Win32 SendInput without changing the clipboard."""
+    if os.name != "nt":
+        raise RuntimeError("Uzaktan metin yazma yalnızca Windows Agent üzerinde kullanılabilir.")
+    if len(text) > MAX_REMOTE_TEXT_LENGTH:
+        raise ValueError(f"Metin en fazla {MAX_REMOTE_TEXT_LENGTH} karakter olabilir.")
+
+    safe_text = "".join(char for char in text if ord(char) >= 32 and ord(char) != 127)
+    if not safe_text:
+        raise ValueError("Yazılacak metin boş.")
+
+    utf16 = safe_text.encode("utf-16-le", errors="strict")
+    events = []
+    for index in range(0, len(utf16), 2):
+        unit = utf16[index] | (utf16[index + 1] << 8)
+        key_down = _Input(
+            type=INPUT_KEYBOARD,
+            union=_InputUnion(ki=_KeyboardInput(0, unit, KEYEVENTF_UNICODE, 0, 0)),
+        )
+        key_up = _Input(
+            type=INPUT_KEYBOARD,
+            union=_InputUnion(ki=_KeyboardInput(0, unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, 0, 0)),
+        )
+        events.extend((key_down, key_up))
+
+    inputs = (_Input * len(events))(*events)
+    sent = ctypes.windll.user32.SendInput(len(inputs), inputs, ctypes.sizeof(_Input))
+    if sent != len(inputs):
+        raise ctypes.WinError()
+
 
 
 def utc_now() -> str:
@@ -259,6 +344,37 @@ def firestore_patch(session: FirebaseSession, document_path: str, fields: dict, 
             f"Firestore PATCH {document_path} HTTP {response.status_code}: {response.text[:500]}"
         )
     return response.json()
+
+
+def write_local_status(
+    session: FirebaseSession | None,
+    device_id: str | None,
+    status: str,
+) -> None:
+    """Expose the latest connection/Firestore heartbeat to the local Settings UI only."""
+    try:
+        APP_DATA.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "status": status,
+            "deviceName": platform.node().strip() or "Windows bilgisayarım",
+            "connectionMode": "firebase-agent",
+            "agentVersion": AGENT_VERSION,
+            "updatedAt": utc_now(),
+        }
+        if session is not None:
+            payload["ownerId"] = session.uid
+        if device_id:
+            payload["deviceId"] = device_id
+
+        # Atomic replacement keeps the WPF settings reader from seeing partial JSON.
+        temporary_path = STATUS_FILE.with_suffix(".json.tmp")
+        temporary_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        temporary_path.replace(STATUS_FILE)
+    except Exception as exc:
+        # The local status display is diagnostic only; it must never stop the Agent.
+        print(f"[Uyarı] Yerel bağlantı durumu kaydedilemedi: {exc}")
 
 
 def register_or_heartbeat(session: FirebaseSession, device_id: str, initial: bool = False) -> None:
@@ -578,6 +694,22 @@ def execute_command(command: str, fields: dict) -> str:
     command = command.strip().lower()
     if command == "text_command":
         return execute_text_command(str(fields.get("text") or ""))
+    if command == "type_text":
+        text = str(fields.get("text") or "")
+        if not text.strip():
+            return "Bilgisayara yazılacak metni gir."
+        if len(text) > MAX_REMOTE_TEXT_LENGTH:
+            return f"Metin en fazla {MAX_REMOTE_TEXT_LENGTH} karakter olabilir."
+        send_unicode_text(text)
+        if fields.get("pressEnter") is True:
+            pyautogui.press("enter")
+        return "Metin bilgisayara yazıldı." + (" Enter gönderildi." if fields.get("pressEnter") is True else "")
+    if command == "key_backspace":
+        pyautogui.press("backspace")
+        return "Backspace tuşu gönderildi."
+    if command == "key_enter":
+        pyautogui.press("enter")
+        return "Enter tuşu gönderildi."
     if command == "mute":
         press_virtual_key(VK_VOLUME_MUTE)
         return "Bilgisayarın sesi aç/kapat tuşuyla değiştirildi."
@@ -609,7 +741,8 @@ def execute_command(command: str, fields: dict) -> str:
 def command_is_supported(command: str) -> bool:
     return command in {
         "mute", "volume_up", "volume_down", "home",
-        "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command"
+        "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command",
+        "type_text", "key_backspace", "key_enter"
     }
 
 
@@ -639,6 +772,7 @@ def ask_install_startup() -> None:
 
 def run_agent() -> int:
     APP_DATA.mkdir(parents=True, exist_ok=True)
+    write_local_status(None, None, "connecting")
     session_state = load_protected_session()
     session = None
     if session_state:
@@ -656,6 +790,7 @@ def run_agent() -> int:
 
     device_id = load_device_id(session.uid)
     register_or_heartbeat(session, device_id, initial=True)
+    write_local_status(session, device_id, "online")
     print(f"Cihaz çevrimiçi: {platform.node()} (ID: {device_id})")
     print("Android uygulamasında Cihazlarım bölümünde otomatik görünmesi gerekir.")
     print("PC Kumandası açıkken masaüstü önizlemesi yaklaşık saniyede bir güncellenir.")
@@ -674,6 +809,7 @@ def run_agent() -> int:
 
             if now - last_heartbeat >= HEARTBEAT_SECONDS:
                 register_or_heartbeat(session, device_id)
+                write_local_status(session, device_id, "online")
                 last_heartbeat = now
 
             screen_check_interval = 3.0 if screen_active else SCREEN_CHECK_SECONDS
@@ -760,6 +896,7 @@ def run_agent() -> int:
             )
         except Exception as exc:
             print(f"[Uyarı] Çevrimdışı durumu kaydedilemedi: {exc}")
+        write_local_status(session, device_id, "offline")
     return 0
 
 
@@ -770,10 +907,12 @@ def main() -> int:
     try:
         return run_agent()
     except FileNotFoundError as exc:
+        write_local_status(None, None, "error")
         print(f"\n[Kurulum] {exc}")
         input("\nÇıkmak için Enter'a bas...")
         return 2
     except Exception as exc:
+        write_local_status(None, None, "error")
         print(f"\n[Hata] {exc}")
         input("\nÇıkmak için Enter'a bas...")
         return 1
