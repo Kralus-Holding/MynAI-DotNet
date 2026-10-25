@@ -1,5 +1,5 @@
 #define MyAppName "MynAssistant"
-#define MyAppVersion "0.1.3"
+#define MyAppVersion "0.1.5"
 #define MyAppPublisher "MynKralus"
 #define MyAppExeName "MynAssistant.exe"
 #define MyAgentExeName "MynAgent.exe"
@@ -22,8 +22,8 @@ WizardSmallImageBackColor=clWhite
 
 OutputDir=..\build\installer
 OutputBaseFilename=MynAssistant-Setup
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 WizardStyle=modern
@@ -35,7 +35,7 @@ VersionInfoCompany=MynKralus
 VersionInfoDescription=MynAssistant Windows Installer
 VersionInfoProductName=MynAssistant
 VersionInfoProductVersion={#MyAppVersion}
-VersionInfoVersion=0.1.3.0
+VersionInfoVersion=0.1.5.0
 VersionInfoCopyright=Copyright (C) MynKralus
 
 [Languages]
@@ -44,17 +44,24 @@ Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Masaüstüne kısayol oluştur"; GroupDescription: "Ek kısayollar:"; Flags: unchecked
+Name: "pcbridge"; Description: "Telefon-PC bağlantısını başlat (Google hesabıyla giriş gerekir)"; GroupDescription: "Bağlantı seçenekleri:"; Flags: checkedonce
 
 [Files]
 Source: "..\build\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build\agent-publish\*"; DestDir: "{app}\Agent"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build\config\client_secret.json"; DestDir: "{localappdata}\MynAssistant\Google"; Flags: onlyifdoesntexist uninsneveruninstall
 
+[Registry]
+; The bridge runs without a console window and logs to %LOCALAPPDATA%\MynAssistant\DesktopAgent\bridge.log.
+; The same value is removed during uninstall and can be toggled from Settings > Agent.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "MynAssistant.DesktopBridge"; ValueType: string; ValueData: """{app}\MynAssistantDesktopBridge.exe"""; Flags: uninsdeletevalue; Tasks: pcbridge
+
 [Icons]
 Name: "{autoprograms}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
 Name: "{autodesktop}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
+Filename: "{app}\MynAssistantDesktopBridge.exe"; Description: "Telefon-PC bağlantısını başlat"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent runhidden; Tasks: pcbridge
 Filename: "{app}\Agent\{#MyAgentExeName}"; Description: "MynAgent arka plan hizmetini başlat"; WorkingDir: "{app}\Agent"; Flags: nowait postinstall skipifsilent
 Filename: "{app}\{#MyAppExeName}"; Description: "MynAssistant'ı şimdi başlat"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 
