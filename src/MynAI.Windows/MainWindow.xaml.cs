@@ -74,7 +74,7 @@ public partial class MainWindow : Window
         var path = Path.Combine(
             AppContext.BaseDirectory,
             "Resources",
-            "myn.jpg");
+            "mynassistant.png");
 
         if (!File.Exists(path))
         {
@@ -222,7 +222,7 @@ public partial class MainWindow : Window
             var resource =
                 System.Windows.Application.GetResourceStream(
                     new Uri(
-                        "Resources/myn.ico",
+                        "Resources/mynassistant.ico",
                         UriKind.Relative));
 
             if (resource is null)
