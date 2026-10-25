@@ -74,7 +74,7 @@ public partial class MainWindow : Window
         var path = Path.Combine(
             AppContext.BaseDirectory,
             "Resources",
-            "myn.jpg");
+            "mynassistant-logo.png");
 
         if (!File.Exists(path))
         {
@@ -113,6 +113,23 @@ public partial class MainWindow : Window
         RoutedEventArgs e)
     {
         DockNormal();
+
+        // Restore the cloud bridge only when the user explicitly enabled
+        // Windows startup for it. First-time Google sign-in remains user-driven.
+        if (DesktopBridgeStartupManager.IsEnabled())
+        {
+            try
+            {
+                DesktopBridgeStartupManager.StartAgent();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"Desktop Bridge could not be started: {ex.Message}");
+            }
+        }
+
+        UpdateDesktopBridgeStatus();
         await RefreshTasksAsync();
     }
 
@@ -571,7 +588,8 @@ public partial class MainWindow : Window
                 _scheduledTasks.Count.ToString();
 
             AgentStatusText.Text =
-                "Agent: bağlı";
+                "Yerel Agent: bağlı";
+            UpdateDesktopBridgeStatus();
 
             AgentStatusText.Foreground =
                 new SolidColorBrush(
@@ -588,7 +606,8 @@ public partial class MainWindow : Window
         catch
         {
             AgentStatusText.Text =
-                "Agent: bağlantı yok";
+                "Yerel Agent: kapalı";
+            UpdateDesktopBridgeStatus();
 
             AgentStatusText.Foreground =
                 new SolidColorBrush(
@@ -660,13 +679,33 @@ public partial class MainWindow : Window
         _settingsWindow.Show();
         _settingsWindow.Activate();
     }
-    private void SetStatus(
-        string text)
+    private void SetStatus(string text)
     {
-        StatusText.Text =
-            text == "Beklemede"
-                ? "=Beklemede"
-                : text;
+        StatusText.Text = text;
+    }
+
+    private void UpdateDesktopBridgeStatus()
+    {
+        var running = DesktopBridgeStartupManager.IsRunning();
+
+        BridgeStatusText.Text = running
+            ? "Bulut PC: çalışıyor"
+            : "Bulut PC: kapalı";
+
+        BridgeStatusText.Foreground = new SolidColorBrush(
+            running
+                ? Color.FromRgb(126, 212, 145)
+                : Color.FromRgb(240, 160, 160));
+
+        BridgeStatusBorder.Background = new SolidColorBrush(
+            running
+                ? Color.FromRgb(16, 27, 22)
+                : Color.FromRgb(36, 21, 23));
+
+        BridgeStatusBorder.BorderBrush = new SolidColorBrush(
+            running
+                ? Color.FromRgb(36, 74, 54)
+                : Color.FromRgb(112, 64, 68));
     }
 }
 
