@@ -332,10 +332,10 @@ public partial class SettingsWindow : Window
         var authRequired = !hasSession || state == "auth_required";
         var connecting = running && (state == "starting" || state == "connecting");
 
-        DesktopBridgeStatusText.Text = connected
+        var statusText = connected
             ? "Bağlandı — PC Android uygulaması için çevrimiçi"
             : authRequired
-                ? "Telefon işlemleri için giriş gerekli"
+                ? "Telefon-PC bağlantısı için eşleştirme gerekiyor"
                 : hasError
                     ? "Bağlantı hatası"
                     : connecting
@@ -344,7 +344,7 @@ public partial class SettingsWindow : Window
                             ? "Köprü çalışıyor — cihaz kaydı bekleniyor"
                             : executablePath is null
                                 ? "Bridge bileşeni bulunamadı"
-                                : "Hesap hazır — telefon-PC bağlantısı başlatılabilir";
+                                : "Hazır — telefon-PC bağlantısı bekleniyor";
 
         var color = connected
             ? Colors.LightGreen
@@ -354,104 +354,27 @@ public partial class SettingsWindow : Window
                     ? Colors.Goldenrod
                     : Colors.LightBlue;
 
+        var executableText = executablePath ?? "MynAssistantDesktopBridge.exe bulunamadı.";
+        var messageText = isFresh && !string.IsNullOrWhiteSpace(runtime?.Message)
+            ? runtime.Message
+            : !hasSession
+                ? "Bu bilgisayarda kullanılabilir telefon-PC oturumu bulunamadı. Güvenli eşleştirme tamamlanana kadar bağlantı çevrimdışı kalır."
+                : hasError
+                    ? "Köprü başlatılamadı. Agent günlüklerini ve Windows güvenlik günlüklerini kontrol edin."
+                    : "Yerel Agent bu hesaptan bağımsız çalışır.";
+
+        // Agent tab retains its existing diagnostics; the Account tab mirrors the same live bridge state.
+        DesktopBridgeStatusText.Text = statusText;
         DesktopBridgeStatusText.Foreground = new SolidColorBrush(color);
         DesktopBridgeStatusDot.Fill = new SolidColorBrush(color);
-        DesktopBridgeExecutablePathText.Text =
-            executablePath ?? "MynAssistantDesktopBridge.exe bulunamadı.";
+        DesktopBridgeExecutablePathText.Text = executableText;
+        DesktopBridgeMessageText.Text = messageText;
 
-        DesktopBridgeMessageText.Text =
-            isFresh && !string.IsNullOrWhiteSpace(runtime?.Message)
-                ? runtime.Message
-                : !hasSession
-                    ? "Telefon işlemleri için lütfen önce Hesap bölümünden giriş yapın."
-                    : hasError
-                        ? "Köprü başlatılamadı. Agent günlüklerini ve Windows güvenlik günlüklerini kontrol edin."
-                        : "Yerel Agent bu hesaptan bağımsız çalışır.";
-    }
-
-    private void UpdateLogoPreview(MynAISettings settings)
-    {
-        LogoPreviewImage.Source = MynAssistantBranding.LoadSelectedLogo(settings);
-        KrLogoOptionImage.Source = MynAssistantBranding.LoadImage(MynAssistantBranding.GetKrLogoPath());
-        AppLogoOptionImage.Source = MynAssistantBranding.LoadImage(MynAssistantBranding.GetAppIconPath());
-
-        var hasCustomLogo = !string.IsNullOrWhiteSpace(settings.CustomLogoPath)
-            && File.Exists(settings.CustomLogoPath);
-        CustomLogoOptionImage.Source = hasCustomLogo
-            ? MynAssistantBranding.LoadImage(settings.CustomLogoPath)
-            : null;
-        CustomLogoPlaceholderText.Visibility = hasCustomLogo
-            ? Visibility.Collapsed
-            : Visibility.Visible;
-
-        var preset = string.IsNullOrWhiteSpace(settings.LogoPreset)
-            ? "kr"
-            : settings.LogoPreset.ToLowerInvariant();
-        if (preset == "black") preset = "kr";
-
-        KrLogoOptionButton.IsChecked = preset == "kr";
-        AppLogoOptionButton.IsChecked = preset == "app";
-        CustomLogoOptionButton.IsChecked = preset == "custom";
-
-        LogoPresetStatusText.Text = preset switch
-        {
-            "app" => "MynAssistant uygulama simgesi seçili.",
-            "custom" when hasCustomLogo => $"Özel görsel seçili: {Path.GetFileName(settings.CustomLogoPath)}",
-            "custom" => "Özel görsel kaydı bulunamadı; KR / Kralus logosu kullanılacak.",
-            _ => "KR / Kralus logosu seçili."
-        };
-    }
-
-    private void SaveLogoPreset(string preset, string message)
-    {
-        var settings = _settingsStore.Load();
-        settings.LogoPreset = preset;
-        _settingsStore.Save(settings);
-        UpdateLogoPreview(settings);
-        SetSaveStatus(message, Colors.LightGreen);
-    }
-
-    private void SelectKrLogo_Click(object sender, RoutedEventArgs e) =>
-        SaveLogoPreset("kr", "KR / Kralus logosu seçildi.");
-
-    private void SelectAppIconLogo_Click(object sender, RoutedEventArgs e) =>
-        SaveLogoPreset("app", "MynAssistant uygulama simgesi seçildi.");
-
-    private void SelectCustomLogo_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "Ana pencerede kullanılacak özel görseli seç",
-            Filter = "Görseller (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp",
-            Multiselect = false,
-            CheckFileExists = true
-        };
-
-        if (dialog.ShowDialog(this) != true)
-        {
-            UpdateLogoPreview(_settingsStore.Load());
-            return;
-        }
-
-        try
-        {
-            var copiedPath = MynAssistantBranding.CopyCustomLogo(dialog.FileName);
-            var settings = _settingsStore.Load();
-            settings.LogoPreset = "custom";
-            settings.CustomLogoPath = copiedPath;
-            _settingsStore.Save(settings);
-            UpdateLogoPreview(settings);
-            SetSaveStatus("Özel görsel uygulama verilerine kopyalandı ve kaydedildi.", Colors.LightGreen);
-        }
-        catch (Exception ex)
-        {
-            UpdateLogoPreview(_settingsStore.Load());
-            MessageBox.Show(
-                $"Görsel seçilemedi:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
-                "MynAssistant",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-        }
+        AccountDesktopBridgeStatusText.Text = statusText;
+        AccountDesktopBridgeStatusText.Foreground = new SolidColorBrush(color);
+        AccountDesktopBridgeStatusDot.Fill = new SolidColorBrush(color);
+        AccountDesktopBridgeExecutablePathText.Text = executableText;
+        AccountDesktopBridgeMessageText.Text = messageText;
     }
 
     private void RefreshDesktopBridge_Click(object sender, RoutedEventArgs e)
