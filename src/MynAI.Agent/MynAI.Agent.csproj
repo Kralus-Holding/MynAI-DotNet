@@ -10,7 +10,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <AssemblyName>MynAgent</AssemblyName>
     <Company>MynKralus</Company>
     <Product>MynAssistant</Product>

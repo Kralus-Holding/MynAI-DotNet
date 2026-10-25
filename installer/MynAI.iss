@@ -9,8 +9,8 @@ AppId={{E4FD24F0-B4A0-4D4C-875C-70781DC41F20}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-AppPublisherURL=https://github.com/MynKralus/MynAI-DotNet
-AppSupportURL=https://github.com/MynKralus/MynAI-DotNet/issues
+AppPublisherURL=https://github.com/Kralus-Holding/MynAI-DotNet
+AppSupportURL=https://github.com/Kralus-Holding/MynAI-DotNet/issues
 DefaultDirName={localappdata}\Programs\MynAssistant
 UsePreviousAppDir=yes
 DefaultGroupName=MynAssistant
@@ -44,25 +44,17 @@ Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Masaüstüne kısayol oluştur"; GroupDescription: "Ek kısayollar:"; Flags: unchecked
-Name: "pcbridge"; Description: "Telefon-PC bağlantısını başlat (Google hesabıyla giriş gerekir)"; GroupDescription: "Bağlantı seçenekleri:"; Flags: checkedonce
 
 [Files]
 Source: "..\build\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build\agent-publish\*"; DestDir: "{app}\Agent"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\build\config\client_secret.json"; DestDir: "{localappdata}\MynAssistant\Google"; Flags: onlyifdoesntexist uninsneveruninstall
-
-[Registry]
-; The bridge runs without a console window and logs to %LOCALAPPDATA%\MynAssistant\DesktopAgent\bridge.log.
-; The same value is removed during uninstall and can be toggled from Settings > Agent.
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "MynAssistant.DesktopBridge"; ValueType: string; ValueData: """{app}\MynAssistantDesktopBridge.exe"""; Flags: uninsdeletevalue; Tasks: pcbridge
 
 [Icons]
 Name: "{autoprograms}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
 Name: "{autodesktop}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\MynAssistantDesktopBridge.exe"; Description: "Telefon-PC bağlantısını başlat"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent runhidden; Tasks: pcbridge
-Filename: "{app}\Agent\{#MyAgentExeName}"; Description: "MynAgent arka plan hizmetini başlat"; WorkingDir: "{app}\Agent"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Agent\{#MyAgentExeName}"; Description: "MynAgent arka plan hizmetini başlat"; WorkingDir: "{app}\Agent"; Flags: nowait postinstall skipifsilent runhidden
 Filename: "{app}\{#MyAppExeName}"; Description: "MynAssistant'ı şimdi başlat"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 
 [Code]

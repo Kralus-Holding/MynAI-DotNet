@@ -93,8 +93,14 @@ jobs:
           if (-not (Test-Path "src/MynAI.Windows/Resources/myn.jpg")) {
             throw "Fallback window image is missing."
           }
-          if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern 'image.CacheOption = BitmapCacheOption.OnLoad' -Quiet)) {
-            throw "The main-window image must be decoded safely with OnLoad."
+          if (-not (Select-String -Path "src/MynAI.Windows/MynAssistantBranding.cs" -Pattern 'BitmapCacheOption.OnLoad' -Quiet)) {
+            throw "The in-app logo loader must decode images safely with OnLoad."
+          }
+          if (-not (Select-String -Path "src/MynAI.Agent/MynAI.Agent.csproj" -Pattern '<OutputType>WinExe</OutputType>' -Quiet)) {
+            throw "MynAgent must not allocate a visible console window."
+          }
+          if (Select-String -Path "installer/MynAI.iss" -Pattern 'build/config/client_secret.json|Tasks: pcbridge' -Quiet) {
+            throw "The installer must not embed a builder OAuth JSON or auto-start a not-yet-configured bridge."
           }
           if (-not (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml.cs" -Pattern 'LoadWindowIconSafely' -Quiet)) {
             throw "The settings-window icon must use the safe loader."
@@ -125,46 +131,6 @@ jobs:
             throw "MynAssistantDesktopBridge.exe was not published."
           }
 
-      - name: Prepare CI-only OAuth config
-        if: github.event_name == 'pull_request'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path build/config | Out-Null
-          $placeholder = @'
-          {
-            "installed": {
-              "client_id": "ci-only.apps.googleusercontent.com",
-              "project_id": "myncloud-24",
-              "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-              "token_uri": "https://oauth2.googleapis.com/token",
-              "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-              "client_secret": "CI_ONLY_NOT_A_REAL_SECRET",
-              "redirect_uris": ["http://localhost"]
-            }
-          }
-          '@
-          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-          [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path "build/config/client_secret.json"), $placeholder, $utf8NoBom)
-
-      - name: Prepare production OAuth config
-        if: github.event_name != 'pull_request'
-        shell: pwsh
-        env:
-          MYNAI_GOOGLE_OAUTH_JSON: ${{ secrets.MYNAI_GOOGLE_OAUTH_JSON }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:MYNAI_GOOGLE_OAUTH_JSON)) {
-            throw "Missing repository Actions secret MYNAI_GOOGLE_OAUTH_JSON. Store the Google Desktop OAuth client JSON as this secret before building a distributable installer."
-          }
-
-          $parsed = $env:MYNAI_GOOGLE_OAUTH_JSON | ConvertFrom-Json
-          if (-not $parsed.installed) {
-            throw "MYNAI_GOOGLE_OAUTH_JSON must be a Google Desktop app OAuth client JSON with an installed root object."
-          }
-
-          New-Item -ItemType Directory -Force -Path build/config | Out-Null
-          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-          [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path "build/config/client_secret.json"), $env:MYNAI_GOOGLE_OAUTH_JSON, $utf8NoBom)
-
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --yes --no-progress
@@ -178,6 +144,8 @@ jobs:
             "installer/LICENSE-AGREEMENT.rtf",
             "src/MynAI.Windows/Resources/myn.ico",
             "src/MynAI.Windows/Resources/myn.jpg",
+            "src/MynAI.Windows/Resources/myn.png",
+            "src/MynAI.Windows/Resources/myn-dark.png",
             "build/installer/MynAssistantWizardSmall.bmp",
             "build/publish/MynAssistant.exe",
             "build/publish/MynAssistantDesktopBridge.exe",

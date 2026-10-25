@@ -252,12 +252,11 @@
                             Height="48"
                             HorizontalAlignment="Left"
                             CornerRadius="10"
-                            BorderBrush="#198FE2"
-                            BorderThickness="1"
+                            Background="Transparent"
                             Margin="4,2,0,14">
 
-                        <Image Source="Resources/myn.jpg"
-                               Stretch="UniformToFill"/>
+                        <Image x:Name="SettingsBrandingImage"
+                               Stretch="Uniform"/>
 
                     </Border>
 
@@ -331,6 +330,60 @@
                                    Foreground="#718096"
                                    FontSize="12"
                                    Margin="0,0,0,18"/>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Logo ve görünüm"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+
+                                <TextBlock Text="Ana pencerede gösterilecek logoyu seç. Varsayılan seçim siyah temalı logodur; Windows uygulama ikonu bundan bağımsız kalır."
+                                           Foreground="#7E8A9D"
+                                           FontSize="11"
+                                           Margin="0,6,0,12"
+                                           TextWrapping="Wrap"/>
+
+                                <Border Background="#080D13"
+                                        CornerRadius="10"
+                                        Padding="10"
+                                        HorizontalAlignment="Left">
+                                    <Image x:Name="LogoPreviewImage"
+                                           Width="104"
+                                           Height="104"
+                                           Stretch="Uniform"/>
+                                </Border>
+
+                                <TextBlock x:Name="LogoPresetStatusText"
+                                           Text="Siyah temalı logo seçili"
+                                           Foreground="#7E8A9D"
+                                           FontSize="11"
+                                           Margin="0,8,0,10"
+                                           TextWrapping="Wrap"/>
+
+                                <WrapPanel>
+                                    <Button Content="Siyah temalı logo"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="SelectDarkLogo_Click"
+                                            Margin="0,0,8,8"/>
+                                    <Button Content="Şeffaf uygulama ikonu"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="SelectAppIconLogo_Click"
+                                            Margin="0,0,8,8"/>
+                                    <Button Content="Kayıtlı özel logoyu kullan"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="UseCustomLogo_Click"
+                                            Margin="0,0,8,8"/>
+                                    <Button Content="Bilgisayardan görsel seç"
+                                            Style="{StaticResource PrimaryButton}"
+                                            Click="SelectCustomLogo_Click"
+                                            Margin="0,0,8,8"/>
+                                    <Button Content="Varsayılana dön"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="ResetLogo_Click"
+                                            Margin="0,0,0,8"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
 
                         <Border Style="{StaticResource Card}">
 
@@ -462,7 +515,13 @@
 
                                     <Button Content="Yeniden başlat"
                                             Style="{StaticResource SecondaryButton}"
-                                            Click="RestartAgent_Click"/>
+                                            Click="RestartAgent_Click"
+                                            Margin="0,0,8,8"/>
+
+                                    <Button Content="Agent günlüklerini aç"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="OpenAgentLogs_Click"
+                                            Margin="0,0,0,8"/>
 
                                 </WrapPanel>
 
@@ -583,6 +642,29 @@
                                    Foreground="#718096"
                                    FontSize="12"
                                    Margin="0,0,0,18"/>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Google OAuth yapılandırması"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="Google Desktop OAuth JSON dosyanı bir kez seç. Uygulama dosyanın güvenli bir kopyasını kullanıcı verileri klasöründe saklar; dosya içeriği loglara yazılmaz."
+                                           Foreground="#7E8A9D"
+                                           FontSize="11"
+                                           Margin="0,6,0,10"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock x:Name="OAuthConfigStatusText"
+                                           Text="Yapılandırma kontrol ediliyor..."
+                                           Foreground="#7E8A9D"
+                                           FontSize="10"
+                                           Margin="0,0,0,10"
+                                           TextWrapping="Wrap"/>
+                                <Button Content="OAuth JSON dosyasını seç"
+                                        Style="{StaticResource PrimaryButton}"
+                                        HorizontalAlignment="Left"
+                                        Click="ChooseGoogleOAuthConfig_Click"/>
+                            </StackPanel>
+                        </Border>
 
                         <Border Style="{StaticResource Card}">
 

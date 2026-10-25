@@ -60,31 +60,17 @@ public partial class SettingsWindow : Window
 
     private void LoadWindowIconSafely()
     {
-        var path = Path.Combine(
-            AppContext.BaseDirectory,
-            "Resources",
-            "myn.jpg");
+        var image = MynAssistantBranding.LoadImage(
+            MynAssistantBranding.GetAppIconPath());
 
-        if (!File.Exists(path))
+        if (image is null)
+        {
+            Debug.WriteLine("MynAssistant settings icon could not be loaded.");
             return;
+        }
 
-        try
-        {
-            var image = new BitmapImage();
-            image.BeginInit();
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.UriSource = new Uri(path, UriKind.Absolute);
-            image.EndInit();
-            image.Freeze();
-            Icon = image;
-        }
-        catch (Exception ex)
-        {
-            // The window icon is decorative; settings must remain usable if
-            // an image is damaged or unavailable on a target computer.
-            Debug.WriteLine(
-                $"MynAssistant settings icon could not be loaded: {ex}");
-        }
+        Icon = image;
+        SettingsBrandingImage.Source = image;
     }
 
     private void LoadSettings()
@@ -112,6 +98,9 @@ public partial class SettingsWindow : Window
 
         HotkeyTextBox.Text =
             settings.BringToFrontHotkey;
+
+        UpdateLogoPreview(settings);
+        UpdateOAuthConfigStatus();
     }
 
     private void LoadGoogleAccount()
@@ -309,6 +298,159 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void UpdateOAuthConfigStatus()
+    {
+        var path = GoogleOAuthConfigStore.GetPath();
+        var exists = File.Exists(path);
+
+        OAuthConfigStatusText.Text = exists
+            ? $"Google Desktop OAuth yapılandırması hazır: {path}"
+            : "Google OAuth dosyası henüz seçilmedi. Bağlanmadan önce bu bölümden Desktop OAuth JSON dosyanı seç.";
+
+        OAuthConfigStatusText.Foreground = new SolidColorBrush(
+            exists ? Colors.LightGreen : Colors.Goldenrod);
+    }
+
+    private void UpdateLogoPreview(MynAISettings settings)
+    {
+        LogoPreviewImage.Source = MynAssistantBranding.LoadSelectedLogo(settings);
+        LogoPresetStatusText.Text = settings.LogoPreset switch
+        {
+            "app" => "Şeffaf uygulama ikonu seçili.",
+            "custom" when !string.IsNullOrWhiteSpace(settings.CustomLogoPath)
+                         && File.Exists(settings.CustomLogoPath) =>
+                $"Özel logo seçili: {Path.GetFileName(settings.CustomLogoPath)}",
+            "custom" => "Özel logo kaydı bulunamadı; varsayılan görsel kullanılıyor.",
+            _ => "Siyah temalı logo seçili."
+        };
+    }
+
+    private void SaveLogoPreset(string preset, string message)
+    {
+        var settings = _settingsStore.Load();
+        settings.LogoPreset = preset;
+        _settingsStore.Save(settings);
+        UpdateLogoPreview(settings);
+        SetSaveStatus(message, Colors.LightGreen);
+    }
+
+    private void SelectDarkLogo_Click(object sender, RoutedEventArgs e) =>
+        SaveLogoPreset("black", "Siyah temalı logo seçildi.");
+
+    private void SelectAppIconLogo_Click(object sender, RoutedEventArgs e) =>
+        SaveLogoPreset("app", "Şeffaf uygulama ikonu seçildi.");
+
+    private void UseCustomLogo_Click(object sender, RoutedEventArgs e)
+    {
+        var settings = _settingsStore.Load();
+        if (string.IsNullOrWhiteSpace(settings.CustomLogoPath)
+            || !File.Exists(settings.CustomLogoPath))
+        {
+            MessageBox.Show(
+                "Önce 'Bilgisayardan görsel seç' düğmesiyle bir logo seçmelisin.",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        SaveLogoPreset("custom", "Kayıtlı özel logo seçildi.");
+    }
+
+    private void SelectCustomLogo_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "MynAssistant logosu olarak kullanılacak görseli seç",
+            Filter = "Görseller (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp",
+            Multiselect = false,
+            CheckFileExists = true
+        };
+
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            var copiedPath = MynAssistantBranding.CopyCustomLogo(dialog.FileName);
+            var settings = _settingsStore.Load();
+            settings.LogoPreset = "custom";
+            settings.CustomLogoPath = copiedPath;
+            _settingsStore.Save(settings);
+            UpdateLogoPreview(settings);
+            SetSaveStatus("Özel logo kopyalandı ve kaydedildi.", Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Logo seçilemedi:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private void ResetLogo_Click(object sender, RoutedEventArgs e)
+    {
+        var settings = _settingsStore.Load();
+        settings.LogoPreset = "black";
+        settings.CustomLogoPath = null;
+        _settingsStore.Save(settings);
+        UpdateLogoPreview(settings);
+        SetSaveStatus("Siyah temalı varsayılan logo geri yüklendi.", Colors.LightGreen);
+    }
+
+    private void ChooseGoogleOAuthConfig_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Google Desktop OAuth istemci JSON dosyasını seç",
+            Filter = "Google OAuth JSON (client_secret.json)|client_secret.json|JSON dosyaları (*.json)|*.json",
+            Multiselect = false,
+            CheckFileExists = true
+        };
+
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            GoogleOAuthConfigStore.ImportFromFile(dialog.FileName);
+            UpdateOAuthConfigStatus();
+            UpdateDesktopBridgeStatus();
+
+            MessageBox.Show(
+                "Google OAuth yapılandırması doğrulandı ve MynAssistant kullanıcı verileri klasörüne kopyalandı. Şimdi Google ile bağlanmayı deneyebilirsin.",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"OAuth dosyası kullanılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private void OpenAgentLogs_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            AgentStartupManager.OpenLogDirectory();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Agent günlük klasörü açılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
     private void StartDesktopBridge_Click(
         object sender,
         RoutedEventArgs e)
@@ -420,6 +562,17 @@ public partial class SettingsWindow : Window
         object sender,
         RoutedEventArgs e)
     {
+        if (!File.Exists(GoogleOAuthConfigStore.GetPath()))
+        {
+            MessageBox.Show(
+                "Google hesabına bağlanmadan önce Hesap bölümündeki 'OAuth JSON dosyasını seç' düğmesiyle Google Desktop OAuth yapılandırmasını ekle.",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            UpdateOAuthConfigStatus();
+            return;
+        }
+
         GoogleConnectButton.IsEnabled =
             false;
 

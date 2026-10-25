@@ -22,8 +22,6 @@ public sealed class GoogleOAuthService
         "https://www.googleapis.com/auth/contacts.readonly"
     ];
 
-    private readonly string _googleDirectory;
-    private readonly string _clientSecretPath;
     private readonly string _tokenDirectory;
 
     private UserCredential? _credential;
@@ -31,37 +29,31 @@ public sealed class GoogleOAuthService
 
     public GoogleOAuthService()
     {
-        _googleDirectory = Path.Combine(
-            Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData),
-            "MynAI",
-            "Google");
+        var currentTokens = Path.Combine(GoogleOAuthConfigStore.CurrentDirectory, "Tokens");
+        var legacyTokens = Path.Combine(GoogleOAuthConfigStore.LegacyDirectory, "Tokens");
 
-        _clientSecretPath =
-            Path.Combine(
-                _googleDirectory,
-                "client_secret.json");
-
-        _tokenDirectory =
-            Path.Combine(
-                _googleDirectory,
-                "Tokens");
+        // Keep prior OAuth token storage if it already exists, so upgrading
+        // from the MynAI folder does not silently disconnect the user's account.
+        _tokenDirectory = !Directory.Exists(currentTokens) && Directory.Exists(legacyTokens)
+            ? legacyTokens
+            : currentTokens;
     }
 
     public async Task<GoogleAccount> SignInAsync(
         CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(_clientSecretPath))
+        var clientSecretPath = GoogleOAuthConfigStore.GetPath();
+        if (!File.Exists(clientSecretPath))
         {
             throw new FileNotFoundException(
-                "Google OAuth client_secret.json bulunamadı.",
-                _clientSecretPath);
+                "Google OAuth dosyası bulunamadı. Ayarlar > Hesap bölümünden Google Desktop OAuth JSON dosyasını seç.",
+                clientSecretPath);
         }
 
         Directory.CreateDirectory(_tokenDirectory);
 
         using var stream = new FileStream(
-            _clientSecretPath,
+            clientSecretPath,
             FileMode.Open,
             FileAccess.Read,
             FileShare.Read);

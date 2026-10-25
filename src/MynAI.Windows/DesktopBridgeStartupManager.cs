@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Win32;
+using MynAI.Windows.Google;
 
 namespace MynAI.Windows;
 
@@ -12,20 +13,7 @@ public static class DesktopBridgeStartupManager
     private const string ValueName = "MynAssistant.DesktopBridge";
     private const string LegacyValueName = "MynAI.DesktopBridge";
     private const string ExecutableName = "MynAssistantDesktopBridge.exe";
-    private const string OAuthFileName = "client_secret.json";
     private static readonly object LogLock = new();
-
-    private static string GoogleDirectory =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "MynAssistant",
-            "Google");
-
-    private static string LegacyGoogleDirectory =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "MynAI",
-            "Google");
 
     private static string LogPath =>
         Path.Combine(
@@ -104,16 +92,8 @@ public static class DesktopBridgeStartupManager
         return File.Exists(candidate) ? Path.GetFullPath(candidate) : null;
     }
 
-    public static string GetOAuthConfigPath()
-    {
-        var currentPath = Path.Combine(GoogleDirectory, OAuthFileName);
-        if (File.Exists(currentPath))
-            return currentPath;
-
-        // Preserve OAuth configuration from the previous MynAI-branded install.
-        var legacyPath = Path.Combine(LegacyGoogleDirectory, OAuthFileName);
-        return File.Exists(legacyPath) ? legacyPath : currentPath;
-    }
+    public static string GetOAuthConfigPath() =>
+        GoogleOAuthConfigStore.GetPath();
 
     public static bool IsRunning() =>
         Process.GetProcessesByName(Path.GetFileNameWithoutExtension(ExecutableName)).Length > 0;

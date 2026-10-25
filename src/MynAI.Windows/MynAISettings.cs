@@ -12,6 +12,12 @@ public sealed class MynAISettings
 
     public bool CameraEnabled { get; set; }
 
+    // "black" is the default for new installs; "app" uses the transparent app
+    // icon, and "custom" uses a private copy stored under LocalAppData.
+    public string LogoPreset { get; set; } = "black";
+
+    public string? CustomLogoPath { get; set; }
+
     public string BringToFrontHotkey { get; set; } =
         "Ctrl+Shift+Space";
 }

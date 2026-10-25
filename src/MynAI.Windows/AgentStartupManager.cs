@@ -94,6 +94,23 @@ public static class AgentStartupManager
     public static bool IsRunning() =>
         AgentProcessNames.Any(name => Process.GetProcessesByName(name).Length > 0);
 
+    public static string GetLogDirectory() =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MynAssistant",
+            "Logs");
+
+    public static void OpenLogDirectory()
+    {
+        var directory = GetLogDirectory();
+        Directory.CreateDirectory(directory);
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = directory,
+            UseShellExecute = true
+        });
+    }
+
     public static void StartAgent()
     {
         if (IsRunning())
@@ -111,7 +128,8 @@ public static class AgentStartupManager
             FileName = agentPath,
             WorkingDirectory = Path.GetDirectoryName(agentPath) ?? AppContext.BaseDirectory,
             UseShellExecute = false,
-            CreateNoWindow = true
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden
         };
 
         Process.Start(startInfo);

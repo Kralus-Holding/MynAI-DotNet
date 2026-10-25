@@ -84,23 +84,6 @@ try {
     }
     Write-Host "Inno Setup compiler: $compiler"
 
-    $oauthPath = Join-Path $env:LOCALAPPDATA 'MynAssistant\Google\client_secret.json'
-    if (-not (Test-Path -LiteralPath $oauthPath -PathType Leaf)) {
-        Add-Type -AssemblyName System.Windows.Forms
-        $dialog = New-Object System.Windows.Forms.OpenFileDialog
-        $dialog.Title = 'Select the Google Desktop OAuth client_secret.json'
-        $dialog.Filter = 'Google OAuth JSON (client_secret.json)|client_secret.json|JSON files (*.json)|*.json'
-        $dialog.Multiselect = $false
-        if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
-            throw 'OAuth client_secret.json was not selected.'
-        }
-        $oauthPath = $dialog.FileName
-    }
-    $oauth = Get-Content -LiteralPath $oauthPath -Raw | ConvertFrom-Json
-    if (-not $oauth.installed) {
-        throw 'The selected JSON is not a Google Desktop OAuth client (missing installed object).'
-    }
-
     Invoke-Checked 'Clone clean 0.1.5 source' {
         git clone --depth 1 --branch main --single-branch $repoUrl $workRoot
     }
@@ -114,8 +97,7 @@ try {
         throw 'The new MynAssistant branding source image is missing.'
     }
 
-    New-Item -ItemType Directory -Force -Path 'build/config','build/installer','build/bridge-dist','build/pyinstaller-work','build/pyinstaller-spec' | Out-Null
-    Copy-Item -LiteralPath $oauthPath -Destination 'build/config/client_secret.json' -Force
+    New-Item -ItemType Directory -Force -Path 'build/installer','build/bridge-dist','build/pyinstaller-work','build/pyinstaller-spec' | Out-Null
 
     Invoke-Checked 'Create project-local Python environment' {
         & py "-$pythonTag" -m venv .venv

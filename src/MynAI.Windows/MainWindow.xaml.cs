@@ -25,8 +25,6 @@ public partial class MainWindow : Window
     private System.Windows.Forms.NotifyIcon? _trayIcon;
     private System.Drawing.Icon? _trayIconImage;
     private System.IO.Stream? _trayIconStream;
-    private bool _closingApplication;
-
     private SettingsWindow? _settingsWindow;
     private const double NormalWidth = 820;
     private const double NormalHeight = 448;
@@ -72,22 +70,15 @@ public partial class MainWindow : Window
 
     private void MainHeaderGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        // At the normal width, keep the title, status, and actions on one line.
-        // Move the actions below the title/status pair when the available header
-        // width gets tight instead of letting fixed margins cause overlap.
-        const double compactBreakpoint = 610;
+        // Keep the action controls on the right at the standard window width.
+        // Only move them to a second row when the actual available width is tight.
+        const double compactBreakpoint = 520;
         var compact = e.NewSize.Width < compactBreakpoint;
-        var targetRow = compact ? 1 : 0;
 
-        if (Grid.GetRow(HeaderActionsPanel) == targetRow)
-            return;
-
-        Grid.SetRow(HeaderActionsPanel, targetRow);
+        Grid.SetRow(HeaderActionsPanel, compact ? 1 : 0);
         Grid.SetColumn(HeaderActionsPanel, compact ? 0 : 2);
         Grid.SetColumnSpan(HeaderActionsPanel, compact ? 3 : 1);
-        HeaderActionsPanel.HorizontalAlignment = compact
-            ? System.Windows.HorizontalAlignment.Left
-            : System.Windows.HorizontalAlignment.Right;
+        HeaderActionsPanel.HorizontalAlignment = System.Windows.HorizontalAlignment.Right;
         HeaderActionsPanel.Margin = compact
             ? new Thickness(0, 6, 0, 0)
             : new Thickness(0);
@@ -99,41 +90,14 @@ public partial class MainWindow : Window
 
     private void LoadLogo()
     {
-        var path = Path.Combine(
-            AppContext.BaseDirectory,
-            "Resources",
-            "myn.jpg");
+        var settings = new MynAISettingsStore().Load();
+        LogoImage.Source = MynAssistantBranding.LoadSelectedLogo(settings);
 
-        if (!File.Exists(path))
-        {
-            System.Diagnostics.Debug.WriteLine(
-                $"MynAssistant logo file was not found: {path}");
-            return;
-        }
-
-        try
-        {
-            var image = new BitmapImage();
-            image.BeginInit();
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.UriSource = new Uri(path, UriKind.Absolute);
-            image.EndInit();
-            image.Freeze();
-
-            LogoImage.Source = image;
-
-            // Use the already-supported JPEG for the WPF window icon.
-            // The .ico remains the executable/tray icon, but is not decoded
-            // by WPF's BitmapImage converter during XAML initialization.
-            Icon = image;
-        }
-        catch (Exception ex)
-        {
-            // Branding is optional: a bad/missing image must never prevent
-            // the assistant window from opening.
-            System.Diagnostics.Debug.WriteLine(
-                $"MynAssistant window logo could not be loaded: {ex}");
-        }
+        // Use the transparent ICO/PNG-derived application mark for the window
+        // and taskbar; the selected in-app logo is independent from the icon.
+        var appIcon = MynAssistantBranding.LoadImage(MynAssistantBranding.GetAppIconPath());
+        if (appIcon is not null)
+            Icon = appIcon;
     }
 
     private async void MainWindow_Loaded(
@@ -683,6 +647,7 @@ public partial class MainWindow : Window
             (_, _) =>
             {
                 _settingsWindow = null;
+                LoadLogo();
             };
 
         _settingsWindow.Show();
@@ -691,10 +656,7 @@ public partial class MainWindow : Window
     private void SetStatus(
         string text)
     {
-        StatusText.Text =
-            text == "Beklemede"
-                ? "=Beklemede"
-                : text;
+        StatusText.Text = text;
     }
 }
 
