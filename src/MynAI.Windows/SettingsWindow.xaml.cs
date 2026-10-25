@@ -40,7 +40,6 @@ public partial class SettingsWindow : Window
         LoadSettings();
         LoadGoogleAccount();
         ShowPage(GeneralPanel, GeneralNavButton);
-        UpdateFirebaseSessionStatus();
 
         _agentTimer =
             new DispatcherTimer
@@ -59,7 +58,6 @@ public partial class SettingsWindow : Window
         _agentTimer.Start();
 
         UpdateAgentStatus();
-        UpdateFirebaseSessionStatus();
         UpdateDesktopBridgeStatus();
     }
 
@@ -86,9 +84,6 @@ public partial class SettingsWindow : Window
         NotificationsCheckBox.IsChecked =
             settings.WindowsNotifications;
 
-        DesktopBridgeStartupCheckBox.IsChecked =
-            DesktopBridgeStartupManager.IsEnabled();
-
         MicrophoneCheckBox.IsChecked =
             settings.MicrophoneEnabled;
 
@@ -99,7 +94,6 @@ public partial class SettingsWindow : Window
             settings.BringToFrontHotkey;
 
         UpdateLogoPreview(settings);
-        UpdateFirebaseSessionStatus();
     }
 
     private void LoadGoogleAccount()
@@ -375,26 +369,6 @@ public partial class SettingsWindow : Window
                         : "Yerel Agent bu hesaptan bağımsız çalışır.";
     }
 
-    private void UpdateFirebaseSessionStatus()
-    {
-        var session = FirebaseDesktopSessionStore.Load();
-        var hasSession = session is not null
-            && !string.IsNullOrWhiteSpace(session.Uid)
-            && !string.IsNullOrWhiteSpace(session.RefreshToken);
-
-        FirebaseSessionStatusText.Text = hasSession
-            ? $"Telefon-PC hesabı açık: {session!.Email}"
-            : "Oturum açık değil. Telefon işlemleri için önce giriş yapın.";
-
-        FirebaseSessionStatusText.Foreground = new SolidColorBrush(
-            hasSession ? Colors.LightGreen : Colors.Goldenrod);
-        FirebaseSignOutButton.IsEnabled = hasSession;
-        DesktopBridgeStartupCheckBox.IsEnabled = hasSession;
-
-        if (!hasSession)
-            DesktopBridgeStartupCheckBox.IsChecked = false;
-    }
-
     private void UpdateLogoPreview(MynAISettings settings)
     {
         LogoPreviewImage.Source = MynAssistantBranding.LoadSelectedLogo(settings);
@@ -480,75 +454,25 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private async void FirebaseSignIn_Click(object sender, RoutedEventArgs e)
+    private void RefreshDesktopBridge_Click(object sender, RoutedEventArgs e)
     {
-        var email = FirebaseEmailTextBox.Text.Trim();
-        var password = FirebasePasswordBox.Password;
-
-        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(password))
-        {
-            FirebaseSessionStatusText.Text = "E-posta ve şifre alanlarını doldurun.";
-            FirebaseSessionStatusText.Foreground = new SolidColorBrush(Colors.Goldenrod);
-            return;
-        }
-
-        FirebaseSignInButton.IsEnabled = false;
-        FirebaseSignInButton.Content = "Giriş yapılıyor...";
-        FirebaseSessionStatusText.Text = "Firebase hesabı doğrulanıyor...";
-        FirebaseSessionStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
-
         try
         {
-            var session = await new FirebaseDesktopAuthService().SignInAsync(email, password);
-            FirebaseDesktopSessionStore.Save(session);
-            FirebasePasswordBox.Clear();
-            UpdateFirebaseSessionStatus();
-
-            try
+            if (FirebaseDesktopSessionStore.HasValidStoredSession() &&
+                !DesktopBridgeStartupManager.IsRunning())
             {
                 DesktopBridgeStartupManager.StartAgent();
-                if (DesktopBridgeStartupCheckBox.IsChecked == true)
-                    DesktopBridgeStartupManager.SetEnabled(true);
-                UpdateDesktopBridgeStatus();
-                FirebaseSessionStatusText.Text = $"Giriş başarılı: {session.Email}. Telefon-PC bağlantısı başlatıldı.";
             }
-            catch (Exception bridgeError)
-            {
-                UpdateDesktopBridgeStatus();
-                FirebaseSessionStatusText.Text =
-                    $"Hesap girişi başarılı; telefon-PC köprüsü başlatılamadı. {bridgeError.Message}";
-                FirebaseSessionStatusText.Foreground = new SolidColorBrush(Colors.Goldenrod);
-            }
+
+            UpdateDesktopBridgeStatus();
         }
         catch (Exception ex)
         {
-            FirebaseSessionStatusText.Text = ex.Message;
-            FirebaseSessionStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            DesktopBridgeStatusText.Text = "Telefon-PC bağlantısı yenilenemedi.";
+            DesktopBridgeStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            DesktopBridgeMessageText.Text = ex.Message;
+            DesktopBridgeStatusDot.Fill = new SolidColorBrush(Colors.IndianRed);
         }
-        finally
-        {
-            FirebaseSignInButton.IsEnabled = true;
-            FirebaseSignInButton.Content = "Giriş yap";
-        }
-    }
-
-    private void FirebaseSignOut_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            DesktopBridgeStartupManager.SetEnabled(false);
-            DesktopBridgeStartupManager.StopAgent();
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Telefon-PC köprüsü durdurulurken hata: {ex.GetType().Name}");
-        }
-
-        FirebaseDesktopSessionStore.Delete();
-        FirebasePasswordBox.Clear();
-        UpdateFirebaseSessionStatus();
-        UpdateDesktopBridgeStatus();
-        SetSaveStatus("Telefon-PC hesabından çıkış yapıldı.", Colors.LightGreen);
     }
 
     private void OpenAgentLogs_Click(object sender, RoutedEventArgs e)
@@ -561,70 +485,6 @@ public partial class SettingsWindow : Window
         {
             MessageBox.Show(
                 $"Agent günlük klasörü açılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
-                "MynAssistant",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-        }
-    }
-
-    private void StartDesktopBridge_Click(
-        object sender,
-        RoutedEventArgs e)
-    {
-        if (!FirebaseDesktopSessionStore.HasValidStoredSession())
-        {
-            ShowPage(AccountPanel, AccountNavButton);
-            UpdateFirebaseSessionStatus();
-            FirebaseSessionStatusText.Text = "Telefon işlemleri için lütfen önce Hesap bölümünden giriş yapın.";
-            FirebaseSessionStatusText.Foreground = new SolidColorBrush(Colors.Goldenrod);
-            return;
-        }
-
-        try
-        {
-            DesktopBridgeStartupManager.StartAgent();
-            UpdateDesktopBridgeStatus();
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(
-                $"Telefon-PC bağlantısı başlatılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
-                "MynAssistant",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-        }
-    }
-
-    private void StopDesktopBridge_Click(
-        object sender,
-        RoutedEventArgs e)
-    {
-        DesktopBridgeStartupManager.StopAgent();
-        UpdateDesktopBridgeStatus();
-    }
-
-    private void RestartDesktopBridge_Click(
-        object sender,
-        RoutedEventArgs e)
-    {
-        if (!FirebaseDesktopSessionStore.HasValidStoredSession())
-        {
-            ShowPage(AccountPanel, AccountNavButton);
-            UpdateFirebaseSessionStatus();
-            FirebaseSessionStatusText.Text = "Telefon işlemleri için lütfen önce Hesap bölümünden giriş yapın.";
-            FirebaseSessionStatusText.Foreground = new SolidColorBrush(Colors.Goldenrod);
-            return;
-        }
-
-        try
-        {
-            DesktopBridgeStartupManager.RestartAgent();
-            UpdateDesktopBridgeStatus();
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(
-                $"Telefon-PC bağlantısı yeniden başlatılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
                 "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -848,20 +708,17 @@ public partial class SettingsWindow : Window
             // The local Agent is mandatory and independent from account login.
             AgentStartupManager.EnsureAutomaticStartup();
 
-            var startDesktopBridge =
-                DesktopBridgeStartupCheckBox.IsChecked == true
-                && FirebaseDesktopSessionStore.HasValidStoredSession();
+            var startDesktopBridge = DesktopBridgeStartupManager.IsEnabled();
 
-            DesktopBridgeStartupCheckBox.IsChecked = startDesktopBridge;
-            DesktopBridgeStartupManager.SetEnabled(startDesktopBridge);
+            if (startDesktopBridge)
+                DesktopBridgeStartupManager.SetEnabled(true);
 
             var settings =
                 _settingsStore.Load();
 
             settings.StartAgentWithWindows = true;
 
-            settings.StartDesktopBridgeWithWindows =
-                startDesktopBridge;
+            settings.StartDesktopBridgeWithWindows = startDesktopBridge;
 
             settings.WindowsNotifications =
                 NotificationsCheckBox.IsChecked == true;
