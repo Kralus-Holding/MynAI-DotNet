@@ -20,6 +20,8 @@ on:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
       - "installer/**"
+      - "assets/branding/**"
+      - ".github/scripts/**"
       - ".github/workflows/windows-installer.yml"
   workflow_dispatch:
 
@@ -51,6 +53,16 @@ jobs:
 
       - name: Test desktop bridge command handling
         run: python -m unittest discover -s tools/MynAssistantDesktopBridge/tests -v
+
+      - name: Verify bridge supports atomic claims and keyboard actions
+        shell: pwsh
+        run: |
+          $bridgePath = "tools/MynAssistantDesktopBridge/agent.py"
+          foreach ($pattern in @("claim_pending_command", "claimToken", '"type_text"', '"key_backspace"', '"key_enter"', "configure_packaged_logging")) {
+            if (-not (Select-String -Path $bridgePath -Pattern $pattern -Quiet)) {
+              throw "Windows bridge is missing required feature: $pattern"
+            }
+          }
 
       - name: Generate current MynAssistant branding
         shell: pwsh
