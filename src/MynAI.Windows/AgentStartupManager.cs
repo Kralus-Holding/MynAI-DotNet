@@ -162,8 +162,9 @@ public static class AgentStartupManager
     {
         try
         {
-            if (!IsEnabled())
-                SetEnabled(true);
+            // Always write the canonical path so upgrades migrate the legacy
+            // MynAI.Agent value and repair a stale registry entry.
+            SetEnabled(true);
             if (!IsRunning())
                 StartAgent();
         }
