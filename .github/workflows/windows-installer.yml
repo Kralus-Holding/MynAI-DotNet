@@ -71,8 +71,12 @@ jobs:
               throw "Do not load .ico via the WPF XAML ImageSource converter in $path."
             }
           }
-          if (-not (Test-Path "src/MynAI.Windows/Resources/myn.jpg")) {
-            throw "Fallback window image is missing."
+          $logoPath = "src/MynAI.Windows/Resources/mynassistant.png"
+          if (-not (Test-Path $logoPath)) {
+            throw "Canonical MynAssistant logo PNG is missing: $logoPath"
+          }
+          if (Select-String -Path ".github/workflows/windows-installer.yml" -Pattern '\.ToBitmap\(' -Quiet) {
+            throw "Installer logo must be generated from the canonical PNG, not Icon.ToBitmap()."
           }
           if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern 'image.CacheOption = BitmapCacheOption.OnLoad' -Quiet)) {
             throw "The main-window image must be decoded safely with OnLoad."
@@ -159,14 +163,14 @@ jobs:
           # Validate all installer assets before invoking Inno Setup.
           $licensePath = "installer/LICENSE-AGREEMENT.rtf"
           $iconPath = "src/MynAI.Windows/Resources/myn.ico"
+          $logoPath = "src/MynAI.Windows/Resources/mynassistant.png"
           if (-not (Test-Path $licensePath)) { throw "License agreement file is missing: $licensePath" }
           if (-not (Test-Path $iconPath)) { throw "MynAssistant application icon is missing: $iconPath" }
 
-          # Generate only the 55x58 top-right wizard logo from the same app ICO.
-          # Avoids the old large custom wizard artwork that had scaling/rendering issues.
+          # Generate the wizard logo from the same canonical PNG used by the WPF app.
+          # Do not call Icon.ToBitmap(): some ICO encoders create frames GDI+ cannot convert.
           Add-Type -AssemblyName System.Drawing
-          $icon = [System.Drawing.Icon]::new((Resolve-Path $iconPath).Path)
-          $sourceBitmap = $icon.ToBitmap()
+          $sourceBitmap = [System.Drawing.Image]::FromFile((Resolve-Path $logoPath).Path)
           $wizardBitmap = [System.Drawing.Bitmap]::new(
             55, 58, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb
           )
@@ -191,7 +195,6 @@ jobs:
             $graphics.Dispose()
             $wizardBitmap.Dispose()
             $sourceBitmap.Dispose()
-            $icon.Dispose()
           }
           if (-not (Test-Path $wizardSmallImage) -or (Get-Item $wizardSmallImage).Length -lt 100) {
             throw "MynAssistant wizard icon could not be generated."
