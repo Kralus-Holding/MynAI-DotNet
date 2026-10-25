@@ -67,7 +67,7 @@ jobs:
             throw "Desktop Bridge EXE was not created."
           }
 
-      - name: Verify WPF window icon loading remains non-fatal
+      - name: Verify shared branding and status UI
         shell: pwsh
         run: |
           $windowXaml = @(
@@ -76,17 +76,23 @@ jobs:
           )
           foreach ($path in $windowXaml) {
             if (Select-String -Path $path -Pattern 'Icon="Resources/myn.ico"' -Quiet) {
-              throw "Do not load .ico via the WPF XAML ImageSource converter in $path."
+              throw "Do not decode .ico through the WPF XAML ImageSource converter in $path."
             }
           }
-          if (-not (Test-Path "src/MynAI.Windows/Resources/myn.jpg")) {
-            throw "Fallback window image is missing."
+          if (-not (Test-Path "assets/branding/mynassistant-icon-source.png")) {
+            throw "Shared MynAssistant brand source is missing."
           }
-          if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern 'image.CacheOption = BitmapCacheOption.OnLoad' -Quiet)) {
+          if (-not (Select-String -Path "tools/prepare-branding.py" -Pattern "remove_connected_light_background" -Quiet)) {
+            throw "The transparent-branding preparation script is missing its background handling."
+          }
+          if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern "BitmapCacheOption.OnLoad" -Quiet)) {
             throw "The main-window image must be decoded safely with OnLoad."
           }
-          if (-not (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml.cs" -Pattern 'LoadWindowIconSafely' -Quiet)) {
-            throw "The settings-window icon must use the safe loader."
+          if (-not (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml.cs" -Pattern "SettingsLogoImage.Source = image" -Quiet)) {
+            throw "Settings must load the shared brand image through the safe loader."
+          }
+          if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml" -Pattern "BridgeStatusBorder_MouseLeftButtonUp" -Quiet)) {
+            throw "The cloud bridge status badge must allow starting the PC bridge."
           }
 
       - name: Restore and build .NET solution
