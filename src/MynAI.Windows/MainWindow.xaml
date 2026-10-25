@@ -318,6 +318,7 @@
             <Grid x:Name="MainHeaderGrid"
                   Grid.Row="0"
                   SizeChanged="MainHeaderGrid_SizeChanged">
+                <Grid.Margin>0,0,0,5</Grid.Margin>
 
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -350,7 +351,7 @@
                         VerticalAlignment="Center">
 
                     <TextBlock x:Name="StatusText"
-                               Text="Beklemede"
+                               Text="= Beklemede"
                                Foreground="#48B5F2"
                                FontSize="10"
                                FontWeight="SemiBold"/>
