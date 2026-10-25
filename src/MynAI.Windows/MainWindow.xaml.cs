@@ -267,8 +267,14 @@ public partial class MainWindow : Window
 
             _trayIcon.ContextMenuStrip = menu;
 
-            _trayIcon.DoubleClick +=
-                (_, _) => RestoreFromTray();
+            // Restore on the first left click. A double-click also generates
+            // left-click notifications, so both gestures remain supported.
+            _trayIcon.MouseClick +=
+                (_, args) =>
+                {
+                    if (args.Button == System.Windows.Forms.MouseButtons.Left)
+                        RestoreFromTray();
+                };
         }
         catch (Exception ex)
         {
@@ -590,6 +596,10 @@ public partial class MainWindow : Window
 
             PlannedCountText.Text =
                 _scheduledTasks.Count.ToString();
+            PlannedCountText.Visibility =
+                _scheduledTasks.Count > 0
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
 
             AgentStatusText.Text =
                 "Agent: bağlı";
