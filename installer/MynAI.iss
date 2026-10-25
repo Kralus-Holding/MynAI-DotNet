@@ -81,9 +81,9 @@ var
 begin
   // First request a normal close (important for the main WPF window), then
   // terminate as a fallback because the background helpers have no UI to close.
-  Exec(ExpandConstant('{sys}\\taskkill.exe'), '/IM ' + ImageName + ' /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM ' + ImageName + ' /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(750);
-  Exec(ExpandConstant('{sys}\\taskkill.exe'), '/F /T /IM ' + ImageName, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM ' + ImageName, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(250);
 end;
 
