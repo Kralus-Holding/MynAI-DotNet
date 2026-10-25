@@ -71,50 +71,105 @@ begin
     Delete(Result, Length(Result), 1);
 end;
 
-function ExistingInstallLocation(var InstallDir: String): Boolean;
+function ExistingInstallLocation(var InstallDir, InstallVersion: String;
+  var VersionVerified: Boolean): Boolean;
+var
+  BinaryVersion: String;
+  RegisteredVersion: String;
 begin
+  InstallDir := '';
+  InstallVersion := '';
+  VersionVerified := False;
+
   Result := RegQueryStringValue(
     HKCU,
     'Software\Microsoft\Windows\CurrentVersion\Uninstall\{E4FD24F0-B4A0-4D4C-875C-70781DC41F20}_is1',
     'InstallLocation',
     InstallDir);
+
+  if not Result then
+    Exit;
+
+  // A stale uninstall record must not block a clean install after the old folder was removed.
+  if not DirExists(InstallDir) or
+     not FileExists(AddBackslash(InstallDir) + '{#MyAppExeName}') then
+  begin
+    Result := False;
+    Exit;
+  end;
+
+  VersionVerified := GetVersionNumbersString(
+    AddBackslash(InstallDir) + '{#MyAppExeName}',
+    BinaryVersion);
+
+  if not VersionVerified then
+  begin
+    InstallVersion := 'doğrulanamadı';
+    Exit;
+  end;
+
+  InstallVersion := BinaryVersion;
+  if RegQueryStringValue(
+      HKCU,
+      'Software\Microsoft\Windows\CurrentVersion\Uninstall\{E4FD24F0-B4A0-4D4C-875C-70781DC41F20}_is1',
+      'DisplayVersion',
+      RegisteredVersion) and
+     (RegisteredVersion <> '') then
+    InstallVersion := RegisteredVersion + ' (EXE: ' + BinaryVersion + ')';
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   ExistingInstallDir: String;
+  ExistingInstallVersion: String;
+  ExistingVersionVerified: Boolean;
   SelectedInstallDir: String;
 begin
   Result := True;
 
-  if (CurPageID = wpSelectDir) and ExistingInstallLocation(ExistingInstallDir) then
+  if (CurPageID = wpSelectDir) and
+     ExistingInstallLocation(ExistingInstallDir, ExistingInstallVersion, ExistingVersionVerified) then
   begin
-    SelectedInstallDir := ExpandConstant('{app}');
-    if DirExists(ExistingInstallDir) and
-       (CompareText(NormalizeInstallDir(ExistingInstallDir), NormalizeInstallDir(SelectedInstallDir)) = 0) then
-    begin
-      if MsgBox(
-        'MynAssistant bilgisayarınızda zaten kurulu. Mevcut kurulumu güncellemek ister misiniz?',
-        mbConfirmation,
-        MB_YESNO or MB_DEFBUTTON1) <> IDYES then
-      begin
-        Result := False;
-        Exit;
-      end;
-    end
-    else if DirExists(ExistingInstallDir) then
+    if not ExistingVersionVerified then
     begin
       MsgBox(
-        'MynAssistant şu klasörde zaten kurulu:' + #13#10 + ExistingInstallDir + #13#10#13#10 +
-        'Birden fazla bağımsız kurulum bu sürümde güvenli biçimde desteklenmiyor. ' +
-        'Farklı hedef seçimi mevcut Agent başlangıç kaydını bozabilir. Hiçbir dosya değiştirilmedi. ' +
-        'Güncelleme için mevcut klasörü seçin veya önce mevcut kurulumu kaldırın.',
+        'MynAssistant kurulum kaydı bulundu ancak mevcut EXE sürümü doğrulanamadı.' + #13#10 +
+        'Hiçbir dosya değiştirilmedi. Mevcut uygulamayı Windows Ayarları > Uygulamalar bölümünden kaldırıp tekrar deneyin.',
+        mbError,
+        MB_OK);
+      Result := False;
+      Exit;
+    end;
+
+    SelectedInstallDir := ExpandConstant('{app}');
+    if MsgBox(
+      'MynAssistant bilgisayarınızda zaten kurulu. Mevcut kurulumu güncellemek ister misiniz?' +
+      #13#10#13#10 +
+      'Konum: ' + ExistingInstallDir + #13#10 +
+      'Sürüm: ' + ExistingInstallVersion,
+      mbConfirmation,
+      MB_YESNO or MB_DEFBUTTON1) <> IDYES then
+    begin
+      // No means cancel this installation attempt; no application files are modified or deleted.
+      Result := False;
+      Exit;
+    end;
+
+    if CompareText(
+        NormalizeInstallDir(ExistingInstallDir),
+        NormalizeInstallDir(SelectedInstallDir)) <> 0 then
+    begin
+      MsgBox(
+        'MynAssistant mevcut konumda kurulu: ' + ExistingInstallDir + #13#10#13#10 +
+        'Bu sürüm tek aktif Agent ve ortak başlangıç kayıtları kullanıyor. ' +
+        'İkinci bağımsız kurulum bu kayıtları bozabileceğinden kuruluma devam edilmedi. ' +
+        'Güncellemek için yukarıdaki konumu hedef olarak seçin. ' +
+        'Eski klasör silinmişse yeni bir hedef seçebilirsiniz.',
         mbInformation,
         MB_OK);
       Result := False;
       Exit;
     end;
-    // An uninstall record may remain after its installation directory was deleted.
   end;
 end;
 
