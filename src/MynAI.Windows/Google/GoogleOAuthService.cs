@@ -46,7 +46,7 @@ public sealed class GoogleOAuthService
         if (!File.Exists(clientSecretPath))
         {
             throw new FileNotFoundException(
-                "Google OAuth dosyası bulunamadı. Ayarlar > Hesap bölümünden Google Desktop OAuth JSON dosyasını seç.",
+                "Google Kişiler masaüstü yetkilendirmesi bu kurulumda yapılandırılmamış. Telefon-PC bağlantısı için Hesap bölümündeki Firebase girişini kullanın.",
                 clientSecretPath);
         }
 

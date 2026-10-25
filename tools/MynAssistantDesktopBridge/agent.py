@@ -18,7 +18,6 @@ from urllib.parse import urlencode
 import pyautogui
 import requests
 import win32crypt
-from google_auth_oauthlib.flow import InstalledAppFlow
 
 
 PROJECT_ID = "myncloud-24"
@@ -26,7 +25,6 @@ FIREBASE_API_KEY = "AIzaSyB0z1b5OOMh8Pqn2GPd1ZuWoHEhRoKSrRM"
 IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1"
 SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token"
 FIRESTORE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents"
-SCOPES = ["openid", "email", "profile"]
 AGENT_VERSION = "0.2.2"
 POLL_SECONDS = 2.0
 COMMAND_POLL_SECONDS = 2.0
@@ -36,7 +34,6 @@ SCREEN_REQUEST_MAX_AGE_SECONDS = 25.0
 HEARTBEAT_SECONDS = 25.0
 DPAPI_ENTROPY = b"MynAssistantDesktopAgent-v1"
 APP_DATA = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MynAssistant" / "DesktopAgent"
-OAUTH_FILE_NAME = "client_secret.json"
 SESSION_FILE = APP_DATA / "session.bin"
 DEVICE_FILE = APP_DATA / "devices.json"
 STATUS_FILE = APP_DATA / "status.json"
@@ -157,70 +154,8 @@ def load_device_id(uid: str) -> str:
     return device_id
 
 
-def find_oauth_credentials_path() -> Path | None:
-    # Match DesktopBridgeStartupManager and the installer: the persistent per-user
-    # configuration is authoritative; a sidecar is only a development fallback.
-    candidates = (
-        APP_DATA.parent / "Google" / OAUTH_FILE_NAME,
-        APP_DATA.parent.parent / "MynAI" / "Google" / OAUTH_FILE_NAME,
-        running_directory() / OAUTH_FILE_NAME,
-    )
-    return next((path for path in candidates if path.is_file()), None)
-
-
-def google_oauth_credentials():
-    credentials_path = find_oauth_credentials_path()
-    if credentials_path is None:
-        expected_paths = (
-            APP_DATA.parent / "Google" / OAUTH_FILE_NAME,
-            APP_DATA.parent.parent / "MynAI" / "Google" / OAUTH_FILE_NAME,
-            running_directory() / OAUTH_FILE_NAME,
-        )
-        searched = "\n".join(str(path) for path in expected_paths)
-        raise FileNotFoundError(
-            "Google OAuth dosyası bulunamadı. Google Desktop OAuth istemci JSON dosyasını "
-            "aşağıdaki konumlardan birine yerleştir:\n" + searched
-        )
-    flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
-    return flow.run_local_server(
-        host="127.0.0.1",
-        port=0,
-        open_browser=True,
-        authorization_prompt_message="Google hesabıyla giriş için tarayıcı açılıyor...",
-        success_message="Google girişi tamamlandı. Bu sekmeyi kapatıp MynAssistant Agent penceresine dön.",
-        access_type="offline",
-        prompt="select_account",
-    )
-
-
-def firebase_exchange_google_access_token(access_token: str) -> dict:
-    post_body = urlencode({"access_token": access_token, "providerId": "google.com"})
-    response = requests.post(
-        f"{IDENTITY_TOOLKIT}/accounts:signInWithIdp",
-        params={"key": FIREBASE_API_KEY},
-        json={
-            "postBody": post_body,
-            "requestUri": "http://localhost",
-            "returnSecureToken": True,
-            "returnIdpCredential": False,
-        },
-        timeout=25,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError("Firebase Google girişi başarısız: " + response.text[:700])
-    data = response.json()
-    payload = {
-        "uid": data["localId"],
-        "email": data.get("email", ""),
-        "displayName": data.get("displayName", ""),
-        "refreshToken": data["refreshToken"],
-    }
-    protect_session(payload)
-    return {
-        **payload,
-        "idToken": data["idToken"],
-        "expiresAt": time.time() + int(data.get("expiresIn", "3600")) - 90,
-    }
+class FirebaseSessionExpiredError(RuntimeError):
+    """A saved Firebase refresh token was explicitly rejected."""
 
 
 class FirebaseSession:
@@ -232,13 +167,6 @@ class FirebaseSession:
         self.id_token = state.get("idToken", "")
         self.expires_at = float(state.get("expiresAt", 0))
         self.ensure_fresh(force=not self.id_token)
-
-    @classmethod
-    def sign_in(cls):
-        credentials = google_oauth_credentials()
-        if not credentials.token:
-            raise RuntimeError("Google OAuth sonucunda erişim anahtarı alınamadı.")
-        return cls(firebase_exchange_google_access_token(credentials.token))
 
     def _store(self) -> None:
         protect_session({
@@ -258,7 +186,14 @@ class FirebaseSession:
             timeout=20,
         )
         if response.status_code >= 400:
-            raise RuntimeError("Firebase oturumu yenilenemedi: " + response.text[:500])
+            message = ""
+            try:
+                message = str(response.json().get("error", {}).get("message", "")).upper()
+            except Exception:
+                pass
+            if message in {"INVALID_REFRESH_TOKEN", "TOKEN_EXPIRED", "USER_DISABLED", "USER_NOT_FOUND"}:
+                raise FirebaseSessionExpiredError("Firebase oturumu geçersiz veya süresi dolmuş.")
+            raise RuntimeError(f"Firebase oturumu geçici olarak yenilenemedi (HTTP {response.status_code}).")
         data = response.json()
         self.id_token = data["id_token"]
         self.refresh_token = data.get("refresh_token", self.refresh_token)
@@ -736,68 +671,43 @@ def command_is_supported(command: str) -> bool:
     }
 
 
-def ask_install_startup() -> None:
-    try:
-        answer = input("MynAssistant Agent Windows açılışında otomatik başlasın mı? [E/h]: ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        return
-    if answer in {"", "e", "evet", "y", "yes"}:
-        if not getattr(sys, "frozen", False):
-            print("Otomatik başlangıç yalnızca paketlenmiş EXE sürümünde desteklenir.")
-            return
-        try:
-            import winreg
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Run",
-                0,
-                winreg.KEY_SET_VALUE,
-            )
-            winreg.SetValueEx(key, "MynAssistantAgent", 0, winreg.REG_SZ, f'"{Path(sys.executable).resolve()}"')
-            winreg.CloseKey(key)
-            print("Otomatik başlangıç etkinleştirildi.")
-        except Exception as exc:
-            print(f"Otomatik başlangıç ayarlanamadı: {exc}")
-
-
 def run_agent() -> int:
     APP_DATA.mkdir(parents=True, exist_ok=True)
-    write_bridge_status("starting", "Google/Firebase bağlantısı başlatılıyor.")
+    write_bridge_status("starting", "Telefon-PC bağlantısı hazırlanıyor.")
     session_state = load_protected_session()
     session = None
+
     if session_state:
         try:
             session = FirebaseSession(session_state)
             print(f"Kaydedilmiş Firebase oturumu kullanılıyor: {session.email or session.uid}")
-        except Exception as exc:
-            print(f"[Auth] Kayıtlı oturum yenilenemedi; Google girişi yeniden açılacak. Ayrıntı: {exc}")
+        except FirebaseSessionExpiredError:
             delete_protected_session()
+            print("[Auth] Kaydedilmiş oturum geçersiz. Uygulamadan yeniden giriş gerekli.")
+        except requests.RequestException:
+            write_bridge_status("error", "Firebase oturumu doğrulanamadı: internet bağlantısını kontrol edip yeniden deneyin.")
+            print("[Auth] Firebase doğrulama isteği başarısız; kayıtlı oturum korunuyor.")
+            return 1
+        except Exception as exc:
+            write_bridge_status(
+                "error",
+                f"Firebase oturumu doğrulanamadı ({type(exc).__name__}). Hesap bölümünden yeniden giriş yapabilirsiniz.",
+            )
+            print(f"[Auth] Oturum doğrulaması tamamlanamadı: {type(exc).__name__}")
+            return 1
 
     if session is None:
-        write_bridge_status("connecting", "Google girişi bekleniyor.")
-        session = FirebaseSession.sign_in()
-        print(f"Firebase hesabı: {session.email or session.uid}")
-        if not getattr(sys, "frozen", False):
-            ask_install_startup()
+        write_bridge_status("auth_required", "Telefon işlemleri için lütfen önce Hesap bölümünden giriş yapın.")
+        print("[Auth] Telefon-PC işlemleri için MynAssistant Hesap bölümünden giriş yapın.")
+        return 2
 
     device_id = load_device_id(session.uid)
-    write_bridge_status(
-        "connecting",
-        "Google hesabı doğrulandı; Windows PC Firestore'a kaydediliyor.",
-        email=session.email,
-        device_id=device_id,
-    )
+    write_bridge_status("connecting", "Firebase oturumu doğrulandı; Windows PC kaydediliyor.", email=session.email, device_id=device_id)
     register_or_heartbeat(session, device_id, initial=True)
-    write_bridge_status(
-        "online",
-        "PC Firestore'a kaydedildi; Android ve web paneli için hazır.",
-        email=session.email,
-        device_id=device_id,
-    )
+    write_bridge_status("online", "PC Firestore'a kaydedildi; Android ve web paneli için hazır.", email=session.email, device_id=device_id)
     print(f"Cihaz çevrimiçi: {platform.node()} (ID: {device_id})")
     print("Android uygulamasında Cihazlarım bölümünde otomatik görünmesi gerekir.")
     print("PC Kumandası açıkken masaüstü önizlemesi yaklaşık saniyede bir güncellenir.")
-    print("Durdurmak için Ctrl+C.")
 
     last_heartbeat = time.monotonic()
     last_screen_check = 0.0

@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Win32;
+using MynAI.Windows.Auth;
 using MynAI.Windows.Google;
 
 namespace MynAI.Windows;
@@ -75,12 +76,8 @@ public static class DesktopBridgeStartupManager
                 $"{ExecutableName} bulunamadı. MynAssistant kurulumunu onar veya yeniden yükle.");
         }
 
-        var oauthPath = GetOAuthConfigPath();
-        if (!File.Exists(oauthPath))
-        {
-            throw new FileNotFoundException(
-                $"Telefon-PC bağlantısı için Google OAuth yapılandırması bulunamadı: {oauthPath}");
-        }
+        if (!FirebaseDesktopSessionStore.HasValidStoredSession())
+            throw new InvalidOperationException("Telefon işlemleri için lütfen önce Hesap bölümünden giriş yapın.");
 
         key.SetValue(ValueName, $"{(char)34}{executablePath}{(char)34}", RegistryValueKind.String);
         key.DeleteValue(LegacyValueName, throwOnMissingValue: false);
@@ -110,13 +107,8 @@ public static class DesktopBridgeStartupManager
                 $"{ExecutableName} bulunamadı. MynAssistant kurulumunu onar veya yeniden yükle.");
         }
 
-        var oauthPath = GetOAuthConfigPath();
-        if (!File.Exists(oauthPath))
-        {
-            throw new FileNotFoundException(
-                "Google OAuth yapılandırması bulunamadı. MynAssistant kurulumunda Google bağlantı ayarını kontrol et.",
-                oauthPath);
-        }
+        if (!FirebaseDesktopSessionStore.HasValidStoredSession())
+            throw new InvalidOperationException("Telefon işlemleri için lütfen önce Hesap bölümünden giriş yapın.");
 
         Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
 
