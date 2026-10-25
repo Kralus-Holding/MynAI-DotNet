@@ -19,6 +19,7 @@ on:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
       - "installer/**"
+      - "scripts/**"
       - ".github/workflows/windows-installer.yml"
   workflow_dispatch:
 
