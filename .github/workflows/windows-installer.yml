@@ -181,13 +181,17 @@ jobs:
           if (-not (Test-Path "build/installer/MynAssistant-Setup.exe")) {
             throw "MynAssistant-Setup.exe was not created."
           }
-          if ((Get-Item "build/installer/MynAssistant-Setup.exe").Length -lt 50MB) {
+          $installerInfo = Get-Item "build/installer/MynAssistant-Setup.exe"
+          if ($installerInfo.Length -lt 50MB) {
             throw "Installer size is unexpectedly small; refusing to report success."
           }
+          $installerSha256 = (Get-FileHash "build/installer/MynAssistant-Setup.exe" -Algorithm SHA256).Hash
+          Write-Host "Installer path: $((Resolve-Path "build/installer/MynAssistant-Setup.exe").Path)"
+          Write-Host "Installer size bytes: $($installerInfo.Length)"
+          Write-Host "Installer SHA-256: $installerSha256"
 
       - name: Upload Windows installer as Actions artifact
         id: upload_installer
-        if: github.event_name != 'pull_request'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:

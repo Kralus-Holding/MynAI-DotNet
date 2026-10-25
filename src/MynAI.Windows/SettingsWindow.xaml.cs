@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.Text.RegularExpressions;
 using MynAI.Windows.Google;
 
 namespace MynAI.Windows;
@@ -187,6 +188,7 @@ public partial class SettingsWindow : Window
             AgentPanel);
 
         UpdateAgentStatus();
+        UpdateAgentDiagnostics();
     }
 
     private void AccountNav_Click(
@@ -239,6 +241,85 @@ public partial class SettingsWindow : Window
             AgentStartupManager
                 .TryGetAgentExecutablePath()
             ?? "Agent executable bulunamadı.";
+    }
+
+    private void UpdateAgentDiagnostics()
+    {
+        try
+        {
+            var logDirectory = AgentStartupManager.GetLogDirectory();
+            if (!Directory.Exists(logDirectory))
+            {
+                AgentDiagnosticsText.Text =
+                    "Son başlatma: kayıt bulunamadı. Son hata kodu: yok.";
+                return;
+            }
+
+            var logPath = Directory.GetFiles(logDirectory, "MynAgent-*.log")
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
+
+            if (logPath is null)
+            {
+                AgentDiagnosticsText.Text =
+                    "Son başlatma: kayıt bulunamadı. Son hata kodu: yok.";
+                return;
+            }
+
+            string? lastStart = null;
+            string? lastError = null;
+            string? lastErrorCode = null;
+            const string startMarker = "MynAgent started at ";
+
+            using var stream = new FileStream(
+                logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream);
+
+            while (reader.ReadLine() is { } line)
+            {
+                var startIndex = line.IndexOf(startMarker, StringComparison.OrdinalIgnoreCase);
+                if (startIndex >= 0)
+                    lastStart = line[(startIndex + startMarker.Length)..].Trim();
+
+                var looksLikeError =
+                    line.Contains("error", StringComparison.OrdinalIgnoreCase)
+                    || line.Contains("exception", StringComparison.OrdinalIgnoreCase)
+                    || line.Contains("failed", StringComparison.OrdinalIgnoreCase)
+                    || line.Contains("hata", StringComparison.OrdinalIgnoreCase)
+                    || line.Contains("başarısız", StringComparison.OrdinalIgnoreCase)
+                    || line.Contains("MYN-", StringComparison.OrdinalIgnoreCase);
+
+                if (looksLikeError)
+                {
+                    lastError = line.Trim();
+                    var match = Regex.Match(
+                        line,
+                        @"MYN-[A-Z]+-d+",
+                        RegexOptions.IgnoreCase);
+                    lastErrorCode = match.Success ? match.Value : null;
+                }
+            }
+
+            var errorSummary = lastError is null
+                ? "yok"
+                : lastErrorCode is null
+                    ? "kod bulunamadı; " + lastError
+                    : lastErrorCode + "; " + lastError;
+
+            if (errorSummary.Length > 220)
+                errorSummary = errorSummary[..220] + "...";
+
+            AgentDiagnosticsText.Text =
+                $"Son başlatma: {lastStart ?? "kayıt bulunamadı"}{Environment.NewLine}Son hata: {errorSummary}";
+            AgentDiagnosticsText.Foreground = new SolidColorBrush(
+                lastError is null ? Colors.LightGreen : Colors.IndianRed);
+        }
+        catch
+        {
+            AgentDiagnosticsText.Text =
+                "Agent tanılama kaydı okunamadı. Günlük klasörünü açıp inceleyebilirsin.";
+            AgentDiagnosticsText.Foreground = new SolidColorBrush(Colors.Goldenrod);
+        }
     }
 
     private void UpdateDesktopBridgeStatus()
@@ -510,6 +591,7 @@ public partial class SettingsWindow : Window
                 Colors.LightGreen);
 
             UpdateAgentStatus();
+            UpdateAgentDiagnostics();
         }
         catch (Exception ex)
         {
@@ -532,6 +614,7 @@ public partial class SettingsWindow : Window
             Colors.LightGreen);
 
         UpdateAgentStatus();
+        UpdateAgentDiagnostics();
     }
 
     private void RestartAgent_Click(
@@ -547,6 +630,7 @@ public partial class SettingsWindow : Window
                 Colors.LightGreen);
 
             UpdateAgentStatus();
+            UpdateAgentDiagnostics();
         }
         catch (Exception ex)
         {
