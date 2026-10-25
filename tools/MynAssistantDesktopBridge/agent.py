@@ -767,7 +767,22 @@ def run_agent() -> int:
     return 0
 
 
+def configure_background_logging() -> None:
+    # A --noconsole PyInstaller build has no terminal at Windows logon.
+    # Keep diagnostics in the per-user log used by DesktopBridgeStartupManager.
+    try:
+        APP_DATA.mkdir(parents=True, exist_ok=True)
+        if sys.stdout is None:
+            sys.stdout = open(APP_DATA / "bridge.log", "a", encoding="utf-8", buffering=1)
+        if sys.stderr is None:
+            sys.stderr = sys.stdout
+    except Exception:
+        # A logging failure must not prevent the bridge from starting.
+        pass
+
+
 def main() -> int:
+    configure_background_logging()
     if os.name != "nt":
         print("MynAssistant Desktop Agent yalnızca Windows üzerinde çalışır.")
         return 2
