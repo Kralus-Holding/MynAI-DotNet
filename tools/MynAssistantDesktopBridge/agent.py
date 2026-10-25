@@ -262,20 +262,32 @@ def firestore_patch(session: FirebaseSession, document_path: str, fields: dict, 
     return response.json()
 
 
-def write_local_status(session: FirebaseSession, device_id: str, status: str) -> None:
-    """Expose the last successful Firestore heartbeat to the local Settings UI only."""
+def write_local_status(
+    session: FirebaseSession | None,
+    device_id: str | None,
+    status: str,
+) -> None:
+    """Expose the latest connection/Firestore heartbeat to the local Settings UI only."""
     try:
         APP_DATA.mkdir(parents=True, exist_ok=True)
         payload = {
             "status": status,
-            "ownerId": session.uid,
-            "deviceId": device_id,
             "deviceName": platform.node().strip() or "Windows bilgisayarım",
             "connectionMode": "firebase-agent",
             "agentVersion": AGENT_VERSION,
             "updatedAt": utc_now(),
         }
-        STATUS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        if session is not None:
+            payload["ownerId"] = session.uid
+        if device_id:
+            payload["deviceId"] = device_id
+
+        # Atomic replacement keeps the WPF settings reader from seeing partial JSON.
+        temporary_path = STATUS_FILE.with_suffix(".json.tmp")
+        temporary_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        temporary_path.replace(STATUS_FILE)
     except Exception as exc:
         # The local status display is diagnostic only; it must never stop the Agent.
         print(f"[Uyarı] Yerel bağlantı durumu kaydedilemedi: {exc}")
@@ -659,6 +671,7 @@ def ask_install_startup() -> None:
 
 def run_agent() -> int:
     APP_DATA.mkdir(parents=True, exist_ok=True)
+    write_local_status(None, None, "connecting")
     session_state = load_protected_session()
     session = None
     if session_state:
