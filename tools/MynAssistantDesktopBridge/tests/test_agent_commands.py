@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -184,6 +185,17 @@ class ScreenFrameSizeTests(unittest.TestCase):
             attempts,
             [(1280, 720), (960, 540), (800, 450), (640, 360)],
         )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class BridgeStartupTests(unittest.TestCase):
+    def test_hidden_bridge_does_not_prompt_for_startup(self):
+        with patch.object(agent.sys, "stdin", new=io.StringIO("")), patch("builtins.input") as prompt:
+            agent.ask_install_startup()
+        prompt.assert_not_called()
 
 
 if __name__ == "__main__":
