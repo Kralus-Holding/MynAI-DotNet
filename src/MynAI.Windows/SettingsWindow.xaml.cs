@@ -84,6 +84,9 @@ public partial class SettingsWindow : Window
         NotificationsCheckBox.IsChecked =
             settings.WindowsNotifications;
 
+        DesktopBridgeStartupCheckBox.IsChecked =
+            DesktopBridgeStartupManager.IsEnabled();
+
         MicrophoneCheckBox.IsChecked =
             settings.MicrophoneEnabled;
 
@@ -322,6 +325,10 @@ public partial class SettingsWindow : Window
         var running = DesktopBridgeStartupManager.IsRunning();
         var executablePath = DesktopBridgeStartupManager.TryGetExecutablePath();
         var hasSession = FirebaseDesktopSessionStore.HasValidStoredSession();
+
+        DesktopBridgeStartupCheckBox.IsEnabled = hasSession;
+        if (!hasSession)
+            DesktopBridgeStartupCheckBox.IsChecked = false;
         var runtime = DesktopBridgeStartupManager.ReadRuntimeStatus();
         var isFresh = runtime is not null
             && DateTimeOffset.Now - runtime.UpdatedAt < TimeSpan.FromSeconds(90);
@@ -377,24 +384,177 @@ public partial class SettingsWindow : Window
         AccountDesktopBridgeMessageText.Text = messageText;
     }
 
+    private void UpdateLogoPreview(MynAISettings settings)
+    {
+        LogoPreviewImage.Source = MynAssistantBranding.LoadSelectedLogo(settings);
+        KrLogoOptionImage.Source = MynAssistantBranding.LoadImage(MynAssistantBranding.GetKrLogoPath());
+        AppLogoOptionImage.Source = MynAssistantBranding.LoadImage(MynAssistantBranding.GetAppIconPath());
+
+        var hasCustomLogo = !string.IsNullOrWhiteSpace(settings.CustomLogoPath)
+            && File.Exists(settings.CustomLogoPath);
+        CustomLogoOptionImage.Source = hasCustomLogo
+            ? MynAssistantBranding.LoadImage(settings.CustomLogoPath)
+            : null;
+        CustomLogoPlaceholderText.Visibility = hasCustomLogo
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+
+        var preset = string.IsNullOrWhiteSpace(settings.LogoPreset)
+            ? "kr"
+            : settings.LogoPreset.ToLowerInvariant();
+        if (preset == "black") preset = "kr";
+
+        KrLogoOptionButton.IsChecked = preset == "kr";
+        AppLogoOptionButton.IsChecked = preset == "app";
+        CustomLogoOptionButton.IsChecked = preset == "custom";
+
+        LogoPresetStatusText.Text = preset switch
+        {
+            "app" => "MynAssistant uygulama simgesi seçili.",
+            "custom" when hasCustomLogo => $"Özel görsel seçili: {Path.GetFileName(settings.CustomLogoPath)}",
+            "custom" => "Özel görsel kaydı bulunamadı; KR / Kralus logosu kullanılacak.",
+            _ => "KR / Kralus logosu seçili."
+        };
+    }
+
+    private void SaveLogoPreset(string preset, string message)
+    {
+        var settings = _settingsStore.Load();
+        settings.LogoPreset = preset;
+        _settingsStore.Save(settings);
+        UpdateLogoPreview(settings);
+        SetSaveStatus(message, Colors.LightGreen);
+    }
+
+    private void SelectKrLogo_Click(object sender, RoutedEventArgs e) =>
+        SaveLogoPreset("kr", "KR / Kralus logosu seçildi.");
+
+    private void SelectAppIconLogo_Click(object sender, RoutedEventArgs e) =>
+        SaveLogoPreset("app", "MynAssistant uygulama simgesi seçildi.");
+
+    private void SelectCustomLogo_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Ana pencerede kullanılacak özel görseli seç",
+            Filter = "Görseller (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp",
+            Multiselect = false,
+            CheckFileExists = true
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            UpdateLogoPreview(_settingsStore.Load());
+            return;
+        }
+
+        try
+        {
+            var copiedPath = MynAssistantBranding.CopyCustomLogo(dialog.FileName);
+            var settings = _settingsStore.Load();
+            settings.LogoPreset = "custom";
+            settings.CustomLogoPath = copiedPath;
+            _settingsStore.Save(settings);
+            UpdateLogoPreview(settings);
+            SetSaveStatus("Özel görsel uygulama verilerine kopyalandı ve kaydedildi.", Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            UpdateLogoPreview(_settingsStore.Load());
+            MessageBox.Show(
+                $"Görsel seçilemedi:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
     private void RefreshDesktopBridge_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            if (FirebaseDesktopSessionStore.HasValidStoredSession() &&
-                !DesktopBridgeStartupManager.IsRunning())
+            if (FirebaseDesktopSessionStore.HasValidStoredSession())
             {
-                DesktopBridgeStartupManager.StartAgent();
+                if (DesktopBridgeStartupManager.IsRunning())
+                    DesktopBridgeStartupManager.RestartAgent();
+                else
+                    DesktopBridgeStartupManager.StartAgent();
             }
 
             UpdateDesktopBridgeStatus();
         }
         catch (Exception ex)
         {
-            DesktopBridgeStatusText.Text = "Telefon-PC bağlantısı yenilenemedi.";
-            DesktopBridgeStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
-            DesktopBridgeMessageText.Text = ex.Message;
-            DesktopBridgeStatusDot.Fill = new SolidColorBrush(Colors.IndianRed);
+            UpdateDesktopBridgeStatus();
+            AccountDesktopBridgeStatusText.Text = "Telefon-PC bağlantısı yenilenemedi.";
+            AccountDesktopBridgeStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            AccountDesktopBridgeMessageText.Text = ex.Message;
+            AccountDesktopBridgeStatusDot.Fill = new SolidColorBrush(Colors.IndianRed);
+        }
+    }
+
+    private void StartDesktopBridge_Click(object sender, RoutedEventArgs e)
+    {
+        if (!FirebaseDesktopSessionStore.HasValidStoredSession())
+        {
+            UpdateDesktopBridgeStatus();
+            MessageBox.Show(
+                "Bu bilgisayarda kayıtlı telefon-PC oturumu bulunamadı. Bağlantı başlatılmadı. " +
+                "Bu sürümde ilk eşleştirmeyi güvenli biçimde tamamlayan bir sunucu akışı mevcut değil.",
+                "MynAssistant — Telefon-PC bağlantısı",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            DesktopBridgeStartupManager.StartAgent();
+            UpdateDesktopBridgeStatus();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Telefon-PC bağlantısı başlatılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            UpdateDesktopBridgeStatus();
+        }
+    }
+
+    private void StopDesktopBridge_Click(object sender, RoutedEventArgs e)
+    {
+        DesktopBridgeStartupManager.StopAgent();
+        UpdateDesktopBridgeStatus();
+    }
+
+    private void RestartDesktopBridge_Click(object sender, RoutedEventArgs e)
+    {
+        if (!FirebaseDesktopSessionStore.HasValidStoredSession())
+        {
+            UpdateDesktopBridgeStatus();
+            MessageBox.Show(
+                "Bu bilgisayarda kayıtlı telefon-PC oturumu bulunamadı. Bağlantı yeniden başlatılmadı.",
+                "MynAssistant — Telefon-PC bağlantısı",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            DesktopBridgeStartupManager.RestartAgent();
+            UpdateDesktopBridgeStatus();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Telefon-PC bağlantısı yeniden başlatılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            UpdateDesktopBridgeStatus();
         }
     }
 
@@ -631,17 +791,11 @@ public partial class SettingsWindow : Window
             AgentStartupManager.EnsureAutomaticStartup();
 
             var settings = _settingsStore.Load();
-            var startDesktopBridge = settings.StartDesktopBridgeWithWindows
+            var startDesktopBridge = DesktopBridgeStartupCheckBox.IsChecked == true
                 && FirebaseDesktopSessionStore.HasValidStoredSession();
 
-            if (startDesktopBridge)
-            {
-                DesktopBridgeStartupManager.SetEnabled(true);
-            }
-            else
-            {
-                DesktopBridgeStartupManager.SetEnabled(false);
-            }
+            DesktopBridgeStartupCheckBox.IsChecked = startDesktopBridge;
+            DesktopBridgeStartupManager.SetEnabled(startDesktopBridge);
 
             settings.StartAgentWithWindows = true;
             settings.StartDesktopBridgeWithWindows = startDesktopBridge;
@@ -665,6 +819,7 @@ public partial class SettingsWindow : Window
             }
 
             SetSaveStatus("Ayarlar kaydedildi.", Colors.LightGreen);
+            UpdateDesktopBridgeStatus();
         }
         catch (Exception ex)
         {
