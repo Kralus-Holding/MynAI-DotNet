@@ -708,17 +708,17 @@ public partial class SettingsWindow : Window
             // The local Agent is mandatory and independent from account login.
             AgentStartupManager.EnsureAutomaticStartup();
 
-            var startDesktopBridge = DesktopBridgeStartupManager.IsEnabled();
-
-            if (startDesktopBridge)
-                DesktopBridgeStartupManager.SetEnabled(true);
+            DesktopBridgeStartupManager.SetEnabled(
+                FirebaseDesktopSessionStore.HasValidStoredSession()
+                && _settingsStore.Load().StartDesktopBridgeWithWindows);
 
             var settings =
                 _settingsStore.Load();
 
             settings.StartAgentWithWindows = true;
 
-            settings.StartDesktopBridgeWithWindows = startDesktopBridge;
+            settings.StartDesktopBridgeWithWindows =
+                DesktopBridgeStartupManager.IsEnabled();
 
             settings.WindowsNotifications =
                 NotificationsCheckBox.IsChecked == true;
@@ -770,13 +770,14 @@ public partial class SettingsWindow : Window
                 Colors.IndianRed);
 
             MessageBox.Show(
-                $"Ayarlar kaydedilemedi:\n\n{ex.Message}",
+                $"Ayarlar kaydedilemedi:
+
+{ex.Message}",
                 "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
     }
-
     private void SetSaveStatus(
         string text,
         Color color)
