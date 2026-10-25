@@ -63,7 +63,7 @@ public partial class SettingsWindow : Window
         var path = Path.Combine(
             AppContext.BaseDirectory,
             "Resources",
-            "myn.jpg");
+            "mynassistant-logo.png");
 
         if (!File.Exists(path))
             return;
@@ -76,6 +76,7 @@ public partial class SettingsWindow : Window
             image.UriSource = new Uri(path, UriKind.Absolute);
             image.EndInit();
             image.Freeze();
+            SettingsLogoImage.Source = image;
             Icon = image;
         }
         catch (Exception ex)
