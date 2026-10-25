@@ -362,7 +362,7 @@
                             VerticalAlignment="Center"
                             ToolTip="Yerel Agent, masaüstü zamanlanmış görevlerini ve named-pipe IPC kanalını yönetir.">
                         <TextBlock x:Name="AgentStatusText"
-                                   Text="Yerel Agent: bekleniyor"
+                                   Text="Agent: bekleniyor"
                                    Foreground="#7FD495"
                                    FontSize="8"/>
                     </Border>
@@ -376,7 +376,9 @@
                             Padding="7,5"
                             Margin="0,0,4,0"
                             VerticalAlignment="Center"
-                            ToolTip="Bu süreç Firestore üzerinden telefon ve web paneli komutlarını alır. Ayarlar → Agent bölümünden başlatıp Google hesabıyla giriş yap.">
+                            Cursor="Hand"
+                            MouseLeftButtonUp="BridgeStatusBorder_MouseLeftButtonUp"
+                            ToolTip="Tıkla: Telefon/web PC bağlantısını başlat. İlk kullanımda Google hesabıyla giriş ister.">
                         <TextBlock x:Name="BridgeStatusText"
                                    Text="Bulut PC: kapalı"
                                    Foreground="#F0A0A0"
