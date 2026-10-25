@@ -176,10 +176,10 @@ def google_oauth_credentials():
             APP_DATA.parent.parent / "MynAI" / "Google" / OAUTH_FILE_NAME,
             running_directory() / OAUTH_FILE_NAME,
         )
-        searched = "\\n".join(str(path) for path in expected_paths)
+        searched = "\n".join(str(path) for path in expected_paths)
         raise FileNotFoundError(
             "Google OAuth dosyası bulunamadı. Google Desktop OAuth istemci JSON dosyasını "
-            "aşağıdaki konumlardan birine yerleştir:\\n" + searched
+            "aşağıdaki konumlardan birine yerleştir:\n" + searched
         )
     flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
     return flow.run_local_server(
