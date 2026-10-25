@@ -3,7 +3,7 @@
 ## Bileşenler
 
 - **MynAssistant.exe**: WPF arayüzü ve yerel komut girişi.
-- **Agent\\MynAgent.exe**: zamanlanmış görevler ve yerel IPC kanalı.
+- **Agent\MynAgent.exe**: zamanlanmış görevler ve yerel IPC kanalı.
 - **MynAssistantDesktopBridge.exe**: telefon ve web kontrol paneli için Firebase Windows Agent. PC'nin ekran karelerini istek süresince gönderir ve izin verilen komutları Firestore kuyruğundan alır.
 
 Bu üç çalıştırılabilir dosya aynı şey değildir. Özellikle telefon/web kumandası için `MynAssistantDesktopBridge.exe` çalışıyor olmalıdır.
@@ -19,8 +19,8 @@ Bu üç çalıştırılabilir dosya aynı şey değildir. Özellikle telefon/web
 ## Sorun giderme
 
 - Windows ayarları → **Agent** → **Telefon-PC bağlantısı** alanında Bridge durumuna bak.
-- Bridge günlük kaydı: `%LOCALAPPDATA%\\MynAssistant\\DesktopAgent\\bridge.log`.
-- Google Desktop OAuth yapılandırması: `%LOCALAPPDATA%\\MynAssistant\\Google\\client_secret.json`.
+- Bridge günlük kaydı: `%LOCALAPPDATA%\MynAssistant\DesktopAgent\bridge.log`.
+- Google Desktop OAuth yapılandırması: `%LOCALAPPDATA%\MynAssistant\Google\client_secret.json`.
 - Android PC'yi göremiyorsa her iki tarafta aynı Google hesabını kullan, Windows Bridge'in çalıştığını ve `lastSeenAt` değerinin güncel olduğunu doğrula.
 - Web panelinde cihazlar görünmüyorsa Render loglarını ve `FIREBASE_SERVICE_ACCOUNT_JSON` servise erişimini kontrol et. API `/health` yanıtı tek başına Firestore erişimini doğrulamaz.
 
