@@ -294,7 +294,7 @@ public partial class SettingsWindow : Window
                     lastError = line.Trim();
                     var match = Regex.Match(
                         line,
-                        @"MYN-[A-Z]+-d+",
+                        @"MYN-[A-Z]+-\d+",
                         RegexOptions.IgnoreCase);
                     lastErrorCode = match.Success ? match.Value : null;
                 }
