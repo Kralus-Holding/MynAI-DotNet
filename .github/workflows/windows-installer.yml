@@ -111,6 +111,13 @@ jobs:
           if (-not $installerText.Contains("MynAssistant bilgisayarınızda zaten kurulu. Mevcut kurulumu güncellemek ister misiniz?")) { throw "Installer update confirmation text is missing." }
           if (-not $installerText.Contains("GetVersionNumbersString")) { throw "Installer must verify the installed EXE file version." }
           if ($installerText.Contains("DeleteDir(ExpandConstant('{app}')")) { throw "Installer must not delete the entire install directory." }
+          $prepareStart = $installerText.IndexOf("function PrepareToInstall(var NeedsRestart: Boolean): String;")
+          $normalizeStart = $installerText.IndexOf("function NormalizeInstallDir", $prepareStart)
+          if ($prepareStart -lt 0 -or $normalizeStart -le $prepareStart) { throw "Installer must stop MynAssistant processes in PrepareToInstall before CloseApplications checks locked files." }
+          $prepareCode = $installerText.Substring($prepareStart, $normalizeStart - $prepareStart)
+          foreach ($processStop in @("StopProcessByName('{#MyAppExeName}')", "StopProcessByName('MynAssistantDesktopBridge.exe')", "StopProcessByName('{#MyAgentExeName}')", "StopProcessByName('MynAI.Agent.exe')")) {
+            if (-not $prepareCode.Contains($processStop)) { throw "Installer pre-install process shutdown is missing: $processStop" }
+          }
 
       - name: Verify WPF window icon loading remains non-fatal
         shell: pwsh
