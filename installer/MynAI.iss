@@ -71,6 +71,15 @@ begin
     Delete(Result, Length(Result), 1);
 end;
 
+function ExistingInstallLocation(var InstallDir: String): Boolean;
+begin
+  Result := RegQueryStringValue(
+    HKCU,
+    'Software\Microsoft\Windows\CurrentVersion\Uninstall\{E4FD24F0-B4A0-4D4C-875C-70781DC41F20}_is1',
+    'InstallLocation',
+    InstallDir);
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   ExistingInstallDir: String;
@@ -78,31 +87,34 @@ var
 begin
   Result := True;
 
-  if CurPageID = wpSelectDir then
+  if (CurPageID = wpSelectDir) and ExistingInstallLocation(ExistingInstallDir) then
   begin
-    if RegQueryStringValue(
-      HKCU,
-      'Software\Microsoft\Windows\CurrentVersion\Uninstall\{E4FD24F0-B4A0-4D4C-875C-70781DC41F20}_is1',
-      'InstallLocation',
-      ExistingInstallDir) and DirExists(ExistingInstallDir) then
+    SelectedInstallDir := ExpandConstant('{app}');
+    if DirExists(ExistingInstallDir) and
+       (CompareText(NormalizeInstallDir(ExistingInstallDir), NormalizeInstallDir(SelectedInstallDir)) = 0) then
     begin
-      SelectedInstallDir := ExpandConstant('{app}');
-      if CompareText(
-        NormalizeInstallDir(ExistingInstallDir),
-        NormalizeInstallDir(SelectedInstallDir)) <> 0 then
+      if MsgBox(
+        'MynAssistant bilgisayarınızda zaten kurulu. Mevcut kurulumu güncellemek ister misiniz?',
+        mbConfirmation,
+        MB_YESNO or MB_DEFBUTTON1) <> IDYES then
       begin
-        MsgBox(
-          'MynAssistant şu klasörde zaten kurulu:' + #13#10 +
-          ExistingInstallDir + #13#10#13#10 +
-          'Aynı anda birden fazla bağımsız kurulum desteklenmiyor. ' +
-          'Güncelleme için aynı klasörü seçin. Farklı bir konuma geçmek için ' +
-          'önce mevcut kurulumu Windows Ayarları > Uygulamalar bölümünden kaldırın. ' +
-          'Önceki kurulum klasörü silinmişse yeni konum seçebilirsiniz.',
-          mbInformation,
-          MB_OK);
         Result := False;
+        Exit;
       end;
+    end
+    else if DirExists(ExistingInstallDir) then
+    begin
+      MsgBox(
+        'MynAssistant şu klasörde zaten kurulu:' + #13#10 + ExistingInstallDir + #13#10#13#10 +
+        'Birden fazla bağımsız kurulum bu sürümde güvenli biçimde desteklenmiyor. ' +
+        'Farklı hedef seçimi mevcut Agent başlangıç kaydını bozabilir. Hiçbir dosya değiştirilmedi. ' +
+        'Güncelleme için mevcut klasörü seçin veya önce mevcut kurulumu kaldırın.',
+        mbInformation,
+        MB_OK);
+      Result := False;
+      Exit;
     end;
+    // An uninstall record may remain after its installation directory was deleted.
   end;
 end;
 
