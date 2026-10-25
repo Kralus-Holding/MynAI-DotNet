@@ -187,10 +187,6 @@ class ScreenFrameSizeTests(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class BridgeStartupTests(unittest.TestCase):
     def test_hidden_bridge_does_not_prompt_for_startup(self):
         with patch.object(agent.sys, "stdin", new=io.StringIO("")), patch("builtins.input") as prompt:
