@@ -56,6 +56,17 @@ Name: "desktopicon"; Description: "Masaüstüne kısayol oluştur"; GroupDescrip
 Source: "..\build\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build\agent-publish\*"; DestDir: "{app}\Agent"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+; Agent\ is an application-payload-only directory. User settings/logs/custom logos are under %LOCALAPPDATA% and remain untouched.
+Type: filesandordirs; Name: "{app}\Agent\*"
+
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "MynAssistant.Agent"; ValueData: """{app}\Agent\MynAgent.exe"""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "MynAI.Agent"; Flags: deletevalue
+; Repoint bridge autostart only when a prior installation had explicitly enabled it.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "MynAssistant.DesktopBridge"; ValueData: """{app}\MynAssistantDesktopBridge.exe"""; Flags: uninsdeletevalue; Check: ShouldMigrateBridgeStartup
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "MynAI.DesktopBridge"; Flags: deletevalue
+
 [Icons]
 Name: "{autoprograms}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
 Name: "{autodesktop}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
@@ -69,6 +80,24 @@ begin
   Result := ExpandFileName(Path);
   while (Length(Result) > 3) and (Result[Length(Result)] = '\') do
     Delete(Result, Length(Result), 1);
+end;
+
+function ShouldMigrateBridgeStartup: Boolean;
+var
+  ExistingValue: String;
+begin
+  Result :=
+    RegQueryStringValue(
+      HKCU,
+      'Software\Microsoft\Windows\CurrentVersion\Run',
+      'MynAssistant.DesktopBridge',
+      ExistingValue)
+    or
+    RegQueryStringValue(
+      HKCU,
+      'Software\Microsoft\Windows\CurrentVersion\Run',
+      'MynAI.DesktopBridge',
+      ExistingValue);
 end;
 
 function ExistingInstallLocation(var InstallDir, InstallVersion: String;
