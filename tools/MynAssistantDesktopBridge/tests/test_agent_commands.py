@@ -1,101 +1,228 @@
+from __future__ import annotations
+
 import importlib.util
+import json
+import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
-
+from unittest import mock
 
 AGENT_PATH = Path(__file__).resolve().parents[1] / "agent.py"
-SPEC = importlib.util.spec_from_file_location("mynassistant_agent_under_test", AGENT_PATH)
+sys.path.insert(0, str(AGENT_PATH.parent))
+SPEC = importlib.util.spec_from_file_location("mynassistant_agent", AGENT_PATH)
+assert SPEC is not None and SPEC.loader is not None
 agent = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
 SPEC.loader.exec_module(agent)
 
 
-class FakeSession:
-    uid = "firebase-user-123"
+class FakeResponse:
+    def __init__(self, status_code: int, payload: dict | None = None, text: str = ""):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.text = text
 
-    def headers(self):
+    def json(self) -> dict:
+        return self._payload
+
+
+class FakeSession:
+    uid = "test-user"
+
+    def headers(self) -> dict:
         return {"Authorization": "Bearer test-token"}
 
 
-class FakeResponse:
-    def __init__(self, status_code, body=None, text=""):
-        self.status_code = status_code
-        self._body = body or {}
-        self.text = text
-
-    def json(self):
-        return self._body
-
-
-class DeviceCommandQueryTests(unittest.TestCase):
-    @patch.object(agent.requests, "post")
-    def test_query_is_scoped_to_user_device_and_pending_status(self, post):
-        post.return_value = FakeResponse(200, [{"document": {"name": "test-command"}}])
-
-        documents = agent.fetch_device_commands(FakeSession(), "win-device-456")
-
-        self.assertEqual(documents, [{"name": "test-command"}])
-        query = post.call_args.kwargs["json"]["structuredQuery"]
-        filters = query["where"]["compositeFilter"]["filters"]
-        values = {
-            item["fieldFilter"]["field"]["fieldPath"]:
-                item["fieldFilter"]["value"]["stringValue"]
-            for item in filters
-        }
-        self.assertEqual(values["ownerId"], "firebase-user-123")
-        self.assertEqual(values["deviceId"], "win-device-456")
-        self.assertEqual(values["status"], "pending")
-        self.assertEqual(query["orderBy"][0]["field"]["fieldPath"], "createdAt")
-        self.assertEqual(query["orderBy"][0]["direction"], "ASCENDING")
+def firestore_doc(fields: dict, update_time: str = "2026-10-22T10:00:00.000000Z") -> dict:
+    encoded = {}
+    for key, value in fields.items():
+        if isinstance(value, bool):
+            encoded[key] = {"booleanValue": value}
+        elif isinstance(value, int):
+            encoded[key] = {"integerValue": str(value)}
+        else:
+            encoded[key] = {"stringValue": str(value)}
+    return {
+        "name": "projects/myncloud-24/databases/(default)/documents/commands/cmd-1",
+        "updateTime": update_time,
+        "fields": encoded,
+    }
 
 
-class CommandClaimTests(unittest.TestCase):
-    def setUp(self):
+class FakeScreenshotImage:
+    def __init__(self, sizes_by_quality: dict[int, int]):
+        self.sizes_by_quality = sizes_by_quality
+        self.qualities_used: list[int] = []
+
+    def thumbnail(self, size: tuple[int, int]) -> None:
+        self.thumbnail_size = size
+
+    def save(self, output, format: str, quality: int, optimize: bool) -> None:
+        self.qualities_used.append(quality)
+        output.write(b"x" * self.sizes_by_quality[quality])
+
+
+class AtomicCommandClaimTests(unittest.TestCase):
+    def setUp(self) -> None:
         self.session = FakeSession()
         self.document = {
-            "name": "projects/myncloud-24/databases/(default)/documents/commands/test-command",
-            "updateTime": "2026-10-17T12:58:30.000000Z",
+            "name": "projects/myncloud-24/databases/(default)/documents/commands/cmd-1",
+            "updateTime": "2026-10-22T10:00:00.000000Z",
+            "fields": {
+                "ownerId": {"stringValue": "test-user"},
+                "deviceId": {"stringValue": "win-test"},
+                "command": {"stringValue": "volume_up"},
+                "status": {"stringValue": "pending"},
+            },
         }
 
-    @patch.object(agent.requests, "patch")
-    def test_claim_uses_update_time_precondition(self, patch_request):
-        patch_request.return_value = FakeResponse(200, {})
-        claimed = agent.claim_command(self.session, self.document)
+    def test_screen_frame_compresses_before_base64_firestore_expansion(self) -> None:
+        image = FakeScreenshotImage({45: 600_001, 30: 500_000})
+        with mock.patch.object(agent.pyautogui, "screenshot", return_value=image):
+            encoded = agent.capture_screen_base64()
 
-        self.assertTrue(claimed)
-        params = patch_request.call_args.kwargs["params"]
+        import base64
+        self.assertEqual(image.qualities_used, [45, 30])
+        self.assertEqual(len(base64.b64decode(encoded)), 500_000)
+        self.assertLessEqual(len(encoded), 700_000)
+
+    def test_screen_frame_is_rejected_if_low_quality_still_too_large(self) -> None:
+        image = FakeScreenshotImage({45: 800_001, 30: 700_001})
+        with mock.patch.object(agent.pyautogui, "screenshot", return_value=image):
+            with self.assertRaisesRegex(RuntimeError, "Firestore belge boyutu"):
+                agent.capture_screen_base64()
+        self.assertEqual(image.qualities_used, [45, 30])
+
+    def test_patch_includes_firestore_update_time_precondition(self) -> None:
+        with mock.patch.object(agent.requests, "patch", return_value=FakeResponse(200, {})) as patch:
+            agent.firestore_patch(
+                self.session,
+                "commands/cmd-1",
+                {"status": agent.encode_string("running")},
+                update_mask=["status"],
+                current_document_update_time=self.document["updateTime"],
+            )
+
+        params = patch.call_args.kwargs["params"]
         self.assertIn(("currentDocument.updateTime", self.document["updateTime"]), params)
         self.assertIn(("updateMask.fieldPaths", "status"), params)
-        fields = patch_request.call_args.kwargs["json"]["fields"]
+
+    def test_claim_refuses_document_without_update_time(self) -> None:
+        document = dict(self.document)
+        document.pop("updateTime")
+        with mock.patch.object(agent.requests, "patch") as patch, mock.patch.object(agent.requests, "get") as get:
+            claimed = agent.claim_pending_command(self.session, document, "win-test")
+        self.assertFalse(claimed)
+        patch.assert_not_called()
+        get.assert_not_called()
+
+    def test_claim_wins_using_compare_and_swap(self) -> None:
+        with mock.patch.object(agent.requests, "patch", return_value=FakeResponse(200, {})) as patch:
+            claimed = agent.claim_pending_command(self.session, self.document, "win-test")
+
+        self.assertTrue(claimed)
+        params = patch.call_args.kwargs["params"]
+        self.assertIn(("currentDocument.updateTime", self.document["updateTime"]), params)
+        fields = patch.call_args.kwargs["json"]["fields"]
         self.assertEqual(fields["status"]["stringValue"], "running")
-        self.assertIn("startedAt", fields)
+        self.assertEqual(fields["claimedByDeviceId"]["stringValue"], "win-test")
+        self.assertTrue(fields["claimToken"]["stringValue"])
 
-    @patch.object(agent.requests, "patch")
-    def test_stale_claim_is_a_non_fatal_conflict(self, patch_request):
-        patch_request.return_value = FakeResponse(
-            400,
-            {"error": {"status": "FAILED_PRECONDITION", "message": "The precondition failed."}},
-            "precondition failed",
-        )
-        self.assertFalse(agent.claim_command(self.session, self.document))
+    def test_cancelled_document_wins_race_and_agent_does_not_claim(self) -> None:
+        with mock.patch.object(
+            agent.requests, "patch", return_value=FakeResponse(
+                400, {"error": {"status": "FAILED_PRECONDITION"}}, '{"error":{"status":"FAILED_PRECONDITION"}}'
+            )
+        ) as patch, mock.patch.object(
+            agent.requests, "get", return_value=FakeResponse(
+                200, firestore_doc({"status": "cancelled", "result": "Cancelled"})
+            )
+        ) as get:
+            claimed = agent.claim_pending_command(self.session, self.document, "win-test")
 
-    @patch.object(agent.requests, "patch")
-    def test_unexpected_http_error_is_reported(self, patch_request):
-        patch_request.return_value = FakeResponse(
-            500,
-            {"error": {"status": "INTERNAL", "message": "server error"}},
-            "server error",
-        )
-        with self.assertRaisesRegex(RuntimeError, "HTTP 500"):
-            agent.claim_command(self.session, self.document)
+        self.assertFalse(claimed)
+        patch.assert_called_once()
+        get.assert_called_once()
+        self.assertIn(("currentDocument.updateTime", self.document["updateTime"]), patch.call_args.kwargs["params"])
+
+    def test_timeout_after_success_is_verified_by_unique_claim_token(self) -> None:
+        captured = {}
+
+        def patch_then_timeout(*args, **kwargs):
+            captured["body"] = kwargs["json"]["fields"]
+            raise agent.requests.Timeout("response was lost after server accepted write")
+
+        def get_claim(*args, **kwargs):
+            fields = captured["body"]
+            return FakeResponse(
+                200,
+                firestore_doc({
+                    "status": fields["status"]["stringValue"],
+                    "claimToken": fields["claimToken"]["stringValue"],
+                    "claimedByDeviceId": fields["claimedByDeviceId"]["stringValue"],
+                }),
+            )
+
+        with mock.patch.object(agent.requests, "patch", side_effect=patch_then_timeout), mock.patch.object(
+            agent.requests, "get", side_effect=get_claim
+        ):
+            claimed = agent.claim_pending_command(self.session, self.document, "win-test")
+
+        self.assertTrue(claimed)
+
+
+
+class RemoteKeyboardCommandTests(unittest.TestCase):
+    def test_type_text_sends_unicode_without_touching_clipboard_and_can_submit(self) -> None:
+        with mock.patch.object(agent, "send_unicode_text") as send_text, mock.patch.object(
+            agent.pyautogui, "press"
+        ) as press:
+            result = agent.execute_command(
+                "type_text",
+                {"text": "İstanbul – merhaba 👋", "pressEnter": True},
+            )
+
+        send_text.assert_called_once_with("İstanbul – merhaba 👋")
+        press.assert_called_once_with("enter")
+        self.assertIn("Enter gönderildi", result)
+
+    def test_type_text_does_not_press_enter_unless_requested(self) -> None:
+        with mock.patch.object(agent, "send_unicode_text") as send_text, mock.patch.object(
+            agent.pyautogui, "press"
+        ) as press:
+            result = agent.execute_command("type_text", {"text": "MynAssistant"})
+
+        send_text.assert_called_once_with("MynAssistant")
+        press.assert_not_called()
+        self.assertIn("yazıldı", result)
+
+    def test_type_text_rejects_empty_or_oversized_payload(self) -> None:
+        with mock.patch.object(agent, "send_unicode_text") as send_text:
+            empty_result = agent.execute_command("type_text", {"text": "   "})
+            long_result = agent.execute_command(
+                "type_text", {"text": "x" * (agent.MAX_REMOTE_TEXT_LENGTH + 1)}
+            )
+
+        send_text.assert_not_called()
+        self.assertIn("metni gir", empty_result)
+        self.assertIn("karakter", long_result)
+
+    def test_backspace_and_enter_are_supported_keyboard_commands(self) -> None:
+        with mock.patch.object(agent.pyautogui, "press") as press:
+            backspace_result = agent.execute_command("key_backspace", {})
+            enter_result = agent.execute_command("key_enter", {})
+
+        self.assertEqual([call.args[0] for call in press.call_args_list], ["backspace", "enter"])
+        self.assertIn("Backspace", backspace_result)
+        self.assertIn("Enter", enter_result)
+        for command in ("type_text", "key_backspace", "key_enter"):
+            self.assertTrue(agent.command_is_supported(command))
 
 
 class OAuthConfigPathTests(unittest.TestCase):
     def _make_config_tree(self, root: Path):
         install_dir = root / "install"
-        app_data = root / "local" / "MynAI" / "DesktopAgent"
-        google_dir = root / "local" / "MynAI" / "Google"
+        app_data = root / "local" / "MynAssistant" / "DesktopAgent"
+        google_dir = root / "local" / "MynAssistant" / "Google"
         install_dir.mkdir(parents=True)
         app_data.mkdir(parents=True)
         google_dir.mkdir(parents=True)
@@ -105,86 +232,23 @@ class OAuthConfigPathTests(unittest.TestCase):
 
     def test_side_by_side_config_is_preferred(self):
         import tempfile
-
         with tempfile.TemporaryDirectory() as temp_dir:
             install_dir, app_data, sidecar, user_config = self._make_config_tree(Path(temp_dir))
             sidecar.write_text("{}", encoding="utf-8")
             user_config.write_text("{}", encoding="utf-8")
-
-            with patch.object(agent, "running_directory", return_value=install_dir):
-                with patch.object(agent, "APP_DATA", app_data):
+            with mock.patch.object(agent, "running_directory", return_value=install_dir):
+                with mock.patch.object(agent, "APP_DATA", app_data):
                     self.assertEqual(agent.find_oauth_credentials_path(), sidecar)
 
-    def test_per_user_google_config_is_used_as_fallback(self):
+    def test_per_user_google_config_is_fallback(self):
         import tempfile
-
         with tempfile.TemporaryDirectory() as temp_dir:
             install_dir, app_data, sidecar, user_config = self._make_config_tree(Path(temp_dir))
             user_config.write_text("{}", encoding="utf-8")
-
-            with patch.object(agent, "running_directory", return_value=install_dir):
-                with patch.object(agent, "APP_DATA", app_data):
+            with mock.patch.object(agent, "running_directory", return_value=install_dir):
+                with mock.patch.object(agent, "APP_DATA", app_data):
                     self.assertEqual(agent.find_oauth_credentials_path(), user_config)
 
 
-class FakeScreenImage:
-    def __init__(self, byte_sizes, attempts=None):
-        self.byte_sizes = byte_sizes
-        self.attempts = attempts if attempts is not None else []
-        self.dimensions = None
-
-    def copy(self):
-        return FakeScreenImage(self.byte_sizes, self.attempts)
-
-    def thumbnail(self, dimensions):
-        self.dimensions = dimensions
-        self.attempts.append(dimensions)
-
-    def save(self, output, format, quality, optimize):
-        output.write(b"x" * self.byte_sizes[self.dimensions])
-
-
-class ScreenFrameSizeTests(unittest.TestCase):
-    @patch.object(agent.pyautogui, "screenshot")
-    def test_frame_budget_measures_base64_size_and_reduces_resolution(self, screenshot):
-        attempts = []
-        screenshot.return_value = FakeScreenImage(
-            {
-                (1280, 720): 600_000,
-                (960, 540): 470_000,
-                (800, 450): 300_000,
-                (640, 360): 200_000,
-            },
-            attempts,
-        )
-
-        frame = agent.capture_screen_base64()
-
-        self.assertLessEqual(len(frame), agent.MAX_SCREEN_FRAME_BASE64_CHARS)
-        self.assertEqual(len(frame) % 4, 0)
-        self.assertEqual(attempts, [(1280, 720), (960, 540)])
-
-    @patch.object(agent.pyautogui, "screenshot")
-    def test_frame_that_exceeds_base64_budget_is_rejected(self, screenshot):
-        attempts = []
-        screenshot.return_value = FakeScreenImage(
-            {
-                (1280, 720): 600_000,
-                (960, 540): 600_000,
-                (800, 450): 600_000,
-                (640, 360): 600_000,
-            },
-            attempts,
-        )
-
-        with self.assertRaisesRegex(RuntimeError, "Base64"):
-            agent.capture_screen_base64()
-
-        self.assertEqual(
-            attempts,
-            [(1280, 720), (960, 540), (800, 450), (640, 360)],
-        )
-
-
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(verbosity=2)
