@@ -27,7 +27,7 @@ IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1"
 SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token"
 FIRESTORE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents"
 SCOPES = ["openid", "email", "profile"]
-AGENT_VERSION = "0.2.0"
+AGENT_VERSION = "0.2.1"
 POLL_SECONDS = 2.0
 COMMAND_POLL_SECONDS = 2.0
 SCREEN_CHECK_SECONDS = 8.0
@@ -614,6 +614,10 @@ def command_is_supported(command: str) -> bool:
 
 
 def ask_install_startup() -> None:
+    # The packaged bridge runs as a hidden child process. Startup preference is
+    # controlled by the installer / WPF settings, not an invisible console prompt.
+    if not sys.stdin or not getattr(sys.stdin, "isatty", lambda: False)():
+        return
     try:
         answer = input("MynAssistant Agent Windows açılışında otomatik başlasın mı? [E/h]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):
