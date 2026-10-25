@@ -10,6 +10,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.Text.RegularExpressions;
 using MynAI.Windows.Google;
+using MynAI.Windows.Auth;
 
 namespace MynAI.Windows;
 
@@ -38,6 +39,8 @@ public partial class SettingsWindow : Window
 
         LoadSettings();
         LoadGoogleAccount();
+        ShowPage(GeneralPanel, GeneralNavButton);
+        UpdateFirebaseSessionStatus();
 
         _agentTimer =
             new DispatcherTimer
@@ -56,6 +59,7 @@ public partial class SettingsWindow : Window
         _agentTimer.Start();
 
         UpdateAgentStatus();
+        UpdateFirebaseSessionStatus();
         UpdateDesktopBridgeStatus();
     }
 
@@ -82,12 +86,6 @@ public partial class SettingsWindow : Window
         NotificationsCheckBox.IsChecked =
             settings.WindowsNotifications;
 
-        AgentStartupCheckBox.IsChecked =
-            AgentStartupManager.IsEnabled();
-
-        AgentStartupGeneralCheckBox.IsChecked =
-            AgentStartupManager.IsEnabled();
-
         DesktopBridgeStartupCheckBox.IsChecked =
             DesktopBridgeStartupManager.IsEnabled();
 
@@ -101,7 +99,7 @@ public partial class SettingsWindow : Window
             settings.BringToFrontHotkey;
 
         UpdateLogoPreview(settings);
-        UpdateOAuthConfigStatus();
+        UpdateFirebaseSessionStatus();
     }
 
     private void LoadGoogleAccount()
@@ -147,45 +145,41 @@ public partial class SettingsWindow : Window
             true;
 
         GoogleConnectButton.Content =
-            "Bağlı";
+            "Kişiler bağlı";
     }
 
     private void ShowPage(
-        UIElement page)
+        UIElement page,
+        Button selectedButton)
     {
-        GeneralPanel.Visibility =
-            Visibility.Collapsed;
+        GeneralPanel.Visibility = Visibility.Collapsed;
+        AgentPanel.Visibility = Visibility.Collapsed;
+        AccountPanel.Visibility = Visibility.Collapsed;
+        PrivacyPanel.Visibility = Visibility.Collapsed;
+        ShortcutPanel.Visibility = Visibility.Collapsed;
 
-        AgentPanel.Visibility =
-            Visibility.Collapsed;
+        GeneralNavButton.Tag = "Normal";
+        AgentNavButton.Tag = "Normal";
+        AccountNavButton.Tag = "Normal";
+        PrivacyNavButton.Tag = "Normal";
+        ShortcutNavButton.Tag = "Normal";
 
-        AccountPanel.Visibility =
-            Visibility.Collapsed;
-
-        PrivacyPanel.Visibility =
-            Visibility.Collapsed;
-
-        ShortcutPanel.Visibility =
-            Visibility.Collapsed;
-
-        page.Visibility =
-            Visibility.Visible;
+        selectedButton.Tag = "Active";
+        page.Visibility = Visibility.Visible;
     }
 
     private void GeneralNav_Click(
         object sender,
         RoutedEventArgs e)
     {
-        ShowPage(
-            GeneralPanel);
+        ShowPage(GeneralPanel, GeneralNavButton);
     }
 
     private void AgentNav_Click(
         object sender,
         RoutedEventArgs e)
     {
-        ShowPage(
-            AgentPanel);
+        ShowPage(AgentPanel, AgentNavButton);
 
         UpdateAgentStatus();
         UpdateAgentDiagnostics();
@@ -195,24 +189,21 @@ public partial class SettingsWindow : Window
         object sender,
         RoutedEventArgs e)
     {
-        ShowPage(
-            AccountPanel);
+        ShowPage(AccountPanel, AccountNavButton);
     }
 
     private void PrivacyNav_Click(
         object sender,
         RoutedEventArgs e)
     {
-        ShowPage(
-            PrivacyPanel);
+        ShowPage(PrivacyPanel, PrivacyNavButton);
     }
 
     private void ShortcutNav_Click(
         object sender,
         RoutedEventArgs e)
     {
-        ShowPage(
-            ShortcutPanel);
+        ShowPage(ShortcutPanel, ShortcutNavButton);
     }
 
     private void UpdateAgentStatus()
@@ -326,8 +317,7 @@ public partial class SettingsWindow : Window
     {
         var running = DesktopBridgeStartupManager.IsRunning();
         var executablePath = DesktopBridgeStartupManager.TryGetExecutablePath();
-        var oauthPath = DesktopBridgeStartupManager.GetOAuthConfigPath();
-        var hasOAuthConfig = File.Exists(oauthPath);
+        var hasSession = FirebaseDesktopSessionStore.HasValidStoredSession();
         var runtime = DesktopBridgeStartupManager.ReadRuntimeStatus();
         var isFresh = runtime is not null
             && DateTimeOffset.Now - runtime.UpdatedAt < TimeSpan.FromSeconds(90);
@@ -335,74 +325,96 @@ public partial class SettingsWindow : Window
 
         var connected = running && state == "online";
         var hasError = state == "error";
+        var authRequired = !hasSession || state == "auth_required";
         var connecting = running && (state == "starting" || state == "connecting");
 
         DesktopBridgeStatusText.Text = connected
-            ? "Bağlandı — PC Firestore'da çevrimiçi"
-            : hasError
-                ? "Bağlantı hatası"
-                : connecting
-                    ? "Google/Firebase bağlantısı kuruluyor"
-                    : running
-                        ? "Köprü çalışıyor — sunucu kaydı bekleniyor"
-                        : executablePath is null
-                            ? "Bridge bileşeni bulunamadı"
-                            : !hasOAuthConfig
-                                ? "Google OAuth yapılandırması eksik"
-                                : "Hazır — bağlantı başlatılmadı";
+            ? "Bağlandı — PC Android uygulaması için çevrimiçi"
+            : authRequired
+                ? "Telefon işlemleri için giriş gerekli"
+                : hasError
+                    ? "Bağlantı hatası"
+                    : connecting
+                        ? "Telefon-PC bağlantısı kuruluyor"
+                        : running
+                            ? "Köprü çalışıyor — cihaz kaydı bekleniyor"
+                            : executablePath is null
+                                ? "Bridge bileşeni bulunamadı"
+                                : "Hesap hazır — telefon-PC bağlantısı başlatılabilir";
 
         var color = connected
             ? Colors.LightGreen
-            : hasError || (!running && (executablePath is null || !hasOAuthConfig))
+            : hasError
                 ? Colors.IndianRed
-                : Colors.Goldenrod;
+                : authRequired
+                    ? Colors.Goldenrod
+                    : Colors.LightBlue;
 
         DesktopBridgeStatusText.Foreground = new SolidColorBrush(color);
         DesktopBridgeStatusDot.Fill = new SolidColorBrush(color);
-
         DesktopBridgeExecutablePathText.Text =
             executablePath ?? "MynAssistantDesktopBridge.exe bulunamadı.";
 
-        if (!hasOAuthConfig)
-        {
-            DesktopBridgeOAuthPathText.Text = $"OAuth dosyası bulunamadı: {oauthPath}";
-        }
-        else if (isFresh && !string.IsNullOrWhiteSpace(runtime?.Message))
-        {
-            var email = string.IsNullOrWhiteSpace(runtime.Email) ? "" : $" Hesap: {runtime.Email}.";
-            DesktopBridgeOAuthPathText.Text = runtime.Message + email;
-        }
-        else
-        {
-            DesktopBridgeOAuthPathText.Text =
-                "Google OAuth dosyası bulundu. Aynı Google hesabıyla giriş yap; PC'nin çevrimiçi olması burada doğrulanır.";
-        }
+        DesktopBridgeMessageText.Text =
+            isFresh && !string.IsNullOrWhiteSpace(runtime?.Message)
+                ? runtime.Message
+                : !hasSession
+                    ? "Telefon işlemleri için lütfen önce Hesap bölümünden giriş yapın."
+                    : hasError
+                        ? "Köprü başlatılamadı. Agent günlüklerini ve Windows güvenlik günlüklerini kontrol edin."
+                        : "Yerel Agent bu hesaptan bağımsız çalışır.";
     }
 
-    private void UpdateOAuthConfigStatus()
+    private void UpdateFirebaseSessionStatus()
     {
-        var path = GoogleOAuthConfigStore.GetPath();
-        var exists = File.Exists(path);
+        var session = FirebaseDesktopSessionStore.Load();
+        var hasSession = session is not null
+            && !string.IsNullOrWhiteSpace(session.Uid)
+            && !string.IsNullOrWhiteSpace(session.RefreshToken);
 
-        OAuthConfigStatusText.Text = exists
-            ? $"Google Desktop OAuth yapılandırması hazır: {path}"
-            : "Google OAuth dosyası henüz seçilmedi. Bağlanmadan önce bu bölümden Desktop OAuth JSON dosyanı seç.";
+        FirebaseSessionStatusText.Text = hasSession
+            ? $"Telefon-PC hesabı açık: {session!.Email}"
+            : "Oturum açık değil. Telefon işlemleri için önce giriş yapın.";
 
-        OAuthConfigStatusText.Foreground = new SolidColorBrush(
-            exists ? Colors.LightGreen : Colors.Goldenrod);
+        FirebaseSessionStatusText.Foreground = new SolidColorBrush(
+            hasSession ? Colors.LightGreen : Colors.Goldenrod);
+        FirebaseSignOutButton.IsEnabled = hasSession;
+        DesktopBridgeStartupCheckBox.IsEnabled = hasSession;
+
+        if (!hasSession)
+            DesktopBridgeStartupCheckBox.IsChecked = false;
     }
 
     private void UpdateLogoPreview(MynAISettings settings)
     {
         LogoPreviewImage.Source = MynAssistantBranding.LoadSelectedLogo(settings);
-        LogoPresetStatusText.Text = settings.LogoPreset switch
+        KrLogoOptionImage.Source = MynAssistantBranding.LoadImage(MynAssistantBranding.GetKrLogoPath());
+        AppLogoOptionImage.Source = MynAssistantBranding.LoadImage(MynAssistantBranding.GetAppIconPath());
+
+        var hasCustomLogo = !string.IsNullOrWhiteSpace(settings.CustomLogoPath)
+            && File.Exists(settings.CustomLogoPath);
+        CustomLogoOptionImage.Source = hasCustomLogo
+            ? MynAssistantBranding.LoadImage(settings.CustomLogoPath)
+            : null;
+        CustomLogoPlaceholderText.Visibility = hasCustomLogo
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+
+        var preset = string.IsNullOrWhiteSpace(settings.LogoPreset)
+            ? "kr"
+            : settings.LogoPreset.ToLowerInvariant();
+        if (preset == "black") preset = "kr";
+
+        KrLogoOptionButton.IsChecked = preset == "kr";
+        AppLogoOptionButton.IsChecked = preset == "app";
+        CustomLogoOptionButton.IsChecked = preset == "custom";
+
+        LogoPresetStatusText.Text = preset switch
         {
-            "app" => "Şeffaf uygulama ikonu seçili.",
-            "custom" when !string.IsNullOrWhiteSpace(settings.CustomLogoPath)
-                         && File.Exists(settings.CustomLogoPath) =>
-                $"Özel logo seçili: {Path.GetFileName(settings.CustomLogoPath)}",
-            "custom" => "Özel logo kaydı bulunamadı; varsayılan görsel kullanılıyor.",
-            _ => "Siyah temalı logo seçili."
+            "app" => "MynAssistant uygulama simgesi seçili.",
+            "custom" when hasCustomLogo => $"Özel görsel seçili: {Path.GetFileName(settings.CustomLogoPath)}",
+            "custom" => "Özel görsel kaydı bulunamadı; KR / Kralus logosu kullanılacak.",
+            _ => "KR / Kralus logosu seçili."
         };
     }
 
@@ -415,41 +427,27 @@ public partial class SettingsWindow : Window
         SetSaveStatus(message, Colors.LightGreen);
     }
 
-    private void SelectDarkLogo_Click(object sender, RoutedEventArgs e) =>
-        SaveLogoPreset("black", "Siyah temalı logo seçildi.");
+    private void SelectKrLogo_Click(object sender, RoutedEventArgs e) =>
+        SaveLogoPreset("kr", "KR / Kralus logosu seçildi.");
 
     private void SelectAppIconLogo_Click(object sender, RoutedEventArgs e) =>
-        SaveLogoPreset("app", "Şeffaf uygulama ikonu seçildi.");
-
-    private void UseCustomLogo_Click(object sender, RoutedEventArgs e)
-    {
-        var settings = _settingsStore.Load();
-        if (string.IsNullOrWhiteSpace(settings.CustomLogoPath)
-            || !File.Exists(settings.CustomLogoPath))
-        {
-            MessageBox.Show(
-                "Önce 'Bilgisayardan görsel seç' düğmesiyle bir logo seçmelisin.",
-                "MynAssistant",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-
-        SaveLogoPreset("custom", "Kayıtlı özel logo seçildi.");
-    }
+        SaveLogoPreset("app", "MynAssistant uygulama simgesi seçildi.");
 
     private void SelectCustomLogo_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "MynAssistant logosu olarak kullanılacak görseli seç",
+            Title = "Ana pencerede kullanılacak özel görseli seç",
             Filter = "Görseller (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp",
             Multiselect = false,
             CheckFileExists = true
         };
 
         if (dialog.ShowDialog(this) != true)
+        {
+            UpdateLogoPreview(_settingsStore.Load());
             return;
+        }
 
         try
         {
@@ -459,12 +457,13 @@ public partial class SettingsWindow : Window
             settings.CustomLogoPath = copiedPath;
             _settingsStore.Save(settings);
             UpdateLogoPreview(settings);
-            SetSaveStatus("Özel logo kopyalandı ve kaydedildi.", Colors.LightGreen);
+            SetSaveStatus("Özel görsel uygulama verilerine kopyalandı ve kaydedildi.", Colors.LightGreen);
         }
         catch (Exception ex)
         {
+            UpdateLogoPreview(_settingsStore.Load());
             MessageBox.Show(
-                $"Logo seçilemedi:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                $"Görsel seçilemedi:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
                 "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -474,46 +473,82 @@ public partial class SettingsWindow : Window
     private void ResetLogo_Click(object sender, RoutedEventArgs e)
     {
         var settings = _settingsStore.Load();
-        settings.LogoPreset = "black";
+        settings.LogoPreset = "kr";
         settings.CustomLogoPath = null;
         _settingsStore.Save(settings);
         UpdateLogoPreview(settings);
-        SetSaveStatus("Siyah temalı varsayılan logo geri yüklendi.", Colors.LightGreen);
+        SetSaveStatus("KR / Kralus varsayılan logosu seçildi.", Colors.LightGreen);
     }
 
-    private void ChooseGoogleOAuthConfig_Click(object sender, RoutedEventArgs e)
+    private async void FirebaseSignIn_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "Google Desktop OAuth istemci JSON dosyasını seç",
-            Filter = "Google OAuth JSON (client_secret.json)|client_secret.json|JSON dosyaları (*.json)|*.json",
-            Multiselect = false,
-            CheckFileExists = true
-        };
+        var email = FirebaseEmailTextBox.Text.Trim();
+        var password = FirebasePasswordBox.Password;
 
-        if (dialog.ShowDialog(this) != true)
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(password))
+        {
+            FirebaseSessionStatusText.Text = "E-posta ve şifre alanlarını doldurun.";
+            FirebaseSessionStatusText.Foreground = new SolidColorBrush(Colors.Goldenrod);
             return;
+        }
+
+        FirebaseSignInButton.IsEnabled = false;
+        FirebaseSignInButton.Content = "Giriş yapılıyor...";
+        FirebaseSessionStatusText.Text = "Firebase hesabı doğrulanıyor...";
+        FirebaseSessionStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
 
         try
         {
-            GoogleOAuthConfigStore.ImportFromFile(dialog.FileName);
-            UpdateOAuthConfigStatus();
-            UpdateDesktopBridgeStatus();
+            var session = await new FirebaseDesktopAuthService().SignInAsync(email, password);
+            FirebaseDesktopSessionStore.Save(session);
+            FirebasePasswordBox.Clear();
+            UpdateFirebaseSessionStatus();
 
-            MessageBox.Show(
-                "Google OAuth yapılandırması doğrulandı ve MynAssistant kullanıcı verileri klasörüne kopyalandı. Şimdi Google ile bağlanmayı deneyebilirsin.",
-                "MynAssistant",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            try
+            {
+                DesktopBridgeStartupManager.StartAgent();
+                if (DesktopBridgeStartupCheckBox.IsChecked == true)
+                    DesktopBridgeStartupManager.SetEnabled(true);
+                UpdateDesktopBridgeStatus();
+                FirebaseSessionStatusText.Text = $"Giriş başarılı: {session.Email}. Telefon-PC bağlantısı başlatıldı.";
+            }
+            catch (Exception bridgeError)
+            {
+                UpdateDesktopBridgeStatus();
+                FirebaseSessionStatusText.Text =
+                    $"Hesap girişi başarılı; telefon-PC köprüsü başlatılamadı. {bridgeError.Message}";
+                FirebaseSessionStatusText.Foreground = new SolidColorBrush(Colors.Goldenrod);
+            }
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                $"OAuth dosyası kullanılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
-                "MynAssistant",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            FirebaseSessionStatusText.Text = ex.Message;
+            FirebaseSessionStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
         }
+        finally
+        {
+            FirebaseSignInButton.IsEnabled = true;
+            FirebaseSignInButton.Content = "Giriş yap";
+        }
+    }
+
+    private void FirebaseSignOut_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            DesktopBridgeStartupManager.SetEnabled(false);
+            DesktopBridgeStartupManager.StopAgent();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Telefon-PC köprüsü durdurulurken hata: {ex.GetType().Name}");
+        }
+
+        FirebaseDesktopSessionStore.Delete();
+        FirebasePasswordBox.Clear();
+        UpdateFirebaseSessionStatus();
+        UpdateDesktopBridgeStatus();
+        SetSaveStatus("Telefon-PC hesabından çıkış yapıldı.", Colors.LightGreen);
     }
 
     private void OpenAgentLogs_Click(object sender, RoutedEventArgs e)
@@ -536,6 +571,15 @@ public partial class SettingsWindow : Window
         object sender,
         RoutedEventArgs e)
     {
+        if (!FirebaseDesktopSessionStore.HasValidStoredSession())
+        {
+            ShowPage(AccountPanel, AccountNavButton);
+            UpdateFirebaseSessionStatus();
+            FirebaseSessionStatusText.Text = "Telefon işlemleri için lütfen önce Hesap bölümünden giriş yapın.";
+            FirebaseSessionStatusText.Foreground = new SolidColorBrush(Colors.Goldenrod);
+            return;
+        }
+
         try
         {
             DesktopBridgeStartupManager.StartAgent();
@@ -563,6 +607,15 @@ public partial class SettingsWindow : Window
         object sender,
         RoutedEventArgs e)
     {
+        if (!FirebaseDesktopSessionStore.HasValidStoredSession())
+        {
+            ShowPage(AccountPanel, AccountNavButton);
+            UpdateFirebaseSessionStatus();
+            FirebaseSessionStatusText.Text = "Telefon işlemleri için lütfen önce Hesap bölümünden giriş yapın.";
+            FirebaseSessionStatusText.Foreground = new SolidColorBrush(Colors.Goldenrod);
+            return;
+        }
+
         try
         {
             DesktopBridgeStartupManager.RestartAgent();
@@ -649,11 +702,10 @@ public partial class SettingsWindow : Window
         if (!File.Exists(GoogleOAuthConfigStore.GetPath()))
         {
             MessageBox.Show(
-                "Google hesabına bağlanmadan önce Hesap bölümündeki 'OAuth JSON dosyasını seç' düğmesiyle Google Desktop OAuth yapılandırmasını ekle.",
+                "Google Kişiler masaüstü yetkilendirmesi bu kurulumda yapılandırılmamış. Müşteriden OAuth JSON dosyası istenmez. Telefon-PC bağlantısı için Firebase hesabıyla giriş yapmanız yeterlidir.",
                 "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
-            UpdateOAuthConfigStatus();
             return;
         }
 
@@ -678,7 +730,7 @@ public partial class SettingsWindow : Window
         catch (Exception ex)
         {
             GoogleConnectButton.Content =
-                "Google ile bağlan";
+                "Kişileri bağla";
 
             MessageBox.Show(
                 $"Google bağlantısı başarısız:\n\n{ex.Message}",
@@ -793,29 +845,20 @@ public partial class SettingsWindow : Window
     {
         try
         {
-            var startAgent =
-                AgentStartupCheckBox.IsChecked == true;
-
-            AgentStartupCheckBox.IsChecked =
-                startAgent;
-
-            AgentStartupGeneralCheckBox.IsChecked =
-                startAgent;
-
-            AgentStartupManager.SetEnabled(
-                startAgent);
+            // The local Agent is mandatory and independent from account login.
+            AgentStartupManager.EnsureAutomaticStartup();
 
             var startDesktopBridge =
-                DesktopBridgeStartupCheckBox.IsChecked == true;
+                DesktopBridgeStartupCheckBox.IsChecked == true
+                && FirebaseDesktopSessionStore.HasValidStoredSession();
 
-            DesktopBridgeStartupManager.SetEnabled(
-                startDesktopBridge);
+            DesktopBridgeStartupCheckBox.IsChecked = startDesktopBridge;
+            DesktopBridgeStartupManager.SetEnabled(startDesktopBridge);
 
             var settings =
                 _settingsStore.Load();
 
-            settings.StartAgentWithWindows =
-                startAgent;
+            settings.StartAgentWithWindows = true;
 
             settings.StartDesktopBridgeWithWindows =
                 startDesktopBridge;
