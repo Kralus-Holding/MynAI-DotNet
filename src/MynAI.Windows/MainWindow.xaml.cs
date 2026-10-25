@@ -145,7 +145,16 @@ public partial class MainWindow : Window
         if (DesktopBridgeStartupManager.HasConnectionConsentPrompted())
             return;
 
-        DesktopBridgeStartupManager.MarkConnectionConsentPrompted();
+        try
+        {
+            DesktopBridgeStartupManager.MarkConnectionConsentPrompted();
+        }
+        catch (Exception ex)
+        {
+            // Consent persistence is best-effort; a registry issue must not crash the app.
+            System.Diagnostics.Debug.WriteLine($"Telefon-PC onayı kaydedilemedi: {ex.Message}");
+        }
+
         var answer = MessageBox.Show(
             "Telefon ve web panelinden bu bilgisayarı yönetmek için MynAssistant PC bağlantısını başlatmak ister misin?\n\n" +
             "Windows Agent, aynı Google/Firebase hesabınla oturum açıp cihaz durumunu Firestore'a kaydeder. " +
