@@ -39,6 +39,7 @@ APP_DATA = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MynAssistan
 OAUTH_FILE_NAME = "client_secret.json"
 SESSION_FILE = APP_DATA / "session.bin"
 DEVICE_FILE = APP_DATA / "devices.json"
+STATUS_FILE = APP_DATA / "status.json"
 
 VK_VOLUME_MUTE = 0xAD
 VK_VOLUME_DOWN = 0xAE
@@ -48,6 +49,32 @@ KEYEVENTF_KEYUP = 0x0002
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+def write_bridge_status(
+    state: str,
+    message: str,
+    email: str = "",
+    device_id: str = "",
+) -> None:
+    """Write a secret-free connection snapshot consumed by the Windows Settings page."""
+    try:
+        APP_DATA.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "state": state,
+            "message": message[:1000],
+            "email": email[:320],
+            "deviceId": device_id[:256],
+            "machineName": platform.node()[:256],
+            "updatedAt": utc_now(),
+        }
+        temporary = STATUS_FILE.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(STATUS_FILE)
+    except Exception as exc:
+        # A local diagnostic file must never prevent the Firebase connection.
+        print(f"[Status] Durum dosyası güncellenemedi: {exc}")
+
+
 
 
 def running_directory() -> Path:
@@ -719,6 +746,7 @@ def ask_install_startup() -> None:
 
 def run_agent() -> int:
     APP_DATA.mkdir(parents=True, exist_ok=True)
+    write_bridge_status("starting", "Google/Firebase bağlantısı başlatılıyor.")
     session_state = load_protected_session()
     session = None
     if session_state:
@@ -755,6 +783,12 @@ def run_agent() -> int:
 
             if now - last_heartbeat >= HEARTBEAT_SECONDS:
                 register_or_heartbeat(session, device_id)
+                write_bridge_status(
+                    "online",
+                    "PC Firestore'a kaydedildi; kalp atışı başarılı.",
+                    email=session.email,
+                    device_id=device_id,
+                )
                 last_heartbeat = now
 
             screen_check_interval = 3.0 if screen_active else SCREEN_CHECK_SECONDS
@@ -833,6 +867,12 @@ def run_agent() -> int:
             )
         except Exception as exc:
             print(f"[Uyarı] Çevrimdışı durumu kaydedilemedi: {exc}")
+        write_bridge_status(
+            "offline",
+            "Windows bağlantı köprüsü kapatıldı.",
+            email=session.email,
+            device_id=device_id,
+        )
     return 0
 
 
@@ -864,9 +904,11 @@ def main() -> int:
     try:
         return run_agent()
     except FileNotFoundError as exc:
+        write_bridge_status("error", f"Kurulum: {exc}")
         print(f"\n[Kurulum] {exc}")
         return 2
     except Exception as exc:
+        write_bridge_status("error", f"Bağlantı hatası: {exc}")
         print(f"\n[Hata] {exc}")
         return 1
 
