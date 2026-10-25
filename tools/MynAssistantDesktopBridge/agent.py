@@ -26,7 +26,11 @@ FIREBASE_API_KEY = "AIzaSyB0z1b5OOMh8Pqn2GPd1ZuWoHEhRoKSrRM"
 IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1"
 SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token"
 FIRESTORE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents"
-SCOPES = ["openid", "email", "profile"]
+SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+]
 AGENT_VERSION = "0.2.2"
 POLL_SECONDS = 2.0
 COMMAND_POLL_SECONDS = 2.0
