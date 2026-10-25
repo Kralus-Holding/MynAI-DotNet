@@ -27,7 +27,7 @@ IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1"
 SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token"
 FIRESTORE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents"
 SCOPES = ["openid", "email", "profile"]
-AGENT_VERSION = "0.2.0"
+AGENT_VERSION = "0.2.2"
 POLL_SECONDS = 2.0
 COMMAND_POLL_SECONDS = 2.0
 SCREEN_CHECK_SECONDS = 8.0
@@ -130,29 +130,13 @@ def load_device_id(uid: str) -> str:
     return device_id
 
 
-def oauth_credentials_candidates() -> tuple[Path, ...]:
-    # Prefer a side-by-side config for standalone use; packaged MynAI installs
-    # share the per-user Google OAuth configuration used by the main app.
-    return (
-        running_directory() / OAUTH_FILE_NAME,
-        APP_DATA.parent / "Google" / OAUTH_FILE_NAME,
-    )
-
-
-def find_oauth_credentials_path() -> Path | None:
-    return next(
-        (path for path in oauth_credentials_candidates() if path.is_file()),
-        None,
-    )
-
-
 def google_oauth_credentials():
-    credentials_path = find_oauth_credentials_path()
-    if credentials_path is None:
-        searched = "\n".join(f"- {path}" for path in oauth_credentials_candidates())
+    credentials_path = running_directory() / OAUTH_FILE_NAME
+    if not credentials_path.is_file():
         raise FileNotFoundError(
-            "Google OAuth dosyası bulunamadı. MynAI Google ayarlarında "
-            f"'{OAUTH_FILE_NAME}' dosyasını yapılandır. Aranan konumlar:\n{searched}"
+            "Google OAuth dosyası bulunamadı.\n"
+            f"Google Cloud Console'dan Desktop app türündeki OAuth istemcisinin JSON dosyasını indirip\n"
+            f"adı '{OAUTH_FILE_NAME}' olacak şekilde şu klasöre koy:\n{running_directory()}"
         )
     flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
     return flow.run_local_server(
@@ -243,10 +227,19 @@ class FirebaseSession:
         return {"Authorization": f"Bearer {self.id_token}", "Content-Type": "application/json"}
 
 
-def firestore_patch(session: FirebaseSession, document_path: str, fields: dict, update_mask: list[str] | None = None):
+def firestore_patch(
+    session: FirebaseSession,
+    document_path: str,
+    fields: dict,
+    update_mask: list[str] | None = None,
+    current_document_update_time: str | None = None,
+):
     params = []
     if update_mask:
         params.extend(("updateMask.fieldPaths", field) for field in update_mask)
+    if current_document_update_time:
+        # Firestore's updateTime precondition provides compare-and-swap semantics.
+        params.append(("currentDocument.updateTime", current_document_update_time))
     response = requests.patch(
         f"{FIRESTORE}/{document_path}",
         params=params,
@@ -320,34 +313,22 @@ def screen_request_is_active(fields: dict) -> bool:
         return False
 
 
-MAX_SCREEN_FRAME_BASE64_CHARS = 650_000
-
-
 def capture_screen_base64() -> str:
     image = pyautogui.screenshot()
-    # The Firestore document limit applies after Base64 expansion (roughly +33%),
-    # not to the compressed JPEG bytes. Keep ample room for the document's other
-    # fields by enforcing a 650 KB Base64 string budget.
-    attempts = (
-        ((1280, 720), 40),
-        ((960, 540), 35),
-        ((800, 450), 30),
-        ((640, 360), 25),
-    )
-
-    for dimensions, quality in attempts:
-        frame_image = image.copy()
-        frame_image.thumbnail(dimensions)
+    image.thumbnail((1280, 720))
+    output = io.BytesIO()
+    image.save(output, format="JPEG", quality=45, optimize=True)
+    payload = output.getvalue()
+    # Firestore document size includes base64 expansion (~4/3) and field
+    # overhead. Keep the raw JPEG below 700 KB so the encoded value stays
+    # comfortably under the 1 MiB document limit.
+    if len(payload) > 560_000:
         output = io.BytesIO()
-        frame_image.save(output, format="JPEG", quality=quality, optimize=True)
-        encoded = base64.b64encode(output.getvalue()).decode("ascii")
-        if len(encoded) <= MAX_SCREEN_FRAME_BASE64_CHARS:
-            return encoded
-
-    raise RuntimeError(
-        "Ekran görüntüsü Base64 olarak Firestore belge bütçesine sığmıyor; "
-        "çözünürlüğü düşürüp tekrar dene."
-    )
+        image.save(output, format="JPEG", quality=30, optimize=True)
+        payload = output.getvalue()
+    if len(payload) > 700_000:
+        raise RuntimeError("Ekran görüntüsü Firestore belge boyutu sınırına yaklaşıyor; kare güvenli boyut sınırının altında üretilmedi.")
+    return base64.b64encode(payload).decode("ascii")
 
 
 def upload_screen_frame(session: FirebaseSession, device_id: str) -> None:
@@ -363,8 +344,7 @@ def upload_screen_frame(session: FirebaseSession, device_id: str) -> None:
     )
 
 
-def fetch_device_commands(session: FirebaseSession, device_id: str) -> list[dict]:
-    """Fetch only pending commands for this Firebase user and this registered device."""
+def fetch_owner_commands(session: FirebaseSession) -> list[dict]:
     response = requests.post(
         f"{FIRESTORE}:runQuery",
         headers=session.headers(),
@@ -384,13 +364,6 @@ def fetch_device_commands(session: FirebaseSession, device_id: str) -> list[dict
                             },
                             {
                                 "fieldFilter": {
-                                    "field": {"fieldPath": "deviceId"},
-                                    "op": "EQUAL",
-                                    "value": {"stringValue": device_id},
-                                }
-                            },
-                            {
-                                "fieldFilter": {
                                     "field": {"fieldPath": "status"},
                                     "op": "EQUAL",
                                     "value": {"stringValue": "pending"},
@@ -399,12 +372,6 @@ def fetch_device_commands(session: FirebaseSession, device_id: str) -> list[dict
                         ],
                     }
                 },
-                "orderBy": [
-                    {
-                        "field": {"fieldPath": "createdAt"},
-                        "direction": "ASCENDING",
-                    }
-                ],
                 "limit": 100,
             }
         },
@@ -420,56 +387,14 @@ def fetch_device_commands(session: FirebaseSession, device_id: str) -> list[dict
     return documents
 
 
-def claim_command(session: FirebaseSession, document: dict) -> bool:
-    """Atomically transition a pending command to running using Firestore updateTime."""
-    full_name = document.get("name", "")
-    marker = "/documents/"
-    update_time = document.get("updateTime")
-    if marker not in full_name or not update_time:
-        raise RuntimeError("Komut belgesinin yolu veya updateTime bilgisi eksik.")
-
-    document_path = full_name.split(marker, 1)[1]
-    params = [
-        ("updateMask.fieldPaths", "status"),
-        ("updateMask.fieldPaths", "result"),
-        ("updateMask.fieldPaths", "startedAt"),
-        ("currentDocument.updateTime", update_time),
-    ]
-    response = requests.patch(
-        f"{FIRESTORE}/{document_path}",
-        params=params,
-        headers=session.headers(),
-        json={
-            "fields": {
-                "status": encode_string("running"),
-                "result": encode_string("Windows Agent komutu sahipleniyor."),
-                "startedAt": encode_timestamp(),
-            }
-        },
-        timeout=20,
-    )
-    if response.status_code >= 400:
-        try:
-            error = response.json().get("error", {})
-        except (ValueError, AttributeError):
-            error = {}
-        error_status = str(error.get("status", "")).upper()
-        error_message = str(error.get("message", "")).lower()
-        if (
-            response.status_code == 409
-            or error_status in {"ABORTED", "FAILED_PRECONDITION"}
-            or "update time" in error_message
-            or "precondition" in error_message
-        ):
-            # Another Agent changed the pending command first; let that Agent process it.
-            return False
-        raise RuntimeError(
-            f"Komut sahiplenilemedi: HTTP {response.status_code}: {response.text[:500]}"
-        )
-    return True
-
-
-def update_command(session: FirebaseSession, document: dict, status: str, result: str) -> None:
+def update_command(
+    session: FirebaseSession,
+    document: dict,
+    status: str,
+    result: str,
+    expected_update_time: str | None = None,
+    extra_fields: dict | None = None,
+) -> None:
     full_name = document.get("name", "")
     marker = "/documents/"
     if marker not in full_name:
@@ -480,7 +405,65 @@ def update_command(session: FirebaseSession, document: dict, status: str, result
         "result": encode_string(result[:800]),
         "processedAt": encode_timestamp(),
     }
-    firestore_patch(session, document_path, fields, update_mask=["status", "result", "processedAt"])
+    if extra_fields:
+        fields.update(extra_fields)
+    update_mask = ["status", "result", "processedAt"]
+    if extra_fields:
+        update_mask.extend(extra_fields.keys())
+    firestore_patch(
+        session,
+        document_path,
+        fields,
+        update_mask=update_mask,
+        current_document_update_time=expected_update_time,
+    )
+
+
+def claim_pending_command(session: FirebaseSession, document: dict, device_id: str) -> bool:
+    # Never run a command if its Firestore version cannot be checked. This prevents
+    # a stale "pending" snapshot from overriding a cancellation written by the panel.
+    update_time = document.get("updateTime")
+    full_name = document.get("name", "")
+    marker = "/documents/"
+    if not isinstance(update_time, str) or not update_time or marker not in full_name:
+        print("[Command] Missing update time; command was not executed.")
+        return False
+
+    document_path = full_name.split(marker, 1)[1]
+    claim_token = uuid.uuid4().hex
+    try:
+        update_command(
+            session,
+            document,
+            "running",
+            "Windows Agent komutu güvenli şekilde sahiplendi.",
+            expected_update_time=update_time,
+            extra_fields={
+                "claimToken": encode_string(claim_token),
+                "claimedByDeviceId": encode_string(device_id),
+            },
+        )
+        return True
+    except Exception as claim_error:
+        # A network timeout can happen after Firestore accepted the write. Read back
+        # the document and proceed only if this exact claim token won the race.
+        print(f"[Command] Claim response uncertain; verifying Firestore state: {claim_error}")
+        try:
+            response = requests.get(
+                f"{FIRESTORE}/{document_path}",
+                headers=session.headers(),
+                timeout=15,
+            )
+            if response.status_code < 400:
+                current = decode_document(response.json())
+                return (
+                    current.get("status") == "running"
+                    and current.get("claimToken") == claim_token
+                    and current.get("claimedByDeviceId") == device_id
+                )
+        except Exception as read_error:
+            print(f"[Command] Claim verification failed; command was not executed: {read_error}")
+        return False
 
 
 def press_virtual_key(vk: int, repeat: int = 1) -> None:
@@ -488,6 +471,86 @@ def press_virtual_key(vk: int, repeat: int = 1) -> None:
     for _ in range(max(1, min(repeat, 15))):
         user32.keybd_event(vk, 0, 0, 0)
         user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+
+
+KEYEVENTF_UNICODE = 0x0004
+INPUT_KEYBOARD = 1
+MAX_REMOTE_TEXT_LENGTH = 1000
+
+
+class _KeyboardInput(ctypes.Structure):
+    _fields_ = [
+        ("wVk", ctypes.c_ushort),
+        ("wScan", ctypes.c_ushort),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
+
+
+class _MouseInput(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_int32),
+        ("dy", ctypes.c_int32),
+        ("mouseData", ctypes.c_uint32),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
+
+
+class _HardwareInput(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", ctypes.c_uint32),
+        ("wParamL", ctypes.c_ushort),
+        ("wParamH", ctypes.c_ushort),
+    ]
+
+
+class _InputUnion(ctypes.Union):
+    _fields_ = [
+        ("mi", _MouseInput),
+        ("ki", _KeyboardInput),
+        ("hi", _HardwareInput),
+    ]
+
+
+class _Input(ctypes.Structure):
+    _fields_ = [
+        ("type", ctypes.c_uint32),
+        ("union", _InputUnion),
+    ]
+
+
+def send_unicode_text(text: str) -> None:
+    """Type Unicode text through Win32 SendInput without changing the clipboard."""
+    if os.name != "nt":
+        raise RuntimeError("Uzaktan metin yazma yalnızca Windows Agent üzerinde kullanılabilir.")
+    if len(text) > MAX_REMOTE_TEXT_LENGTH:
+        raise ValueError(f"Metin en fazla {MAX_REMOTE_TEXT_LENGTH} karakter olabilir.")
+
+    safe_text = "".join(char for char in text if ord(char) >= 32 and ord(char) != 127)
+    if not safe_text:
+        raise ValueError("Yazılacak metin boş.")
+
+    utf16 = safe_text.encode("utf-16-le", errors="strict")
+    events = []
+    for index in range(0, len(utf16), 2):
+        unit = utf16[index] | (utf16[index + 1] << 8)
+        key_down = _Input(
+            type=INPUT_KEYBOARD,
+            union=_InputUnion(ki=_KeyboardInput(0, unit, KEYEVENTF_UNICODE, 0, 0)),
+        )
+        key_up = _Input(
+            type=INPUT_KEYBOARD,
+            union=_InputUnion(ki=_KeyboardInput(0, unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, 0, 0)),
+        )
+        events.extend((key_down, key_up))
+
+    inputs = (_Input * len(events))(*events)
+    sent = ctypes.windll.user32.SendInput(len(inputs), inputs, ctypes.sizeof(_Input))
+    if sent != len(inputs):
+        raise ctypes.WinError()
 
 
 def normalize_text_command(text: str) -> str:
@@ -578,6 +641,22 @@ def execute_command(command: str, fields: dict) -> str:
     command = command.strip().lower()
     if command == "text_command":
         return execute_text_command(str(fields.get("text") or ""))
+    if command == "type_text":
+        text = str(fields.get("text") or "")
+        if not text.strip():
+            return "Bilgisayara yazılacak metni gir."
+        if len(text) > MAX_REMOTE_TEXT_LENGTH:
+            return f"Metin en fazla {MAX_REMOTE_TEXT_LENGTH} karakter olabilir."
+        send_unicode_text(text)
+        if fields.get("pressEnter") is True:
+            pyautogui.press("enter")
+        return "Metin bilgisayara yazıldı." + (" Enter gönderildi." if fields.get("pressEnter") is True else "")
+    if command == "key_backspace":
+        pyautogui.press("backspace")
+        return "Backspace tuşu gönderildi."
+    if command == "key_enter":
+        pyautogui.press("enter")
+        return "Enter tuşu gönderildi."
     if command == "mute":
         press_virtual_key(VK_VOLUME_MUTE)
         return "Bilgisayarın sesi aç/kapat tuşuyla değiştirildi."
@@ -609,7 +688,8 @@ def execute_command(command: str, fields: dict) -> str:
 def command_is_supported(command: str) -> bool:
     return command in {
         "mute", "volume_up", "volume_down", "home",
-        "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command"
+        "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command",
+        "type_text", "key_backspace", "key_enter"
     }
 
 
@@ -652,7 +732,8 @@ def run_agent() -> int:
     if session is None:
         session = FirebaseSession.sign_in()
         print(f"Firebase hesabı: {session.email or session.uid}")
-        ask_install_startup()
+        if not getattr(sys, "frozen", False):
+            ask_install_startup()
 
     device_id = load_device_id(session.uid)
     register_or_heartbeat(session, device_id, initial=True)
@@ -702,33 +783,25 @@ def run_agent() -> int:
                     last_screen_frame = now
 
             if now - last_command_poll >= COMMAND_POLL_SECONDS:
-                for document in fetch_device_commands(session, device_id):
+                for document in fetch_owner_commands(session):
                     fields = decode_document(document)
-                    if (
-                        fields.get("ownerId") != session.uid
-                        or fields.get("deviceId") != device_id
-                        or fields.get("status") != "pending"
-                    ):
+                    if fields.get("deviceId") != device_id or fields.get("status") != "pending":
                         continue
-
-                    # Claim with the fetched updateTime so multiple Agent processes cannot
-                    # successfully transition the same pending document to running.
-                    try:
-                        claimed = claim_command(session, document)
-                    except Exception as exc:
-                        print(f"[Hata] Komut sahiplenilemedi: {exc}")
-                        continue
-                    if not claimed:
-                        continue
-
                     command = str(fields.get("command") or "")
                     if not command_is_supported(command):
                         try:
-                            update_command(session, document, "failed", "Desteklenmeyen komut.")
-                        except Exception as exc:
-                            print(f"[Hata] Desteklenmeyen komutun durumu güncellenemedi: {exc}")
+                            update_command(
+                                session,
+                                document,
+                                "failed",
+                                "Desteklenmeyen komut.",
+                                expected_update_time=document.get("updateTime"),
+                            )
+                        except Exception as claim_error:
+                            print(f"[Komut] Geçersiz komutun durumu değişmiş olabilir; kayıt güncellenmedi: {claim_error}")
                         continue
-
+                    if not claim_pending_command(session, document, device_id):
+                        continue
                     try:
                         result = execute_command(command, fields)
                         status = "failed" if result.startswith("Desteklenmeyen komut") else "completed"
@@ -763,7 +836,28 @@ def run_agent() -> int:
     return 0
 
 
+def configure_packaged_logging() -> None:
+    """Keep the packaged background bridge silent and persist diagnostics to disk."""
+    global _PACKAGED_LOG_HANDLE
+    if not getattr(sys, "frozen", False):
+        return
+    try:
+        APP_DATA.mkdir(parents=True, exist_ok=True)
+        _PACKAGED_LOG_HANDLE = (APP_DATA / "bridge.log").open(
+            "a", encoding="utf-8", buffering=1
+        )
+        sys.stdout = _PACKAGED_LOG_HANDLE
+        sys.stderr = _PACKAGED_LOG_HANDLE
+    except Exception:
+        # Logging setup must never prevent the bridge from attempting to connect.
+        pass
+
+
+_PACKAGED_LOG_HANDLE = None
+
+
 def main() -> int:
+    configure_packaged_logging()
     if os.name != "nt":
         print("MynAssistant Desktop Agent yalnızca Windows üzerinde çalışır.")
         return 2
@@ -771,11 +865,9 @@ def main() -> int:
         return run_agent()
     except FileNotFoundError as exc:
         print(f"\n[Kurulum] {exc}")
-        input("\nÇıkmak için Enter'a bas...")
         return 2
     except Exception as exc:
         print(f"\n[Hata] {exc}")
-        input("\nÇıkmak için Enter'a bas...")
         return 1
 
 
