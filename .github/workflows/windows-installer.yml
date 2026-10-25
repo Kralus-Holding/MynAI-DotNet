@@ -76,7 +76,7 @@ jobs:
             throw "Canonical MynAssistant logo PNG is missing: $logoPath"
           }
           if (Select-String -Path ".github/workflows/windows-installer.yml" -Pattern '\.ToBitmap\(' -Quiet) {
-            throw "Installer logo must be generated from the canonical PNG, not Icon.ToBitmap()."
+            throw "Installer logo must be generated from the canonical PNG, not converted from the ICO file."
           }
           if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern 'image.CacheOption = BitmapCacheOption.OnLoad' -Quiet)) {
             throw "The main-window image must be decoded safely with OnLoad."
@@ -168,7 +168,7 @@ jobs:
           if (-not (Test-Path $iconPath)) { throw "MynAssistant application icon is missing: $iconPath" }
 
           # Generate the wizard logo from the same canonical PNG used by the WPF app.
-          # Do not call Icon.ToBitmap(): some ICO encoders create frames GDI+ cannot convert.
+          # Read the PNG directly; some ICO encoders create frames GDI+ cannot convert.
           Add-Type -AssemblyName System.Drawing
           $sourceBitmap = [System.Drawing.Image]::FromFile((Resolve-Path $logoPath).Path)
           $wizardBitmap = [System.Drawing.Bitmap]::new(
