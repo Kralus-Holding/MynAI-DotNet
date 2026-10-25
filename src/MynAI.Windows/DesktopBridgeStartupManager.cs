@@ -92,6 +92,12 @@ public static class DesktopBridgeStartupManager
             if (string.Equals(state, "offline", StringComparison.OrdinalIgnoreCase))
                 return "Son Firebase durumu çevrimdışı.";
 
+            if (string.Equals(state, "connecting", StringComparison.OrdinalIgnoreCase))
+                return "Google/Firebase bağlantısı kuruluyor. İlk giriş için tarayıcıdaki onayı tamamla.";
+
+            if (string.Equals(state, "error", StringComparison.OrdinalIgnoreCase))
+                return "Firebase bağlantısı hata verdi. %LOCALAPPDATA%\\MynAssistant\\DesktopAgent\\bridge.log dosyasındaki son hatayı kontrol et.";
+
             return "Firebase cihaz durumu henüz doğrulanmadı.";
         }
         catch (Exception ex)
