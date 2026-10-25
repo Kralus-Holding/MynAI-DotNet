@@ -246,11 +246,14 @@ public partial class SettingsWindow : Window
                 return;
             }
 
-            var logPath = Directory.GetFiles(logDirectory, "MynAgent-*.log")
-                .OrderByDescending(File.GetLastWriteTimeUtc)
-                .FirstOrDefault();
+            var logPaths = Directory.GetFiles(logDirectory, "MynAgent-*.log")
+                .Concat(new[] { Path.Combine(logDirectory, "agent-startup.log") }
+                    .Where(File.Exists))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(File.GetLastWriteTimeUtc)
+                .ToArray();
 
-            if (logPath is null)
+            if (logPaths.Length == 0)
             {
                 AgentDiagnosticsText.Text =
                     "Son başlatma: kayıt bulunamadı. Son hata kodu: yok.";
@@ -262,32 +265,39 @@ public partial class SettingsWindow : Window
             string? lastErrorCode = null;
             const string startMarker = "MynAgent started at ";
 
-            using var stream = new FileStream(
-                logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var reader = new StreamReader(stream);
-
-            while (reader.ReadLine() is { } line)
+            // Include Agent runtime logs and the separate CreateProcess/4551 startup log.
+            // Oldest-to-newest ordering keeps the final diagnostic focused on the latest error.
+            foreach (var logPath in logPaths)
             {
-                var startIndex = line.IndexOf(startMarker, StringComparison.OrdinalIgnoreCase);
-                if (startIndex >= 0)
-                    lastStart = line[(startIndex + startMarker.Length)..].Trim();
+                using var stream = new FileStream(
+                    logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var reader = new StreamReader(stream);
 
-                var looksLikeError =
-                    line.Contains("error", StringComparison.OrdinalIgnoreCase)
-                    || line.Contains("exception", StringComparison.OrdinalIgnoreCase)
-                    || line.Contains("failed", StringComparison.OrdinalIgnoreCase)
-                    || line.Contains("hata", StringComparison.OrdinalIgnoreCase)
-                    || line.Contains("başarısız", StringComparison.OrdinalIgnoreCase)
-                    || line.Contains("MYN-", StringComparison.OrdinalIgnoreCase);
-
-                if (looksLikeError)
+                while (reader.ReadLine() is { } line)
                 {
-                    lastError = line.Trim();
-                    var match = Regex.Match(
-                        line,
-                        @"MYN-[A-Z]+-\d+",
-                        RegexOptions.IgnoreCase);
-                    lastErrorCode = match.Success ? match.Value : null;
+                    var startIndex = line.IndexOf(startMarker, StringComparison.OrdinalIgnoreCase);
+                    if (startIndex >= 0)
+                        lastStart = line[(startIndex + startMarker.Length)..].Trim();
+
+                    var looksLikeError =
+                        line.Contains("error", StringComparison.OrdinalIgnoreCase)
+                        || line.Contains("exception", StringComparison.OrdinalIgnoreCase)
+                        || line.Contains("failed", StringComparison.OrdinalIgnoreCase)
+                        || line.Contains("hata", StringComparison.OrdinalIgnoreCase)
+                        || line.Contains("başarısız", StringComparison.OrdinalIgnoreCase)
+                        || line.Contains("MYN-", StringComparison.OrdinalIgnoreCase)
+                        || line.Contains("code=4551", StringComparison.OrdinalIgnoreCase)
+                        || line.Contains("Application Control", StringComparison.OrdinalIgnoreCase);
+
+                    if (looksLikeError)
+                    {
+                        lastError = line.Trim();
+                        var match = Regex.Match(
+                            line,
+                            @"MYN-[A-Z]+-\d+",
+                            RegexOptions.IgnoreCase);
+                        lastErrorCode = match.Success ? match.Value : null;
+                    }
                 }
             }
 
