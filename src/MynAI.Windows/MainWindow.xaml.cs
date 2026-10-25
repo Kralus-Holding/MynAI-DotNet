@@ -94,9 +94,22 @@ public partial class MainWindow : Window
 
             LogoImage.Source = image;
 
-            // Use the canonical PNG for in-window branding and the WPF window icon.
-            // The native ICO is reserved for executable/tray use and is not parsed by XAML.
+            // Fallback: keep the in-window logo available if the full app icon is missing.
             Icon = image;
+            var appIconPath = Path.Combine(
+                AppContext.BaseDirectory,
+                "Resources",
+                "mynassistant-app-icon.png");
+            if (File.Exists(appIconPath))
+            {
+                var appIcon = new BitmapImage();
+                appIcon.BeginInit();
+                appIcon.CacheOption = BitmapCacheOption.OnLoad;
+                appIcon.UriSource = new Uri(appIconPath, UriKind.Absolute);
+                appIcon.EndInit();
+                appIcon.Freeze();
+                Icon = appIcon;
+            }
         }
         catch (Exception ex)
         {
