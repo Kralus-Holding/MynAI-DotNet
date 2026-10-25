@@ -480,16 +480,6 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private void ResetLogo_Click(object sender, RoutedEventArgs e)
-    {
-        var settings = _settingsStore.Load();
-        settings.LogoPreset = "kr";
-        settings.CustomLogoPath = null;
-        _settingsStore.Save(settings);
-        UpdateLogoPreview(settings);
-        SetSaveStatus("KR / Kralus varsayılan logosu seçildi.", Colors.LightGreen);
-    }
-
     private async void FirebaseSignIn_Click(object sender, RoutedEventArgs e)
     {
         var email = FirebaseEmailTextBox.Text.Trim();
