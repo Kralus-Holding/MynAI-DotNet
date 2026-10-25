@@ -601,7 +601,7 @@
                                         BorderThickness="1">
 
                                     <Image x:Name="GooglePhoto"
-                                           Source="Resources/myn.jpg"
+                                           Source="Resources/mynassistant-logo.png"
                                            Stretch="UniformToFill"/>
 
                                 </Border>
