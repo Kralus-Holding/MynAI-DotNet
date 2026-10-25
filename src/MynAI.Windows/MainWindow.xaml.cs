@@ -17,6 +17,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MynAI.Core.Commands;
 using MynAI.Core.Models;
+using MynAI.Windows.Auth;
 
 namespace MynAI.Windows;
 
@@ -369,6 +370,13 @@ public partial class MainWindow : Window
 
         AddRecentCommand(text);
 
+        if (RequiresPhoneConnection(text)
+            && !FirebaseDesktopSessionStore.HasValidStoredSession())
+        {
+            SetStatus("Telefon işlemleri için lütfen önce Hesap bölümünden giriş yapın.");
+            return;
+        }
+
         if (!TryParseCommand(
                 text,
                 out var action,
@@ -408,6 +416,27 @@ public partial class MainWindow : Window
             SetStatus(
                 $"Agent bağlantı hatası: {ex.Message}");
         }
+    }
+
+    private static bool RequiresPhoneConnection(string text)
+    {
+        var normalized = text.Trim().ToLowerInvariant()
+            .Replace('ı', 'i')
+            .Replace('ş', 's')
+            .Replace('ğ', 'g')
+            .Replace('ü', 'u')
+            .Replace('ö', 'o')
+            .Replace('ç', 'c');
+
+        return new[]
+        {
+            "telefonumdan", "telefondan", "telefon uzerinden",
+            "telefon pc", "telefon-pc", "telefon baglantisi",
+            "uzaktan kontrol", "uzaktan komut", "uzaktan baglan",
+            "pc kumanda", "cihazlarim", "android cihaz",
+            "mobil cihaz", "telefonu kontrol et", "telefona komut",
+            "telefonumla kontrol", "telefonla kontrol"
+        }.Any(normalized.Contains);
     }
 
     private static bool TryParseCommand(

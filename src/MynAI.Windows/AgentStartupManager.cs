@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.ComponentModel;
+using System.Text;
 using Microsoft.Win32;
 
 namespace MynAI.Windows;
@@ -119,8 +121,10 @@ public static class AgentStartupManager
         var agentPath = TryGetAgentExecutablePath();
         if (agentPath is null)
         {
-            throw new FileNotFoundException(
+            var missing = new FileNotFoundException(
                 "MynAgent.exe bulunamadı. MynAssistant kurulumunu onar veya yeniden yükle.");
+            LogStartupFailure(missing, "Agent dosyası bulunamadı");
+            throw missing;
         }
 
         var startInfo = new ProcessStartInfo
@@ -132,7 +136,60 @@ public static class AgentStartupManager
             WindowStyle = ProcessWindowStyle.Hidden
         };
 
-        Process.Start(startInfo);
+        try
+        {
+            Process.Start(startInfo);
+        }
+        catch (Win32Exception ex)
+        {
+            LogStartupFailure(ex, "Process.Start reddedildi");
+            var isPolicyBlock = ex.NativeErrorCode == 4551
+                || ex.Message.Contains("4551", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("Application Control", StringComparison.OrdinalIgnoreCase);
+            var message = isPolicyBlock
+                ? "Windows Application Control MynAgent.exe dosyasını engelledi (4551). Güvenlik ilkesini kapatmayın; dağıtım imzasını ve Code Integrity > Operational günlüklerini kontrol edin."
+                : $"MynAgent başlatılamadı (Windows hata kodu {ex.NativeErrorCode}). Ayrıntı Agent günlüklerine yazıldı.";
+            throw new InvalidOperationException(message, ex);
+        }
+        catch (Exception ex)
+        {
+            LogStartupFailure(ex, "Agent başlatılamadı");
+            throw;
+        }
+    }
+
+    public static void EnsureAutomaticStartup()
+    {
+        try
+        {
+            if (!IsEnabled())
+                SetEnabled(true);
+            if (!IsRunning())
+                StartAgent();
+        }
+        catch (Exception ex)
+        {
+            LogStartupFailure(ex, "Otomatik başlangıç");
+        }
+    }
+
+    private static void LogStartupFailure(Exception exception, string operation)
+    {
+        try
+        {
+            var directory = GetLogDirectory();
+            Directory.CreateDirectory(directory);
+            var nativeCode = exception is Win32Exception win32 ? win32.NativeErrorCode.ToString() : "n/a";
+            var line = $"[{DateTimeOffset.Now:O}] {operation}; code={nativeCode}; type={exception.GetType().Name}; message={exception.Message}{Environment.NewLine}";
+            File.AppendAllText(
+                Path.Combine(directory, "agent-startup.log"),
+                line,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
+        catch
+        {
+            // Startup diagnostics must never crash the main application.
+        }
     }
 
     public static void StopAgent()
