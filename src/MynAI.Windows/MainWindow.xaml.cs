@@ -69,6 +69,33 @@ public partial class MainWindow : Window
         _refreshTimer.Start();
     }
 
+    private void MainHeaderGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // At the normal width, keep the title, status, and actions on one line.
+        // Move the actions below the title/status pair when the available header
+        // width gets tight instead of letting fixed margins cause overlap.
+        const double compactBreakpoint = 610;
+        var compact = e.NewSize.Width < compactBreakpoint;
+        var targetRow = compact ? 1 : 0;
+
+        if (Grid.GetRow(HeaderActionsPanel) == targetRow)
+            return;
+
+        Grid.SetRow(HeaderActionsPanel, targetRow);
+        Grid.SetColumn(HeaderActionsPanel, compact ? 0 : 2);
+        Grid.SetColumnSpan(HeaderActionsPanel, compact ? 3 : 1);
+        HeaderActionsPanel.HorizontalAlignment = compact
+            ? HorizontalAlignment.Left
+            : HorizontalAlignment.Right;
+        HeaderActionsPanel.Margin = compact
+            ? new Thickness(0, 6, 0, 0)
+            : new Thickness(0);
+        HeaderActionsPanel.VerticalAlignment = VerticalAlignment.Center;
+        MainHeaderGrid.RowDefinitions[1].Height = compact
+            ? GridLength.Auto
+            : new GridLength(0);
+    }
+
     private void LoadLogo()
     {
         var path = Path.Combine(
