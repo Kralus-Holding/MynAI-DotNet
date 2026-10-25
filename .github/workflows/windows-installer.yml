@@ -73,7 +73,7 @@ jobs:
           }
 
           # Generate a full, navy-backed application icon from the same mark used by Android.
-          # Do not convert the old ICO with Icon.ToBitmap(); that conversion caused the 0x8000000B failure.
+          # Avoid GDI+ conversion of the legacy ICO; that decoding path caused the 0x8000000B failure.
           $sourceImage = [System.Drawing.Image]::FromFile((Resolve-Path $sourcePath).Path)
           $appIcon = [System.Drawing.Bitmap]::new(128, 128, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
           $graphics = [System.Drawing.Graphics]::FromImage($appIcon)
