@@ -75,10 +75,16 @@ def main() -> None:
 
     with Image.open(SOURCE) as opened:
         cleaned = remove_edge_connected_white_background(opened)
-        square = ImageOps.fit(
+        # Preserve the complete icon and its aspect ratio; never crop the artwork.
+        contained = ImageOps.contain(
             cleaned,
             (512, 512),
             method=Image.Resampling.LANCZOS,
+        )
+        square = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
+        square.alpha_composite(
+            contained,
+            ((512 - contained.width) // 2, (512 - contained.height) // 2),
         )
 
         # Transparent image for the Windows app/taskbar/tray icon and the Settings preset.
@@ -107,17 +113,18 @@ def main() -> None:
             ],
         )
 
+        # Show the original transparent blue app mark against white.
         content = ImageOps.contain(
-            dark_rgb,
+            cleaned,
             (48, 50),
             method=Image.Resampling.LANCZOS,
         )
-        wizard = Image.new("RGB", (55, 58), "white")
-        wizard.paste(
+        wizard = Image.new("RGBA", (55, 58), (255, 255, 255, 255))
+        wizard.alpha_composite(
             content,
             ((55 - content.width) // 2, (58 - content.height) // 2),
         )
-        wizard.save(WIZARD_PATH, format="BMP")
+        wizard.convert("RGB").save(WIZARD_PATH, format="BMP")
 
     for path in (
         TRANSPARENT_PNG_PATH,
@@ -146,6 +153,10 @@ def main() -> None:
     with Image.open(WIZARD_PATH) as wizard:
         if wizard.format != "BMP" or wizard.size != (55, 58):
             raise RuntimeError(f"Generated Inno wizard bitmap is invalid: {WIZARD_PATH}")
+
+    with Image.open(WIZARD_PATH) as wizard:
+        if wizard.convert("RGB").getpixel((0, 0)) != (255, 255, 255):
+            raise RuntimeError("The Inno Setup wizard logo must have a white background.")
 
     print(f"Generated transparent app/tray logo: {TRANSPARENT_PNG_PATH} ({TRANSPARENT_PNG_PATH.stat().st_size} bytes)")
     print(f"Generated dark-themed in-app logo: {DARK_PNG_PATH} ({DARK_PNG_PATH.stat().st_size} bytes)")
