@@ -27,3 +27,14 @@ Bu üç çalıştırılabilir dosya aynı şey değildir. Özellikle telefon/web
 ## Derleme
 
 Windows installer workflow .NET 10, Python 3.12, PyInstaller ve Inno Setup kullanır. Yerel paket de kendi Python sanal ortamında Desktop Bridge'i tek EXE olarak paketler. Son installer gerçek Windows cihazında açılış, OAuth girişi, telefon komutu ve web paneli komutu ile ayrıca test edilmelidir.
+
+## Yerel Windows installer üretimi
+
+Yerel kurulum betiği `scripts/Build-MynAssistant-Installer.ps1` dosyasındadır. Gereksinimler: Git for Windows, .NET 10 SDK, Python 3.12 veya 3.13 x64 ve Inno Setup 6. Betik OAuth `client_secret.json` dosyasını önce `%LOCALAPPDATA%\MynAssistant\Google` konumunda arar; bulamazsa dosya seçtirir. OAuth JSON'u repoya eklemez.
+
+PR dalını test etmek için PowerShell'de:
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-MynAssistant-Installer.ps1 -Ref fix/windows-branding-remote-bridge-014
+```
+
+PR birleştirildikten sonra varsayılan `main` dalını derlemek için `-Ref` parametresini çıkart. Oluşan kurulum EXE'si ve SHA-256 değeri `Downloads` klasörüne yazılır. Gerçek PC/Android/web bağlantısını yine farklı Windows bilgisayarda uçtan uca test etmek gerekir.
