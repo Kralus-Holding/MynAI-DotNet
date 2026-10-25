@@ -1,7 +1,9 @@
 # MynAssistant Desktop Bridge
 
-This packaged Windows bridge is synchronized with the canonical agent in
-`MynKralus/MynAssistant-Android/desktop-agent/agent.py` (agent version 0.2.2).
+This Windows bridge follows the current command/claim implementation in
+`MynKralus/MynAssistant-Android/desktop-agent/agent.py` (Android source version 0.2.1),
+with Windows-installer-specific status reporting and headless startup (packaged bridge
+version 0.2.2).
 The bridge connects the installed Windows PC to Android and the web admin panel
 through the shared Firebase project; it does not expose an inbound PC port.
 
