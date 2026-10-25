@@ -158,15 +158,16 @@ jobs:
 
           # Validate all installer assets before invoking Inno Setup.
           $licensePath = "installer/LICENSE-AGREEMENT.rtf"
-          $iconPath = "src/MynAI.Windows/Resources/myn.ico"
+          $iconPath = "src/MynAI.Windows/Resources/mynassistant.ico"
+          $logoPath = "src/MynAI.Windows/Resources/mynassistant.png"
           if (-not (Test-Path $licensePath)) { throw "License agreement file is missing: $licensePath" }
           if (-not (Test-Path $iconPath)) { throw "MynAssistant application icon is missing: $iconPath" }
+          if (-not (Test-Path $logoPath)) { throw "MynAssistant branding image is missing: $logoPath" }
 
-          # Generate only the 55x58 top-right wizard logo from the same app ICO.
-          # Avoids the old large custom wizard artwork that had scaling/rendering issues.
+          # Draw the installer wizard logo directly from the PNG. Avoid decoding
+          # the legacy ICO through GDI+, which caused range errors on Windows.
           Add-Type -AssemblyName System.Drawing
-          $icon = [System.Drawing.Icon]::new((Resolve-Path $iconPath).Path)
-          $sourceBitmap = $icon.ToBitmap()
+          $sourceBitmap = [System.Drawing.Bitmap]::FromFile((Resolve-Path $logoPath).Path)
           $wizardBitmap = [System.Drawing.Bitmap]::new(
             55, 58, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb
           )
@@ -191,7 +192,6 @@ jobs:
             $graphics.Dispose()
             $wizardBitmap.Dispose()
             $sourceBitmap.Dispose()
-            $icon.Dispose()
           }
           if (-not (Test-Path $wizardSmallImage) -or (Get-Item $wizardSmallImage).Length -lt 100) {
             throw "MynAssistant wizard icon could not be generated."
