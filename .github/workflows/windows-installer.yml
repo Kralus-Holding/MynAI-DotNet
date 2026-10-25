@@ -59,7 +59,7 @@ jobs:
             throw "Desktop Bridge EXE was not created."
           }
 
-      - name: Verify WPF window icon loading remains non-fatal
+      - name: Verify current branding and remote bridge startup wiring
         shell: pwsh
         run: |
           $windowXaml = @(
@@ -68,17 +68,44 @@ jobs:
           )
           foreach ($path in $windowXaml) {
             if (Select-String -Path $path -Pattern 'Icon="Resources/myn.ico"' -Quiet) {
-              throw "Do not load .ico via the WPF XAML ImageSource converter in $path."
+              throw "Do not decode an ICO through the WPF XAML ImageSource converter in $path."
             }
           }
-          if (-not (Test-Path "src/MynAI.Windows/Resources/myn.jpg")) {
-            throw "Fallback window image is missing."
+
+          $newPng = "src/MynAI.Windows/Resources/mynassistant.png"
+          $newIco = "src/MynAI.Windows/Resources/mynassistant.ico"
+          if (-not (Test-Path $newPng)) { throw "Current MynAssistant PNG branding is missing." }
+          if (-not (Test-Path $newIco)) { throw "Current MynAssistant ICO branding is missing." }
+
+          $projectFile = Get-Content "src/MynAI.Windows/MynAI.Windows.csproj" -Raw
+          if ($projectFile -notmatch '<ApplicationIcon>Resources\\mynassistant.ico</ApplicationIcon>') {
+            throw "The WPF executable must embed the current MynAssistant icon."
+          }
+          foreach ($path in @(
+            "src/MynAI.Windows/MainWindow.xaml.cs",
+            "src/MynAI.Windows/SettingsWindow.xaml.cs",
+            "src/MynAI.Windows/SettingsWindow.xaml"
+          )) {
+            if (Select-String -Path $path -Pattern 'myn\.jpg|Resources[/\\]myn\.ico' -Quiet) {
+              throw "Legacy branding reference remains in $path."
+            }
           }
           if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern 'image.CacheOption = BitmapCacheOption.OnLoad' -Quiet)) {
-            throw "The main-window image must be decoded safely with OnLoad."
+            throw "The main-window logo must be decoded safely with OnLoad."
           }
           if (-not (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml.cs" -Pattern 'LoadWindowIconSafely' -Quiet)) {
             throw "The settings-window icon must use the safe loader."
+          }
+
+          $installer = Get-Content "installer/MynAI.iss" -Raw
+          if ($installer -notmatch 'Name: "desktopbridge"') {
+            throw "Installer must provide an explicit phone/web PC-bridge option."
+          }
+          if ($installer -notmatch 'MynAssistantDesktopBridge\.exe') {
+            throw "Installer must package and launch MynAssistantDesktopBridge."
+          }
+          if ($installer -notmatch 'MynAssistant\.DesktopBridge') {
+            throw "Installer must persist the bridge startup option."
           }
 
       - name: Restore and build .NET solution
