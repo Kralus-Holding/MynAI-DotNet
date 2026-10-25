@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Win32;
 
 namespace MynAI.Windows;
@@ -32,6 +33,31 @@ public static class DesktopBridgeStartupManager
             "MynAssistant",
             "DesktopAgent",
             "bridge.log");
+
+    private static string StatusPath =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MynAssistant",
+            "DesktopAgent",
+            "status.json");
+
+    public static DesktopBridgeRuntimeStatus? ReadRuntimeStatus()
+    {
+        try
+        {
+            if (!File.Exists(StatusPath))
+                return null;
+
+            return JsonSerializer.Deserialize<DesktopBridgeRuntimeStatus>(
+                File.ReadAllText(StatusPath, Encoding.UTF8),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch
+        {
+            // Runtime status is diagnostic only; malformed data must not break Settings.
+            return null;
+        }
+    }
 
     public static bool IsEnabled()
     {
@@ -205,3 +231,12 @@ public static class DesktopBridgeStartupManager
         }
     }
 }
+
+
+public sealed record DesktopBridgeRuntimeStatus(
+    string? State,
+    string? Message,
+    string? Email,
+    string? DeviceId,
+    string? MachineName,
+    DateTimeOffset UpdatedAt);
