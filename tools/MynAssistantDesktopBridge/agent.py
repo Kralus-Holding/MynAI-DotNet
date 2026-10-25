@@ -781,6 +781,14 @@ def configure_background_logging() -> None:
         pass
 
 
+def wait_for_enter_if_interactive() -> None:
+    if sys.stdin and getattr(sys.stdin, "isatty", lambda: False)():
+        try:
+            input("\nÇıkmak için Enter'a bas...")
+        except (EOFError, KeyboardInterrupt):
+            pass
+
+
 def main() -> int:
     configure_background_logging()
     if os.name != "nt":
@@ -790,11 +798,11 @@ def main() -> int:
         return run_agent()
     except FileNotFoundError as exc:
         print(f"\n[Kurulum] {exc}")
-        input("\nÇıkmak için Enter'a bas...")
+        wait_for_enter_if_interactive()
         return 2
     except Exception as exc:
         print(f"\n[Hata] {exc}")
-        input("\nÇıkmak için Enter'a bas...")
+        wait_for_enter_if_interactive()
         return 1
 
 
