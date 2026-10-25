@@ -287,7 +287,9 @@
         <Border Grid.Column="0"
                 Width="130"
                 Height="130"
-                Background="#020306"
+                Background="Transparent"
+                BorderBrush="Transparent"
+                BorderThickness="0"
                 CornerRadius="3"
                 VerticalAlignment="Top"
                 Margin="0,8,0,0">
@@ -313,57 +315,73 @@
             </Grid.RowDefinitions>
 
 
-            <!-- BAŞLIK + AGENT + BUTONLAR -->
-
+            <!-- HEADER: title and status chips use separate columns to avoid overlap/cutoff -->
             <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-                <TextBlock Text="MynAssistant"
+                <TextBlock Grid.Column="0"
+                           Text="MynAssistant"
                            Foreground="#F4F7FA"
-                           FontSize="22"
+                           FontSize="20"
                            FontWeight="SemiBold"
                            VerticalAlignment="Top"/>
 
-                <Border Margin="88,0,0,0"
-                        Padding="12,6"
+                <Border Grid.Column="1"
+                        Margin="12,0,0,0"
+                        Padding="10,6"
                         Background="#0B203C"
                         BorderBrush="#1266DE"
                         BorderThickness="1"
                         CornerRadius="10"
                         HorizontalAlignment="Left"
                         VerticalAlignment="Top">
-
                     <TextBlock x:Name="StatusText"
-                               Text="=Beklemede"
+                               Text="Beklemede"
                                Foreground="#48B5F2"
                                FontSize="10"
                                FontWeight="SemiBold"/>
-
                 </Border>
 
-
-                <StackPanel Orientation="Horizontal"
+                <StackPanel Grid.Column="3"
+                            Orientation="Horizontal"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Top">
 
-                    <!-- AGENT DURUMU -->
-
+                    <!-- LOCAL .NET SCHEDULER AGENT -->
                     <Border Background="#101B16"
                             BorderBrush="#244A36"
                             BorderThickness="1"
                             CornerRadius="9"
-                            Padding="8,5"
-                            Margin="0,0,2,0"
-                            VerticalAlignment="Center">
-
+                            Padding="7,5"
+                            Margin="0,0,4,0"
+                            VerticalAlignment="Center"
+                            ToolTip="Yerel Agent, masaüstü zamanlanmış görevlerini ve named-pipe IPC kanalını yönetir.">
                         <TextBlock x:Name="AgentStatusText"
-                                   Text="Agent: bağlantı bekleniyor"
+                                   Text="Yerel Agent: bekleniyor"
                                    Foreground="#7FD495"
-                                   FontSize="9"/>
-
+                                   FontSize="8"/>
                     </Border>
 
-
-                    <!-- AYARLAR - ŞİMDİLİK PASİF -->
+                    <!-- CLOUD BRIDGE FOR ANDROID / WEB REMOTE CONTROL -->
+                    <Border x:Name="BridgeStatusBorder"
+                            Background="#241517"
+                            BorderBrush="#704044"
+                            BorderThickness="1"
+                            CornerRadius="9"
+                            Padding="7,5"
+                            Margin="0,0,4,0"
+                            VerticalAlignment="Center"
+                            ToolTip="Bu süreç Firestore üzerinden telefon ve web paneli komutlarını alır. Ayarlar → Agent bölümünden başlatıp Google hesabıyla giriş yap.">
+                        <TextBlock x:Name="BridgeStatusText"
+                                   Text="Bulut PC: kapalı"
+                                   Foreground="#F0A0A0"
+                                   FontSize="8"/>
+                    </Border>
 
                     <Button Click="SettingsButton_Click" Style="{StaticResource TopButton}"
                             IsEnabled="True"
@@ -373,40 +391,27 @@
                             FontSize="13"
                             Content="⚙"/>
 
-
-                    <!-- KÜÇÜLT -->
-
                     <Button Content="—"
                             Click="CollapseButton_Click"
                             Style="{StaticResource TopButton}"
                             ToolTip="Simge durumuna küçült"/>
 
-
-                    <!-- GENİŞLET / NORMAL -->
-
                     <Button Click="ExpandButton_Click"
                             Style="{StaticResource TopButton}"
                             ToolTip="Tam ekran / normal">
-
                         <Border Width="10"
                                 Height="10"
                                 BorderBrush="#AAB7CA"
                                 BorderThickness="1"
                                 Background="Transparent"
                                 IsHitTestVisible="False"/>
-
                     </Button>
-
-
-                    <!-- KAPAT -->
 
                     <Button Content="×"
                             Click="CloseButton_Click"
                             Style="{StaticResource TopButton}"
                             ToolTip="Kapat"/>
-
                 </StackPanel>
-
             </Grid>
 
 
