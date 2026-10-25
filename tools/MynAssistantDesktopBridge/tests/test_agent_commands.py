@@ -227,5 +227,14 @@ class RemoteKeyboardCommandTests(unittest.TestCase):
         self.assertIn("Enter", enter_result)
 
 
+class OAuthScopeTests(unittest.TestCase):
+    def test_google_oauth_uses_canonical_scope_uris(self):
+        self.assertIn("openid", agent.SCOPES)
+        self.assertIn("https://www.googleapis.com/auth/userinfo.email", agent.SCOPES)
+        self.assertIn("https://www.googleapis.com/auth/userinfo.profile", agent.SCOPES)
+        self.assertNotIn("email", agent.SCOPES)
+        self.assertNotIn("profile", agent.SCOPES)
+
+
 if __name__ == "__main__":
     unittest.main()
