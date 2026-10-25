@@ -11,6 +11,8 @@ on:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
       - "installer/**"
+      - "assets/branding/**"
+      - ".github/scripts/**"
       - ".github/workflows/windows-installer.yml"
   pull_request:
     branches: ["main"]
@@ -45,16 +47,21 @@ jobs:
       - name: Install desktop bridge dependencies
         shell: pwsh
         run: |
-          python -m pip install --disable-pip-version-check --timeout 60 --retries 2 -r tools/MynAssistantDesktopBridge/requirements.txt
+          python -m pip install --disable-pip-version-check --timeout 60 --retries 2 -r tools/MynAssistantDesktopBridge/requirements.txt Pillow
 
       - name: Test desktop bridge command handling
         run: python -m unittest discover -s tools/MynAssistantDesktopBridge/tests -v
+
+      - name: Generate current MynAssistant branding
+        shell: pwsh
+        run: |
+          python .github/scripts/generate_branding.py
 
       - name: Build desktop bridge executable
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build/bridge-dist, build/pyinstaller-work, build/pyinstaller-spec | Out-Null
-          pyinstaller --noconfirm --clean --onefile --console --name MynAssistantDesktopBridge --distpath build/bridge-dist --workpath build/pyinstaller-work --specpath build/pyinstaller-spec --collect-all google_auth_oauthlib --collect-all google.auth --hidden-import win32crypt tools/MynAssistantDesktopBridge/agent.py
+          pyinstaller --noconfirm --clean --onefile --noconsole --name MynAssistantDesktopBridge --distpath build/bridge-dist --workpath build/pyinstaller-work --specpath build/pyinstaller-spec --collect-all google_auth_oauthlib --collect-all google.auth --hidden-import win32crypt tools/MynAssistantDesktopBridge/agent.py
           if (-not (Test-Path "build/bridge-dist/MynAssistantDesktopBridge.exe")) {
             throw "Desktop Bridge EXE was not created."
           }
@@ -150,58 +157,40 @@ jobs:
         shell: pwsh
         run: choco install innosetup --yes --no-progress
 
-      - name: Compile Windows installer
+      - name: Validate and compile Windows installer
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path build/installer | Out-Null
 
-          # Validate all installer assets before invoking Inno Setup.
-          $licensePath = "installer/LICENSE-AGREEMENT.rtf"
-          $iconPath = "src/MynAI.Windows/Resources/myn.ico"
-          if (-not (Test-Path $licensePath)) { throw "License agreement file is missing: $licensePath" }
-          if (-not (Test-Path $iconPath)) { throw "MynAssistant application icon is missing: $iconPath" }
-
-          # Generate only the 55x58 top-right wizard logo from the same app ICO.
-          # Avoids the old large custom wizard artwork that had scaling/rendering issues.
-          Add-Type -AssemblyName System.Drawing
-          $icon = [System.Drawing.Icon]::new((Resolve-Path $iconPath).Path)
-          $sourceBitmap = $icon.ToBitmap()
-          $wizardBitmap = [System.Drawing.Bitmap]::new(
-            55, 58, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb
+          $requiredFiles = @(
+            "installer/LICENSE-AGREEMENT.rtf",
+            "src/MynAI.Windows/Resources/myn.ico",
+            "src/MynAI.Windows/Resources/myn.jpg",
+            "build/installer/MynAssistantWizardSmall.bmp",
+            "build/publish/MynAssistant.exe",
+            "build/publish/MynAssistantDesktopBridge.exe",
+            "build/agent-publish/MynAgent.exe"
           )
-          $graphics = [System.Drawing.Graphics]::FromImage($wizardBitmap)
-          $wizardSmallImage = "build/installer/MynAssistantWizardSmall.bmp"
-          try {
-            $graphics.Clear([System.Drawing.Color]::White)
-            $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-            $scale = [Math]::Min(48.0 / $sourceBitmap.Width, 50.0 / $sourceBitmap.Height)
-            $logoWidth = [Math]::Max(1, [int][Math]::Round($sourceBitmap.Width * $scale))
-            $logoHeight = [Math]::Max(1, [int][Math]::Round($sourceBitmap.Height * $scale))
-            $logoX = [int](($wizardBitmap.Width - $logoWidth) / 2)
-            $logoY = [int](($wizardBitmap.Height - $logoHeight) / 2)
-            $graphics.DrawImage(
-              $sourceBitmap,
-              [System.Drawing.Rectangle]::new($logoX, $logoY, $logoWidth, $logoHeight)
-            )
-            $wizardBitmap.Save($wizardSmallImage, [System.Drawing.Imaging.ImageFormat]::Bmp)
+          foreach ($path in $requiredFiles) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Required installer asset is missing: $path"
+            }
           }
-          finally {
-            $graphics.Dispose()
-            $wizardBitmap.Dispose()
-            $sourceBitmap.Dispose()
-            $icon.Dispose()
+          if (-not (Select-String -Path "src/MynAI.Windows/MynAI.Windows.csproj" -Pattern '<Version>0.1.5</Version>' -Quiet)) {
+            throw "Windows app version is not 0.1.5."
           }
-          if (-not (Test-Path $wizardSmallImage) -or (Get-Item $wizardSmallImage).Length -lt 100) {
-            throw "MynAssistant wizard icon could not be generated."
+          if (-not (Select-String -Path "installer/MynAI.iss" -Pattern '#define MyAppVersion "0.1.5"' -Quiet)) {
+            throw "Installer version does not match 0.1.5."
+          }
+          if (Select-String -Path "installer/MynAI.iss" -Pattern 'ArchitecturesAllowed=x64$|ArchitecturesInstallIn64BitMode=x64$' -Quiet) {
+            throw "Use x64compatible architecture identifiers to avoid deprecated Inno Setup settings."
           }
 
           $compilerCandidates = @(
             "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
             "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
           )
-          $compiler = $compilerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $compiler = $compilerCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           if (-not $compiler) {
             throw "Inno Setup compiler (ISCC.exe) was not found after installation."
           }
@@ -211,6 +200,9 @@ jobs:
           }
           if (-not (Test-Path "build/installer/MynAssistant-Setup.exe")) {
             throw "MynAssistant-Setup.exe was not created."
+          }
+          if ((Get-Item "build/installer/MynAssistant-Setup.exe").Length -lt 50MB) {
+            throw "Installer size is unexpectedly small; refusing to report success."
           }
 
       - name: Upload Windows installer as Actions artifact
