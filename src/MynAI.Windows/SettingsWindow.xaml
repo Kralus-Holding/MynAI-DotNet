@@ -712,7 +712,7 @@
                                    FontWeight="SemiBold"
                                    Margin="0,0,0,5"/>
 
-                        <TextBlock Text="Telefon-PC bağlantısı için Android uygulamasında kullandığın Firebase hesabıyla giriş yap. Google Kişiler isteğe bağlıdır."
+                        <TextBlock Text="Telefon-PC bağlantı durumu otomatik kontrol edilir. Google Kişiler isteğe bağlıdır."
                                    Foreground="#718096"
                                    FontSize="12"
                                    Margin="0,0,0,18"
@@ -720,36 +720,17 @@
 
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
-                                <TextBlock Text="Telefon-PC hesabı"
-                                           FontSize="14"
-                                           FontWeight="SemiBold"/>
-                                <TextBlock Text="Android MynAssistant uygulamasında kullandığın Firebase hesabıyla giriş yap. OAuth JSON dosyası istenmez."
-                                           Foreground="#7E8A9D" FontSize="11" Margin="0,6,0,12"
-                                           TextWrapping="Wrap"/>
-                                <TextBlock x:Name="FirebaseSessionStatusText"
-                                           Text="Oturum durumu kontrol ediliyor..."
-                                           Foreground="#D6E5F4" FontSize="11" Margin="0,0,0,10"
-                                           TextWrapping="Wrap"/>
-                                <TextBlock Text="E-posta" FontSize="11" Foreground="#A9B7C8" Margin="0,0,0,4"/>
-                                <TextBox x:Name="FirebaseEmailTextBox"
-                                         Background="#080D13" Foreground="#F2F6FB"
-                                         BorderBrush="#2A3B52" BorderThickness="1"
-                                         Padding="10,8" FontSize="12" Margin="0,0,0,10"
-                                         AutomationProperties.Name="Firebase hesap e-posta adresi"/>
-                                <TextBlock Text="Şifre" FontSize="11" Foreground="#A9B7C8" Margin="0,0,0,4"/>
-                                <PasswordBox x:Name="FirebasePasswordBox"
-                                             Background="#080D13" Foreground="#F2F6FB"
-                                             BorderBrush="#2A3B52" BorderThickness="1"
-                                             Padding="10,8" FontSize="12" Margin="0,0,0,12"
-                                             AutomationProperties.Name="Firebase hesap şifresi"/>
-                                <WrapPanel>
-                                    <Button x:Name="FirebaseSignInButton" Content="Giriş yap"
-                                            Style="{StaticResource PrimaryButton}" Click="FirebaseSignIn_Click"
-                                            Margin="0,0,8,0"/>
-                                    <Button x:Name="FirebaseSignOutButton" Content="Çıkış yap"
-                                            Style="{StaticResource SecondaryButton}" Click="FirebaseSignOut_Click"
-                                            IsEnabled="False"/>
-                                </WrapPanel>
+                                <TextBlock Text="Telefon-PC bağlantısı" FontSize="14" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="DesktopBridgeStatusText" Text="Bağlantı durumu kontrol ediliyor..."
+                                           Foreground="#D6E5F4" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                <Ellipse x:Name="DesktopBridgeStatusDot" Width="10" Height="10" Fill="#667085"
+                                         HorizontalAlignment="Left" Margin="0,8,0,0"/>
+                                <TextBlock x:Name="DesktopBridgeExecutablePathText" Text="" Margin="0,7,0,0"
+                                           Foreground="#627084" FontSize="10" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="DesktopBridgeMessageText" Text="" Margin="0,5,0,0"
+                                           Foreground="#9BA9BB" FontSize="11" TextWrapping="Wrap"/>
+                                <Button Content="Bağlantıyı yenile" Style="{StaticResource PrimaryButton}"
+                                        Click="RefreshDesktopBridge_Click" HorizontalAlignment="Left" Margin="0,12,0,0"/>
                             </StackPanel>
                         </Border>
 
