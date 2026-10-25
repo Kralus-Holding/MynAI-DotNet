@@ -75,6 +75,10 @@ jobs:
           if (-not (Test-Path $logoPath)) {
             throw "Canonical MynAssistant logo PNG is missing: $logoPath"
           }
+          $appIconPath = "src/MynAI.Windows/Resources/mynassistant-app-icon.png"
+          if (-not (Test-Path $appIconPath)) {
+            throw "Full MynAssistant application icon PNG is missing: $appIconPath"
+          }
           if (Select-String -Path ".github/workflows/windows-installer.yml" -Pattern '\.ToBitmap\(' -Quiet) {
             throw "Installer logo must be generated from the canonical PNG, not converted from the ICO file."
           }
@@ -163,7 +167,7 @@ jobs:
           # Validate all installer assets before invoking Inno Setup.
           $licensePath = "installer/LICENSE-AGREEMENT.rtf"
           $iconPath = "src/MynAI.Windows/Resources/myn.ico"
-          $logoPath = "src/MynAI.Windows/Resources/mynassistant.png"
+          $logoPath = "src/MynAI.Windows/Resources/mynassistant-app-icon.png"
           if (-not (Test-Path $licensePath)) { throw "License agreement file is missing: $licensePath" }
           if (-not (Test-Path $iconPath)) { throw "MynAssistant application icon is missing: $iconPath" }
 
