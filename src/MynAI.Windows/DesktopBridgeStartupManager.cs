@@ -68,7 +68,10 @@ public static class DesktopBridgeStartupManager
                 $"Telefon-PC bağlantısı için Google OAuth yapılandırması bulunamadı: {oauthPath}");
         }
 
-        key.SetValue(ValueName, $"{(char)34}{executablePath}{(char)34}", RegistryValueKind.String);
+        var escapedPath = executablePath.Replace("'", "''");
+        var hiddenLaunchCommand =
+            $"powershell.exe -NoProfile -WindowStyle Hidden -Command \"Start-Process -FilePath '{escapedPath}' -WindowStyle Hidden\"";
+        key.SetValue(ValueName, hiddenLaunchCommand, RegistryValueKind.String);
         key.DeleteValue(LegacyValueName, throwOnMissingValue: false);
     }
 

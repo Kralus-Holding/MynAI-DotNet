@@ -10,6 +10,8 @@ on:
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
+      - "tools/build_windows_icon.py"
+      - "assets/branding/**"
       - "installer/**"
       - ".github/workflows/windows-installer.yml"
   pull_request:
@@ -17,6 +19,8 @@ on:
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
+      - "tools/build_windows_icon.py"
+      - "assets/branding/**"
       - "installer/**"
       - ".github/workflows/windows-installer.yml"
   workflow_dispatch:
@@ -45,7 +49,8 @@ jobs:
       - name: Install desktop bridge dependencies
         shell: pwsh
         run: |
-          python -m pip install --disable-pip-version-check --timeout 60 --retries 2 -r tools/MynAssistantDesktopBridge/requirements.txt
+          python -m pip install --disable-pip-version-check --timeout 60 --retries 2 -r tools/MynAssistantDesktopBridge/requirements.txt Pillow
+          python tools/build_windows_icon.py
 
       - name: Test desktop bridge command handling
         run: python -m unittest discover -s tools/MynAssistantDesktopBridge/tests -v
@@ -71,8 +76,23 @@ jobs:
               throw "Do not load .ico via the WPF XAML ImageSource converter in $path."
             }
           }
-          if (-not (Test-Path "src/MynAI.Windows/Resources/myn.jpg")) {
-            throw "Fallback window image is missing."
+          $logoPath = "src/MynAI.Windows/Resources/mynassistant-logo.png"
+          if (-not (Test-Path $logoPath)) {
+            throw "Shared MynAssistant logo is missing."
+          }
+          foreach ($path in @("src/MynAI.Windows/MainWindow.xaml", "src/MynAI.Windows/SettingsWindow.xaml")) {
+            if (Select-String -Path $path -Pattern 'Resources/myn.jpg' -Quiet) {
+              throw "Old KR branding path remains in $path."
+            }
+          }
+          if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern '"mynassistant-logo.png"' -Quiet)) {
+            throw "Main window must use the shared PNG logo."
+          }
+          if (-not (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml.cs" -Pattern '"mynassistant-logo.png"' -Quiet)) {
+            throw "Settings window must use the shared PNG logo."
+          }
+          if (-not (Test-Path "build/installer/MynAssistantWizardSmall.bmp")) {
+            throw "Generated installer wizard image is missing."
           }
           if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern 'image.CacheOption = BitmapCacheOption.OnLoad' -Quiet)) {
             throw "The main-window image must be decoded safely with OnLoad."
@@ -156,45 +176,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path build/installer | Out-Null
 
-          # Validate all installer assets before invoking Inno Setup.
+          # Validate assets generated from the shared PNG logo before invoking Inno Setup.
           $licensePath = "installer/LICENSE-AGREEMENT.rtf"
           $iconPath = "src/MynAI.Windows/Resources/myn.ico"
+          $wizardSmallImage = "build/installer/MynAssistantWizardSmall.bmp"
           if (-not (Test-Path $licensePath)) { throw "License agreement file is missing: $licensePath" }
           if (-not (Test-Path $iconPath)) { throw "MynAssistant application icon is missing: $iconPath" }
-
-          # Generate only the 55x58 top-right wizard logo from the same app ICO.
-          # Avoids the old large custom wizard artwork that had scaling/rendering issues.
-          Add-Type -AssemblyName System.Drawing
-          $icon = [System.Drawing.Icon]::new((Resolve-Path $iconPath).Path)
-          $sourceBitmap = $icon.ToBitmap()
-          $wizardBitmap = [System.Drawing.Bitmap]::new(
-            55, 58, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb
-          )
-          $graphics = [System.Drawing.Graphics]::FromImage($wizardBitmap)
-          $wizardSmallImage = "build/installer/MynAssistantWizardSmall.bmp"
-          try {
-            $graphics.Clear([System.Drawing.Color]::White)
-            $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-            $scale = [Math]::Min(48.0 / $sourceBitmap.Width, 50.0 / $sourceBitmap.Height)
-            $logoWidth = [Math]::Max(1, [int][Math]::Round($sourceBitmap.Width * $scale))
-            $logoHeight = [Math]::Max(1, [int][Math]::Round($sourceBitmap.Height * $scale))
-            $logoX = [int](($wizardBitmap.Width - $logoWidth) / 2)
-            $logoY = [int](($wizardBitmap.Height - $logoHeight) / 2)
-            $graphics.DrawImage(
-              $sourceBitmap,
-              [System.Drawing.Rectangle]::new($logoX, $logoY, $logoWidth, $logoHeight)
-            )
-            $wizardBitmap.Save($wizardSmallImage, [System.Drawing.Imaging.ImageFormat]::Bmp)
-          }
-          finally {
-            $graphics.Dispose()
-            $wizardBitmap.Dispose()
-            $sourceBitmap.Dispose()
-            $icon.Dispose()
-          }
           if (-not (Test-Path $wizardSmallImage) -or (Get-Item $wizardSmallImage).Length -lt 100) {
-            throw "MynAssistant wizard icon could not be generated."
+            throw "The 55x58 installer wizard image was not generated from the shared PNG logo."
           }
 
           $compilerCandidates = @(

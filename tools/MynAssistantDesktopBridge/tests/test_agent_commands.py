@@ -186,5 +186,29 @@ class ScreenFrameSizeTests(unittest.TestCase):
         )
 
 
+class RemoteKeyboardCommandTests(unittest.TestCase):
+    def test_mobile_keyboard_commands_are_supported(self):
+        for command in ("type_text", "key_backspace", "key_enter"):
+            with self.subTest(command=command):
+                self.assertTrue(agent.command_is_supported(command))
+
+    def test_type_text_uses_unicode_path_and_optional_enter(self):
+        with patch.object(agent, "send_unicode_text") as send_unicode:
+            with patch.object(agent.pyautogui, "press") as press:
+                result = agent.execute_command(
+                    "type_text",
+                    {"text": "Türkçe karakterler: ğüşiöç", "pressEnter": True},
+                )
+        self.assertIn("Metin bilgisayara yazıldı", result)
+        send_unicode.assert_called_once_with("Türkçe karakterler: ğüşiöç")
+        press.assert_called_once_with("enter")
+
+    def test_type_text_enforces_length_limit(self):
+        with patch.object(agent, "send_unicode_text") as send_unicode:
+            result = agent.execute_command("type_text", {"text": "x" * 1001})
+        self.assertIn("1000 karakter", result)
+        send_unicode.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
