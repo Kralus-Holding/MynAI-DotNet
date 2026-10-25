@@ -75,6 +75,31 @@ Name: "{autodesktop}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingDi
 Filename: "{app}\{#MyAppExeName}"; Description: "MynAssistant'ı şimdi başlat"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+procedure StopProcessByName(const ImageName: String);
+var
+  ResultCode: Integer;
+begin
+  // First request a normal close (important for the main WPF window), then
+  // terminate as a fallback because the background helpers have no UI to close.
+  Exec(ExpandConstant('{sys}\\taskkill.exe'), '/IM ' + ImageName + ' /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(750);
+  Exec(ExpandConstant('{sys}\\taskkill.exe'), '/F /T /IM ' + ImageName, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(250);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+
+  // Stop the UI first so it cannot start its child processes again while
+  // the installer is preparing to replace files. CloseApplications runs after
+  // PrepareToInstall, so Restart Manager sees the target files released.
+  StopProcessByName('{#MyAppExeName}');
+  StopProcessByName('MynAssistantDesktopBridge.exe');
+  StopProcessByName('{#MyAgentExeName}');
+  StopProcessByName('MynAI.Agent.exe');
+end;
+
 function NormalizeInstallDir(Path: String): String;
 begin
   Result := ExpandFileName(Path);
