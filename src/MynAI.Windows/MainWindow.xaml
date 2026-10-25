@@ -317,8 +317,8 @@
 
             <Grid x:Name="MainHeaderGrid"
                   Grid.Row="0"
-                  SizeChanged="MainHeaderGrid_SizeChanged">
-                <Grid.Margin>0,0,0,5</Grid.Margin>
+                  SizeChanged="MainHeaderGrid_SizeChanged"
+                  Margin="0,0,0,5">
 
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
