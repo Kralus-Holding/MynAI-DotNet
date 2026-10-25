@@ -74,7 +74,7 @@ public partial class MainWindow : Window
         var path = Path.Combine(
             AppContext.BaseDirectory,
             "Resources",
-            "mynassistant.png);
+            "mynassistant.png");
 
         if (!File.Exists(path))
         {
