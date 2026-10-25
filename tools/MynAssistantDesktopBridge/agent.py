@@ -806,10 +806,12 @@ def main() -> int:
     try:
         return run_agent()
     except FileNotFoundError as exc:
+        write_local_status(None, None, "error")
         print(f"\n[Kurulum] {exc}")
         input("\nÇıkmak için Enter'a bas...")
         return 2
     except Exception as exc:
+        write_local_status(None, None, "error")
         print(f"\n[Hata] {exc}")
         input("\nÇıkmak için Enter'a bas...")
         return 1
