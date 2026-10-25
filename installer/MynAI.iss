@@ -1,5 +1,5 @@
 #define MyAppName "MynAssistant"
-#define MyAppVersion "0.1.3"
+#define MyAppVersion "0.1.4"
 #define MyAppPublisher "MynKralus"
 #define MyAppExeName "MynAssistant.exe"
 #define MyAgentExeName "MynAgent.exe"
@@ -15,15 +15,15 @@ DefaultDirName={localappdata}\Programs\MynAssistant
 UsePreviousAppDir=yes
 DefaultGroupName=MynAssistant
 UninstallDisplayIcon={app}\{#MyAppExeName}
-SetupIconFile=..\src\MynAI.Windows\Resources\myn.ico
+SetupIconFile=..\src\MynAI.Windows\Resources\mynassistant.ico
 LicenseFile=LICENSE-AGREEMENT.rtf
 WizardSmallImageFile=..\build\installer\MynAssistantWizardSmall.bmp
 WizardSmallImageBackColor=clWhite
 
 OutputDir=..\build\installer
 OutputBaseFilename=MynAssistant-Setup
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 WizardStyle=modern
@@ -35,7 +35,7 @@ VersionInfoCompany=MynKralus
 VersionInfoDescription=MynAssistant Windows Installer
 VersionInfoProductName=MynAssistant
 VersionInfoProductVersion={#MyAppVersion}
-VersionInfoVersion=0.1.3.0
+VersionInfoVersion=0.1.4.0
 VersionInfoCopyright=Copyright (C) MynKralus
 
 [Languages]
@@ -44,6 +44,7 @@ Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Masaüstüne kısayol oluştur"; GroupDescription: "Ek kısayollar:"; Flags: unchecked
+Name: "desktopbridge"; Description: "Telefon ve web panelinden PC bağlantısını etkinleştir (Google hesabıyla giriş gerekir)"; GroupDescription: "MynAssistant özellikleri:"
 
 [Files]
 Source: "..\build\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -57,8 +58,25 @@ Name: "{autodesktop}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingDi
 [Run]
 Filename: "{app}\Agent\{#MyAgentExeName}"; Description: "MynAgent arka plan hizmetini başlat"; WorkingDir: "{app}\Agent"; Flags: nowait postinstall skipifsilent
 Filename: "{app}\{#MyAppExeName}"; Description: "MynAssistant'ı şimdi başlat"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\MynAssistantDesktopBridge.exe"; Description: "Telefon-PC bağlantısını başlat"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent; Tasks: desktopbridge
 
 [Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  BridgePath: string;
+begin
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('desktopbridge') then
+  begin
+    BridgePath := ExpandConstant('{app}\MynAssistantDesktopBridge.exe');
+    if FileExists(BridgePath) then
+      RegWriteStringValue(
+        HKCU,
+        'Software\Microsoft\Windows\CurrentVersion\Run',
+        'MynAssistant.DesktopBridge',
+        '"' + BridgePath + '"');
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   ResultCode: Integer;

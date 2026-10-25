@@ -1,4 +1,6 @@
 import importlib.util
+import io
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -184,6 +186,28 @@ class ScreenFrameSizeTests(unittest.TestCase):
             attempts,
             [(1280, 720), (960, 540), (800, 450), (640, 360)],
         )
+
+
+class BridgeStartupTests(unittest.TestCase):
+    def test_hidden_bridge_does_not_prompt_for_startup(self):
+        with patch.object(agent.sys, "stdin", new=io.StringIO("")), patch("builtins.input") as prompt:
+            agent.ask_install_startup()
+        prompt.assert_not_called()
+
+    def test_background_logging_creates_log_when_console_streams_are_missing(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            log_path = Path(temporary_directory) / "bridge.log"
+            with patch.object(agent, "APP_DATA", Path(temporary_directory)):
+                with patch.object(agent.sys, "stdout", None), patch.object(agent.sys, "stderr", None):
+                    agent.configure_background_logging()
+                    self.assertIsNotNone(agent.sys.stdout)
+                    self.assertIs(agent.sys.stderr, agent.sys.stdout)
+                    try:
+                        print("background bridge test")
+                        agent.sys.stdout.flush()
+                        self.assertIn("background bridge test", log_path.read_text(encoding="utf-8"))
+                    finally:
+                        agent.sys.stdout.close()
 
 
 if __name__ == "__main__":

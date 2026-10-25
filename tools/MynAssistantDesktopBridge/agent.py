@@ -27,7 +27,7 @@ IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1"
 SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token"
 FIRESTORE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents"
 SCOPES = ["openid", "email", "profile"]
-AGENT_VERSION = "0.2.0"
+AGENT_VERSION = "0.2.1"
 POLL_SECONDS = 2.0
 COMMAND_POLL_SECONDS = 2.0
 SCREEN_CHECK_SECONDS = 8.0
@@ -614,6 +614,10 @@ def command_is_supported(command: str) -> bool:
 
 
 def ask_install_startup() -> None:
+    # The packaged bridge runs as a hidden child process. Startup preference is
+    # controlled by the installer / WPF settings, not an invisible console prompt.
+    if not sys.stdin or not getattr(sys.stdin, "isatty", lambda: False)():
+        return
     try:
         answer = input("MynAssistant Agent Windows açılışında otomatik başlasın mı? [E/h]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):
@@ -763,7 +767,30 @@ def run_agent() -> int:
     return 0
 
 
+def configure_background_logging() -> None:
+    # A --noconsole PyInstaller build has no terminal at Windows logon.
+    # Keep diagnostics in the per-user log used by DesktopBridgeStartupManager.
+    try:
+        APP_DATA.mkdir(parents=True, exist_ok=True)
+        if sys.stdout is None:
+            sys.stdout = open(APP_DATA / "bridge.log", "a", encoding="utf-8", buffering=1)
+        if sys.stderr is None:
+            sys.stderr = sys.stdout
+    except Exception:
+        # A logging failure must not prevent the bridge from starting.
+        pass
+
+
+def wait_for_enter_if_interactive() -> None:
+    if sys.stdin and getattr(sys.stdin, "isatty", lambda: False)():
+        try:
+            input("\nÇıkmak için Enter'a bas...")
+        except (EOFError, KeyboardInterrupt):
+            pass
+
+
 def main() -> int:
+    configure_background_logging()
     if os.name != "nt":
         print("MynAssistant Desktop Agent yalnızca Windows üzerinde çalışır.")
         return 2
@@ -771,11 +798,11 @@ def main() -> int:
         return run_agent()
     except FileNotFoundError as exc:
         print(f"\n[Kurulum] {exc}")
-        input("\nÇıkmak için Enter'a bas...")
+        wait_for_enter_if_interactive()
         return 2
     except Exception as exc:
         print(f"\n[Hata] {exc}")
-        input("\nÇıkmak için Enter'a bas...")
+        wait_for_enter_if_interactive()
         return 1
 
 

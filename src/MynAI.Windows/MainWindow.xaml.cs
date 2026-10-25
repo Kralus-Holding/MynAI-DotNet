@@ -74,7 +74,7 @@ public partial class MainWindow : Window
         var path = Path.Combine(
             AppContext.BaseDirectory,
             "Resources",
-            "myn.jpg");
+            "mynassistant.png");
 
         if (!File.Exists(path))
         {
@@ -94,7 +94,7 @@ public partial class MainWindow : Window
 
             LogoImage.Source = image;
 
-            // Use the already-supported JPEG for the WPF window icon.
+            // Load the current PNG branding as the WPF window icon.
             // The .ico remains the executable/tray icon, but is not decoded
             // by WPF's BitmapImage converter during XAML initialization.
             Icon = image;
@@ -222,7 +222,7 @@ public partial class MainWindow : Window
             var resource =
                 System.Windows.Application.GetResourceStream(
                     new Uri(
-                        "Resources/myn.ico",
+                        "Resources/mynassistant.ico",
                         UriKind.Relative));
 
             if (resource is null)
