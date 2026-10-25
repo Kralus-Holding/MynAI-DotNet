@@ -347,7 +347,7 @@ public partial class SettingsWindow : Window
         DesktopBridgeStatusText.Text = connected
             ? "Bağlandı — PC Android uygulaması için çevrimiçi"
             : authRequired
-                ? "Telefon işlemleri için giriş gerekli"
+                ? "Telefon-PC bağlantısı için eşleştirme gerekiyor"
                 : hasError
                     ? "Bağlantı hatası"
                     : connecting
@@ -356,7 +356,7 @@ public partial class SettingsWindow : Window
                             ? "Köprü çalışıyor — cihaz kaydı bekleniyor"
                             : executablePath is null
                                 ? "Bridge bileşeni bulunamadı"
-                                : "Hesap hazır — telefon-PC bağlantısı başlatılabilir";
+                                : "Hazır — telefon-PC bağlantısı bekleniyor";
 
         var color = connected
             ? Colors.LightGreen
@@ -374,7 +374,7 @@ public partial class SettingsWindow : Window
             isFresh && !string.IsNullOrWhiteSpace(runtime?.Message)
                 ? runtime.Message
                 : !hasSession
-                    ? "Telefon-PC bağlantısı için bu bilgisayarda kayıtlı oturum gerekli. İlk eşleştirme sunucu akışı bu sürümde henüz mevcut değil."
+                    ? "Bu bilgisayarda kullanılabilir telefon-PC oturumu bulunamadı. Güvenli eşleştirme tamamlanana kadar bağlantı çevrimdışı kalır."
                     : hasError
                         ? "Köprü başlatılamadı. Agent günlüklerini ve Windows güvenlik günlüklerini kontrol edin."
                         : "Yerel Agent bu hesaptan bağımsız çalışır.";
