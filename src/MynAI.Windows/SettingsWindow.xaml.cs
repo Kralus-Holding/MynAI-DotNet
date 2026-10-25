@@ -705,79 +705,52 @@ public partial class SettingsWindow : Window
     {
         try
         {
-            // The local Agent is mandatory and independent from account login.
             AgentStartupManager.EnsureAutomaticStartup();
 
-            DesktopBridgeStartupManager.SetEnabled(
-                FirebaseDesktopSessionStore.HasValidStoredSession()
-                && _settingsStore.Load().StartDesktopBridgeWithWindows);
+            var settings = _settingsStore.Load();
+            var startDesktopBridge = settings.StartDesktopBridgeWithWindows
+                && FirebaseDesktopSessionStore.HasValidStoredSession();
 
-            var settings =
-                _settingsStore.Load();
-
-            settings.StartAgentWithWindows = true;
-
-            settings.StartDesktopBridgeWithWindows =
-                DesktopBridgeStartupManager.IsEnabled();
-
-            settings.WindowsNotifications =
-                NotificationsCheckBox.IsChecked == true;
-
-            settings.MicrophoneEnabled =
-                MicrophoneCheckBox.IsChecked == true;
-
-            settings.CameraEnabled =
-                CameraCheckBox.IsChecked == true;
-
-            settings.BringToFrontHotkey =
-                HotkeyTextBox.Text.Trim();
-
-            _settingsStore.Save(
-                settings);
-
-            if (!GlobalHotkeyService.Apply(
-                    settings.BringToFrontHotkey,
-                    out var hotkeyError))
+            if (startDesktopBridge)
             {
-                HotkeyInfoText.Text =
-                    hotkeyError;
-
-                HotkeyInfoText.Foreground =
-                    new SolidColorBrush(
-                        Colors.IndianRed);
+                DesktopBridgeStartupManager.SetEnabled(true);
             }
             else
             {
-                HotkeyInfoText.Text =
-                    string.IsNullOrWhiteSpace(
-                        settings.BringToFrontHotkey)
-                        ? "Global kısayol kapalı."
-                        : "Global kısayol aktif.";
-
-                HotkeyInfoText.Foreground =
-                    new SolidColorBrush(
-                        Colors.LightGreen);
+                DesktopBridgeStartupManager.SetEnabled(false);
             }
 
-            SetSaveStatus(
-                "Ayarlar kaydedildi.",
-                Colors.LightGreen);
+            settings.StartAgentWithWindows = true;
+            settings.StartDesktopBridgeWithWindows = startDesktopBridge;
+            settings.WindowsNotifications = NotificationsCheckBox.IsChecked == true;
+            settings.MicrophoneEnabled = MicrophoneCheckBox.IsChecked == true;
+            settings.CameraEnabled = CameraCheckBox.IsChecked == true;
+            settings.BringToFrontHotkey = HotkeyTextBox.Text.Trim();
+            _settingsStore.Save(settings);
+
+            if (!GlobalHotkeyService.Apply(settings.BringToFrontHotkey, out var hotkeyError))
+            {
+                HotkeyInfoText.Text = hotkeyError;
+                HotkeyInfoText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            }
+            else
+            {
+                HotkeyInfoText.Text = string.IsNullOrWhiteSpace(settings.BringToFrontHotkey)
+                    ? "Global kısayol kapalı."
+                    : "Global kısayol aktif.";
+                HotkeyInfoText.Foreground = new SolidColorBrush(Colors.LightGreen);
+            }
+
+            SetSaveStatus("Ayarlar kaydedildi.", Colors.LightGreen);
         }
         catch (Exception ex)
         {
-            SetSaveStatus(
-                "Kaydedilemedi.",
-                Colors.IndianRed);
-
-            MessageBox.Show(
-                $"Ayarlar kaydedilemedi:
-
-{ex.Message}",
-                "MynAssistant",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            SetSaveStatus("Kaydedilemedi.", Colors.IndianRed);
+            MessageBox.Show($"Ayarlar kaydedilemedi:\n\n{ex.Message}",
+                "MynAssistant", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
+
     private void SetSaveStatus(
         string text,
         Color color)
