@@ -24,15 +24,22 @@ public static class MynAssistantBranding
             : Path.Combine(ResourceDirectory, "myn.jpg");
     }
 
+    public static string GetKrLogoPath() =>
+        Path.Combine(ResourceDirectory, "kr-kralus.png");
+
     private static string GetSelectedLogoPath(MynAISettings settings)
     {
-        var preferred = settings.LogoPreset switch
+        var preset = (settings.LogoPreset ?? "kr").ToLowerInvariant();
+        // Migrate old "black" preference to the user's actual KR/Kralus logo.
+        if (preset == "black")
+            preset = "kr";
+
+        var preferred = preset switch
         {
             "app" => GetAppIconPath(),
             "custom" when !string.IsNullOrWhiteSpace(settings.CustomLogoPath)
-                         && File.Exists(settings.CustomLogoPath) =>
-                settings.CustomLogoPath,
-            _ => Path.Combine(ResourceDirectory, "myn-dark.png")
+                         && File.Exists(settings.CustomLogoPath) => settings.CustomLogoPath,
+            _ => GetKrLogoPath()
         };
 
         if (File.Exists(preferred))
@@ -40,8 +47,9 @@ public static class MynAssistantBranding
 
         var fallback = new[]
         {
-            Path.Combine(ResourceDirectory, "myn-dark.png"),
+            GetKrLogoPath(),
             Path.Combine(ResourceDirectory, "myn.png"),
+            Path.Combine(ResourceDirectory, "myn-dark.png"),
             Path.Combine(ResourceDirectory, "myn.jpg")
         }.FirstOrDefault(File.Exists);
 
@@ -56,8 +64,9 @@ public static class MynAssistantBranding
 
         foreach (var fallback in new[]
         {
-            Path.Combine(ResourceDirectory, "myn-dark.png"),
+            GetKrLogoPath(),
             Path.Combine(ResourceDirectory, "myn.png"),
+            Path.Combine(ResourceDirectory, "myn-dark.png"),
             Path.Combine(ResourceDirectory, "myn.jpg")
         })
         {
