@@ -256,7 +256,7 @@
                             BorderThickness="1"
                             Margin="4,2,0,14">
 
-                        <Image Source="Resources/mynassistant.png"
+                        <Image Source="Resources/mynassistant-app-icon.png"
                                Stretch="UniformToFill"/>
 
                     </Border>
@@ -608,7 +608,7 @@
                                         BorderThickness="1">
 
                                     <Image x:Name="GooglePhoto"
-                                           Source="Resources/mynassistant.png"
+                                           Source="Resources/mynassistant-app-icon.png"
                                            Stretch="UniformToFill"/>
 
                                 </Border>
