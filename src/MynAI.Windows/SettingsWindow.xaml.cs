@@ -150,7 +150,7 @@ public partial class SettingsWindow : Window
 
     private void ShowPage(
         UIElement page,
-        Button selectedButton)
+        System.Windows.Controls.Button selectedButton)
     {
         GeneralPanel.Visibility = Visibility.Collapsed;
         AgentPanel.Visibility = Visibility.Collapsed;
