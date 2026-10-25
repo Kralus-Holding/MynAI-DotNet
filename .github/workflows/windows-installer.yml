@@ -59,6 +59,82 @@ jobs:
             throw "Desktop Bridge EXE was not created."
           }
 
+      - name: Generate unified MynAssistant Windows icons from the canonical PNG
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.Drawing
+
+          $sourcePath = "src/MynAI.Windows/Resources/mynassistant.png"
+          $appIconPath = "src/MynAI.Windows/Resources/mynassistant-app-icon.png"
+          $icoPath = "src/MynAI.Windows/Resources/myn.ico"
+          if (-not (Test-Path $sourcePath)) {
+            throw "Canonical transparent MynAssistant logo is missing: $sourcePath"
+          }
+
+          # Generate a full, navy-backed application icon from the same mark used by Android.
+          # Do not convert the old ICO with Icon.ToBitmap(); that conversion caused the 0x8000000B failure.
+          $sourceImage = [System.Drawing.Image]::FromFile((Resolve-Path $sourcePath).Path)
+          $appIcon = [System.Drawing.Bitmap]::new(128, 128, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+          $graphics = [System.Drawing.Graphics]::FromImage($appIcon)
+          try {
+            $graphics.Clear([System.Drawing.Color]::FromArgb(7, 11, 31))
+            $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+            $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+            $scale = [Math]::Min(108.0 / $sourceImage.Width, 108.0 / $sourceImage.Height)
+            $logoWidth = [Math]::Max(1, [int][Math]::Round($sourceImage.Width * $scale))
+            $logoHeight = [Math]::Max(1, [int][Math]::Round($sourceImage.Height * $scale))
+            $logoX = [int](($appIcon.Width - $logoWidth) / 2)
+            $logoY = [int](($appIcon.Height - $logoHeight) / 2)
+            $graphics.DrawImage(
+              $sourceImage,
+              [System.Drawing.Rectangle]::new($logoX, $logoY, $logoWidth, $logoHeight)
+            )
+            $appIcon.Save($appIconPath, [System.Drawing.Imaging.ImageFormat]::Png)
+          }
+          finally {
+            $graphics.Dispose()
+            $appIcon.Dispose()
+            $sourceImage.Dispose()
+          }
+
+          # Write a standard one-frame PNG-backed ICO without decoding an ICO frame.
+          $pngBytes = [System.IO.File]::ReadAllBytes((Resolve-Path $appIconPath).Path)
+          $memory = [System.IO.MemoryStream]::new()
+          $writer = [System.IO.BinaryWriter]::new($memory)
+          try {
+            $writer.Write([UInt16]0) # Reserved
+            $writer.Write([UInt16]1) # ICO resource type
+            $writer.Write([UInt16]1) # One image
+            $writer.Write([Byte]128)
+            $writer.Write([Byte]128)
+            $writer.Write([Byte]0)
+            $writer.Write([Byte]0)
+            $writer.Write([UInt16]1)
+            $writer.Write([UInt16]32)
+            $writer.Write([UInt32]$pngBytes.Length)
+            $writer.Write([UInt32]22)
+            $writer.Write($pngBytes)
+            $writer.Flush()
+            [System.IO.File]::WriteAllBytes($icoPath, $memory.ToArray())
+          }
+          finally {
+            $writer.Dispose()
+            $memory.Dispose()
+          }
+
+          $icoBytes = [System.IO.File]::ReadAllBytes((Resolve-Path $icoPath).Path)
+          if ($icoBytes.Length -lt 100 -or
+              $icoBytes[0] -ne 0 -or $icoBytes[1] -ne 0 -or
+              $icoBytes[2] -ne 1 -or $icoBytes[3] -ne 0 -or
+              $icoBytes[4] -ne 1 -or $icoBytes[5] -ne 0) {
+            throw "Generated MynAssistant ICO failed structural validation."
+          }
+          Write-Host "Generated unified app icon: $appIconPath"
+          Write-Host "Generated executable/tray/installer ICO: $icoPath"
+          Write-Host "Icon PNG bytes: $((Get-Item $appIconPath).Length); ICO bytes: $($icoBytes.Length)"
+          
       - name: Verify WPF window icon loading remains non-fatal
         shell: pwsh
         run: |
