@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -218,57 +219,43 @@ class RemoteKeyboardCommandTests(unittest.TestCase):
             self.assertTrue(agent.command_is_supported(command))
 
 
-class OAuthConfigPathTests(unittest.TestCase):
-    def _make_config_tree(self, root: Path):
-        install_dir = root / "install"
-        app_data = root / "local" / "MynAssistant" / "DesktopAgent"
-        google_dir = root / "local" / "MynAssistant" / "Google"
-        install_dir.mkdir(parents=True)
-        app_data.mkdir(parents=True)
-        google_dir.mkdir(parents=True)
-        sidecar = install_dir / "client_secret.json"
-        user_config = google_dir / "client_secret.json"
-        return install_dir, app_data, sidecar, user_config
+class FirebaseLoginRequiredTests(unittest.TestCase):
+    def test_bridge_without_saved_session_requests_app_login_without_oauth_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            status_path = root / "status.json"
+            with mock.patch.object(agent, "APP_DATA", root), \
+                 mock.patch.object(agent, "STATUS_FILE", status_path), \
+                 mock.patch.object(agent, "SESSION_FILE", root / "session.bin"), \
+                 mock.patch.object(agent, "load_protected_session", return_value=None), \
+                 mock.patch.object(agent.requests, "post") as post:
+                result = agent.run_agent()
 
-    def test_per_user_google_config_is_preferred_over_sidecar(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as temp_dir:
-            install_dir, app_data, sidecar, user_config = self._make_config_tree(Path(temp_dir))
-            sidecar.write_text("{}", encoding="utf-8")
-            user_config.write_text("{}", encoding="utf-8")
-            with mock.patch.object(agent, "running_directory", return_value=install_dir):
-                with mock.patch.object(agent, "APP_DATA", app_data):
-                    self.assertEqual(agent.find_oauth_credentials_path(), user_config)
+            self.assertEqual(result, 2)
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual(status["state"], "auth_required")
+            self.assertIn("Hesap bölümünden giriş", status["message"])
+            post.assert_not_called()
 
-    def test_side_by_side_config_is_development_fallback(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as temp_dir:
-            install_dir, app_data, sidecar, user_config = self._make_config_tree(Path(temp_dir))
-            sidecar.write_text("{}", encoding="utf-8")
-            with mock.patch.object(agent, "running_directory", return_value=install_dir):
-                with mock.patch.object(agent, "APP_DATA", app_data):
-                    self.assertEqual(agent.find_oauth_credentials_path(), sidecar)
+    def test_expired_refresh_token_requests_account_login_without_browser_oauth(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            status_path = root / "status.json"
+            stored = {"uid": "test-user", "refreshToken": "expired-token", "email": "test@example.com"}
+            with mock.patch.object(agent, "APP_DATA", root), \
+                 mock.patch.object(agent, "STATUS_FILE", status_path), \
+                 mock.patch.object(agent, "SESSION_FILE", root / "session.bin"), \
+                 mock.patch.object(agent, "load_protected_session", return_value=stored), \
+                 mock.patch.object(agent, "FirebaseSession", side_effect=agent.FirebaseSessionExpiredError("expired")), \
+                 mock.patch.object(agent, "delete_protected_session") as delete_session:
+                result = agent.run_agent()
 
-    def test_legacy_mynai_google_config_is_supported(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as temp_dir:
-            install_dir, app_data, sidecar, _user_config = self._make_config_tree(Path(temp_dir))
-            legacy_google_dir = Path(temp_dir) / "local" / "MynAI" / "Google"
-            legacy_google_dir.mkdir(parents=True)
-            legacy_config = legacy_google_dir / "client_secret.json"
-            legacy_config.write_text("{}", encoding="utf-8")
-            with mock.patch.object(agent, "running_directory", return_value=install_dir):
-                with mock.patch.object(agent, "APP_DATA", app_data):
-                    self.assertEqual(agent.find_oauth_credentials_path(), legacy_config)
-
-    def test_missing_oauth_config_returns_none(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as temp_dir:
-            install_dir, app_data, _sidecar, _user_config = self._make_config_tree(Path(temp_dir))
-            with mock.patch.object(agent, "running_directory", return_value=install_dir):
-                with mock.patch.object(agent, "APP_DATA", app_data):
-                    self.assertIsNone(agent.find_oauth_credentials_path())
+            self.assertEqual(result, 2)
+            delete_session.assert_called_once()
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual(status["state"], "auth_required")
+            self.assertIn("Hesap bölümünden giriş", status["message"])
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -54,7 +54,6 @@ Name: "{autoprograms}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingD
 Name: "{autodesktop}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\Agent\{#MyAgentExeName}"; Description: "MynAgent arka plan hizmetini başlat"; WorkingDir: "{app}\Agent"; Flags: nowait postinstall skipifsilent runhidden
 Filename: "{app}\{#MyAppExeName}"; Description: "MynAssistant'ı şimdi başlat"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 
 [Code]

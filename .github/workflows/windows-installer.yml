@@ -58,7 +58,7 @@ jobs:
         shell: pwsh
         run: |
           $bridgePath = "tools/MynAssistantDesktopBridge/agent.py"
-          foreach ($pattern in @("claim_pending_command", "claimToken", '"type_text"', '"key_backspace"', '"key_enter"', "configure_packaged_logging")) {
+          foreach ($pattern in @("claim_pending_command", "claimToken", '"type_text"', '"key_backspace"', '"key_enter"', "configure_packaged_logging", '"auth_required"', "FirebaseSessionExpiredError")) {
             if (-not (Select-String -Path $bridgePath -Pattern $pattern -Quiet)) {
               throw "Windows bridge is missing required feature: $pattern"
             }
@@ -73,7 +73,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build/bridge-dist, build/pyinstaller-work, build/pyinstaller-spec | Out-Null
-          pyinstaller --noconfirm --clean --onefile --noconsole --name MynAssistantDesktopBridge --distpath build/bridge-dist --workpath build/pyinstaller-work --specpath build/pyinstaller-spec --collect-all google_auth_oauthlib --collect-all google.auth --hidden-import win32crypt tools/MynAssistantDesktopBridge/agent.py
+          pyinstaller --noconfirm --clean --onefile --noconsole --name MynAssistantDesktopBridge --distpath build/bridge-dist --workpath build/pyinstaller-work --specpath build/pyinstaller-spec --hidden-import win32crypt tools/MynAssistantDesktopBridge/agent.py
           if (-not (Test-Path "build/bridge-dist/MynAssistantDesktopBridge.exe")) {
             throw "Desktop Bridge EXE was not created."
           }
@@ -99,8 +99,14 @@ jobs:
           if (-not (Select-String -Path "src/MynAI.Agent/MynAI.Agent.csproj" -Pattern '<OutputType>WinExe</OutputType>' -Quiet)) {
             throw "MynAgent must not allocate a visible console window."
           }
-          if (Select-String -Path "installer/MynAI.iss" -Pattern 'build/config/client_secret.json|Tasks: pcbridge' -Quiet) {
-            throw "The installer must not embed a builder OAuth JSON or auto-start a not-yet-configured bridge."
+          if (Select-String -Path "installer/MynAI.iss" -Pattern 'MynAgent arka plan hizmetini başlat|build/config/client_secret.json|Tasks: pcbridge' -Quiet) {
+            throw "The installer must not expose an Agent launch option or embed a builder OAuth JSON."
+          }
+          if (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml" -Pattern 'OAuth JSON dosyasını seç|Google OAuth yapılandırması' -Quiet) {
+            throw "Customers must not be asked to provide an OAuth JSON file."
+          }
+          if (Select-String -Path "tools/MynAssistantDesktopBridge/agent.py" -Pattern 'client_secret.json|InstalledAppFlow|ask_install_startup|google_oauth_credentials' -Quiet) {
+            throw "The phone-PC bridge must use the stored Firebase session, not interactive OAuth JSON setup."
           }
           if (-not (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml.cs" -Pattern 'LoadWindowIconSafely' -Quiet)) {
             throw "The settings-window icon must use the safe loader."
@@ -146,6 +152,7 @@ jobs:
             "src/MynAI.Windows/Resources/myn.jpg",
             "src/MynAI.Windows/Resources/myn.png",
             "src/MynAI.Windows/Resources/myn-dark.png",
+            "src/MynAI.Windows/Resources/kr-kralus.png",
             "build/installer/MynAssistantWizardSmall.bmp",
             "build/publish/MynAssistant.exe",
             "build/publish/MynAssistantDesktopBridge.exe",
@@ -190,13 +197,51 @@ jobs:
           Write-Host "Installer size bytes: $($installerInfo.Length)"
           Write-Host "Installer SHA-256: $installerSha256"
 
+          foreach ($signaturePath in @(
+            "build/publish/MynAssistant.exe",
+            "build/publish/MynAssistantDesktopBridge.exe",
+            "build/agent-publish/MynAgent.exe",
+            "build/installer/MynAssistant-Setup.exe"
+          )) {
+            $signature = Get-AuthenticodeSignature -FilePath $signaturePath
+            $signer = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { "(unsigned)" }
+            Write-Host "Authenticode: file=$signaturePath status=$($signature.Status) signer=$signer"
+            if ($signature.Status -ne "Valid") {
+              Write-Warning "$signaturePath is not Authenticode-verified. Windows Application Control may reject it; signing/trust must be validated on the target policy."
+            }
+          }
+
+          $distributionDir = "build/distribution/MynAssistant-Windows-Installer"
+          New-Item -ItemType Directory -Force -Path $distributionDir | Out-Null
+          Copy-Item "build/installer/MynAssistant-Setup.exe" "$distributionDir/MynAssistant-Setup.exe" -Force
+          @(
+            "MynAssistant Windows Kurulum Paketi",
+            "",
+            "1. MynAssistant-Setup.exe dosyasını çalıştırın.",
+            "2. Kurulum varsayılan olarak kullanıcı Programs klasörüne yapılır.",
+            "3. MynAgent uygulama açılışında arka planda otomatik başlatılır; kurulum ekranında ayrı başlatma seçeneği yoktur.",
+            "4. Telefon-PC işlemleri için Ayarlar > Hesap bölümünde Android uygulamasında kullandığınız Firebase e-posta/şifre hesabıyla giriş yapın.",
+            "5. Müşteriden client_secret.json veya ayrı logo dosyası istenmez.",
+            "",
+            "Not: Kuruluşunuz Windows Application Control politikasını kullanıyorsa imzasız dosyalar engellenebilir. Güvenlik politikasını kapatmayın; yayıncı imzası/Code Integrity günlükleri yöneticiniz tarafından doğrulanmalıdır."
+          ) | Set-Content -Path "$distributionDir/README-Kurulum.txt" -Encoding UTF8
+          $zipPath = "build/distribution/MynAssistant-Windows-Installer.zip"
+          Compress-Archive -Path "$distributionDir/*" -DestinationPath $zipPath -Force
+          $zipInfo = Get-Item $zipPath
+          if ($zipInfo.Length -lt 50MB) {
+            throw "Distribution ZIP is unexpectedly small; installer may be missing."
+          }
+          Write-Host "Distribution ZIP: $((Resolve-Path $zipPath).Path)"
+          Write-Host "Distribution ZIP size bytes: $($zipInfo.Length)"
+          Write-Host "Distribution ZIP SHA-256: $((Get-FileHash $zipPath -Algorithm SHA256).Hash)"
+
       - name: Upload Windows installer as Actions artifact
         id: upload_installer
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: MynAssistant-Windows-Installer
-          path: build/installer/MynAssistant-Setup.exe
+          path: build/distribution/MynAssistant-Windows-Installer.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -245,18 +290,18 @@ jobs:
           } else {
             $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
             foreach ($asset in $assets) {
-              if ($asset.name -eq "MynAssistant-Setup.exe") {
+              if ($asset.name -eq "MynAssistant-Windows-Installer.zip") {
                 Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
               }
             }
           }
 
-          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup.exe").Path
-          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup.exe"
+          $installerPath = (Resolve-Path "build/distribution/MynAssistant-Windows-Installer.zip").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Windows-Installer.zip"
           $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
           if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
-            throw "Release asset upload could not be verified."
+            throw "Distribution ZIP upload could not be verified."
           }
 
           Write-Host "Installer fallback release published: $($release.html_url)"
-          Write-Host "Verified installer download URL: $($uploadedAsset.browser_download_url)"
+          Write-Host "Verified customer ZIP URL: $($uploadedAsset.browser_download_url)"
