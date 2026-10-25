@@ -258,37 +258,55 @@ public partial class SettingsWindow : Window
         var executablePath = DesktopBridgeStartupManager.TryGetExecutablePath();
         var oauthPath = DesktopBridgeStartupManager.GetOAuthConfigPath();
         var hasOAuthConfig = File.Exists(oauthPath);
+        var runtime = DesktopBridgeStartupManager.ReadRuntimeStatus();
+        var isFresh = runtime is not null
+            && DateTimeOffset.Now - runtime.UpdatedAt < TimeSpan.FromSeconds(90);
+        var state = isFresh ? runtime?.State?.ToLowerInvariant() : null;
 
-        DesktopBridgeStatusText.Text = running
-            ? "Çalışıyor"
-            : executablePath is null
-                ? "Bridge bileşeni bulunamadı"
-                : !hasOAuthConfig
-                    ? "Google OAuth yapılandırması eksik"
-                    : "Hazır — bağlantı başlatılmadı";
+        var connected = running && state == "online";
+        var hasError = state == "error";
+        var connecting = running && (state == "starting" || state == "connecting");
 
-        DesktopBridgeStatusText.Foreground =
-            new SolidColorBrush(
-                running
-                    ? Colors.LightGreen
-                    : executablePath is not null && hasOAuthConfig
-                        ? Colors.Goldenrod
-                        : Colors.IndianRed);
+        DesktopBridgeStatusText.Text = connected
+            ? "Bağlandı — PC Firestore'da çevrimiçi"
+            : hasError
+                ? "Bağlantı hatası"
+                : connecting
+                    ? "Google/Firebase bağlantısı kuruluyor"
+                    : running
+                        ? "Köprü çalışıyor — sunucu kaydı bekleniyor"
+                        : executablePath is null
+                            ? "Bridge bileşeni bulunamadı"
+                            : !hasOAuthConfig
+                                ? "Google OAuth yapılandırması eksik"
+                                : "Hazır — bağlantı başlatılmadı";
 
-        DesktopBridgeStatusDot.Fill =
-            new SolidColorBrush(
-                running
-                    ? Colors.LimeGreen
-                    : executablePath is not null && hasOAuthConfig
-                        ? Colors.Goldenrod
-                        : Colors.DimGray);
+        var color = connected
+            ? Colors.LightGreen
+            : hasError || (!running && (executablePath is null || !hasOAuthConfig))
+                ? Colors.IndianRed
+                : Colors.Goldenrod;
+
+        DesktopBridgeStatusText.Foreground = new SolidColorBrush(color);
+        DesktopBridgeStatusDot.Fill = new SolidColorBrush(color);
 
         DesktopBridgeExecutablePathText.Text =
             executablePath ?? "MynAssistantDesktopBridge.exe bulunamadı.";
 
-        DesktopBridgeOAuthPathText.Text = hasOAuthConfig
-            ? "Google OAuth yapılandırması bulundu."
-            : $"OAuth dosyası bulunamadı: {oauthPath}";
+        if (!hasOAuthConfig)
+        {
+            DesktopBridgeOAuthPathText.Text = $"OAuth dosyası bulunamadı: {oauthPath}";
+        }
+        else if (isFresh && !string.IsNullOrWhiteSpace(runtime?.Message))
+        {
+            var email = string.IsNullOrWhiteSpace(runtime.Email) ? "" : $" Hesap: {runtime.Email}.";
+            DesktopBridgeOAuthPathText.Text = runtime.Message + email;
+        }
+        else
+        {
+            DesktopBridgeOAuthPathText.Text =
+                "Google OAuth dosyası bulundu. Aynı Google hesabıyla giriş yap; PC'nin çevrimiçi olması burada doğrulanır.";
+        }
     }
 
     private void StartDesktopBridge_Click(
