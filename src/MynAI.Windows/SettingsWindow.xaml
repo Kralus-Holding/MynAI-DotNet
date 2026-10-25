@@ -256,7 +256,7 @@
                             BorderThickness="1"
                             Margin="4,2,0,14">
 
-                        <Image Source="Resources/myn.jpg"
+                        <Image Source="Resources/mynassistant.png"
                                Stretch="UniformToFill"/>
 
                     </Border>
@@ -513,6 +513,13 @@
                                            Foreground="#7FD495"
                                            FontSize="12"/>
 
+                                <TextBlock x:Name="DesktopBridgeCloudStatusText"
+                                           Text="Firebase bağlantı durumu kontrol ediliyor..."
+                                           Margin="0,6,0,0"
+                                           Foreground="#D9A441"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"/>
+
                                 <Ellipse x:Name="DesktopBridgeStatusDot"
                                          Width="10"
                                          Height="10"
@@ -601,7 +608,7 @@
                                         BorderThickness="1">
 
                                     <Image x:Name="GooglePhoto"
-                                           Source="Resources/myn.jpg"
+                                           Source="Resources/mynassistant.png"
                                            Stretch="UniformToFill"/>
 
                                 </Border>
