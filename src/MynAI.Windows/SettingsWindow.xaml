@@ -34,7 +34,10 @@
                     Value="#8995A8"/>
 
             <Setter Property="BorderThickness"
-                    Value="0"/>
+                    Value="1"/>
+
+            <Setter Property="BorderBrush"
+                    Value="Transparent"/>
 
             <Setter Property="FontSize"
                     Value="12"/>
@@ -51,6 +54,8 @@
 
                         <Border
                             Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="10">
 
                             <ContentPresenter
@@ -78,6 +83,15 @@
                             Value="#FFFFFF"/>
 
                 </Trigger>
+
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=Tag}"
+                             Value="Active">
+                    <Setter Property="Background" Value="#10283B"/>
+                    <Setter Property="Foreground" Value="#F5FBFF"/>
+                    <Setter Property="BorderBrush" Value="#20A9D8"/>
+                    <Setter Property="BorderThickness" Value="1"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
 
             </Style.Triggers>
 
@@ -168,6 +182,47 @@
 
         </Style>
 
+        <Style x:Key="LogoOptionCard"
+               TargetType="ToggleButton">
+            <Setter Property="Height" Value="142"/>
+            <Setter Property="Margin" Value="0,0,10,8"/>
+            <Setter Property="Padding" Value="9"/>
+            <Setter Property="Background" Value="#0B121B"/>
+            <Setter Property="Foreground" Value="#DDE7F2"/>
+            <Setter Property="BorderBrush" Value="#26374B"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="CardBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="12"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Stretch"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CardBorder" Property="Background" Value="#14202D"/>
+                                <Setter TargetName="CardBorder" Property="BorderBrush" Value="#4C657D"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CardBorder" Property="Background" Value="#10283B"/>
+                                <Setter TargetName="CardBorder" Property="BorderBrush" Value="#1DB6E5"/>
+                                <Setter TargetName="CardBorder" Property="BorderThickness" Value="2"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="CardBorder" Property="Opacity" Value="0.55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="ScrollBar">
 
             <Setter Property="Width"
@@ -248,12 +303,12 @@
 
                 <StackPanel>
 
-                    <Border Width="48"
-                            Height="48"
+                    <Border Width="72"
+                            Height="72"
                             HorizontalAlignment="Left"
-                            CornerRadius="10"
+                            CornerRadius="12"
                             Background="Transparent"
-                            Margin="4,2,0,14">
+                            Margin="4,2,0,16">
 
                         <Image x:Name="SettingsBrandingImage"
                                Stretch="Uniform"/>
@@ -269,23 +324,33 @@
                                FontSize="11"
                                Margin="0,3,0,16"/>
 
-                    <Button Content="Genel"
+                    <Button x:Name="GeneralNavButton"
+                            Content="Genel"
+                            Tag="Active"
                             Style="{StaticResource NavButton}"
                             Click="GeneralNav_Click"/>
 
-                    <Button Content="Agent"
+                    <Button x:Name="AgentNavButton"
+                            Content="Agent"
+                            Tag="Normal"
                             Style="{StaticResource NavButton}"
                             Click="AgentNav_Click"/>
 
-                    <Button Content="Hesap"
+                    <Button x:Name="AccountNavButton"
+                            Content="Hesap"
+                            Tag="Normal"
                             Style="{StaticResource NavButton}"
                             Click="AccountNav_Click"/>
 
-                    <Button Content="Gizlilik"
+                    <Button x:Name="PrivacyNavButton"
+                            Content="Gizlilik"
+                            Tag="Normal"
                             Style="{StaticResource NavButton}"
                             Click="PrivacyNav_Click"/>
 
-                    <Button Content="Kısayollar"
+                    <Button x:Name="ShortcutNavButton"
+                            Content="Kısayollar"
+                            Tag="Normal"
                             Style="{StaticResource NavButton}"
                             Click="ShortcutNav_Click"/>
 
@@ -336,52 +401,88 @@
                                 <TextBlock Text="Logo ve görünüm"
                                            FontSize="14"
                                            FontWeight="SemiBold"/>
-
-                                <TextBlock Text="Ana pencerede gösterilecek logoyu seç. Varsayılan seçim siyah temalı logodur; Windows uygulama ikonu bundan bağımsız kalır."
+                                <TextBlock Text="Ana pencerede görünen logoyu seç. İlk kurulumda KR / Kralus logosu kullanılır. Windows uygulama simgesi ayrı kalır."
                                            Foreground="#7E8A9D"
                                            FontSize="11"
-                                           Margin="0,6,0,12"
+                                           Margin="0,6,0,14"
                                            TextWrapping="Wrap"/>
 
-                                <Border Background="#080D13"
-                                        CornerRadius="10"
-                                        Padding="10"
-                                        HorizontalAlignment="Left">
-                                    <Image x:Name="LogoPreviewImage"
-                                           Width="104"
-                                           Height="104"
-                                           Stretch="Uniform"/>
-                                </Border>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="82"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="72" Height="72"
+                                            Background="#080D13"
+                                            CornerRadius="10"
+                                            Padding="4">
+                                        <Image x:Name="LogoPreviewImage" Stretch="Uniform"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1"
+                                                VerticalAlignment="Center"
+                                                Margin="12,0,0,0">
+                                        <TextBlock x:Name="LogoPresetStatusText"
+                                                   Text="KR / Kralus logosu seçili"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#EAF3FC"/>
+                                        <TextBlock Text="Seçimin kaydedilir ve sonraki açılışta korunur."
+                                                   Foreground="#7E8A9D"
+                                                   FontSize="11"
+                                                   Margin="0,4,0,0"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Grid>
 
-                                <TextBlock x:Name="LogoPresetStatusText"
-                                           Text="Siyah temalı logo seçili"
-                                           Foreground="#7E8A9D"
-                                           FontSize="11"
-                                           Margin="0,8,0,10"
-                                           TextWrapping="Wrap"/>
+                                <UniformGrid Columns="3" Margin="0,2,0,0">
+                                    <ToggleButton x:Name="KrLogoOptionButton"
+                                                  Style="{StaticResource LogoOptionCard}"
+                                                  IsChecked="True"
+                                                  Click="SelectKrLogo_Click">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <Image x:Name="KrLogoOptionImage" Width="64" Height="64"
+                                                   Stretch="Uniform" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="KR / Kralus" HorizontalAlignment="Center"
+                                                       TextAlignment="Center" FontSize="11"
+                                                       FontWeight="SemiBold" Margin="0,8,0,0"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <ToggleButton x:Name="AppLogoOptionButton"
+                                                  Style="{StaticResource LogoOptionCard}"
+                                                  IsChecked="False"
+                                                  Click="SelectAppIconLogo_Click">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <Image x:Name="AppLogoOptionImage" Width="64" Height="64"
+                                                   Stretch="Uniform" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="MynAssistant" HorizontalAlignment="Center"
+                                                       TextAlignment="Center" FontSize="11"
+                                                       FontWeight="SemiBold" Margin="0,8,0,0"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <ToggleButton x:Name="CustomLogoOptionButton"
+                                                  Style="{StaticResource LogoOptionCard}"
+                                                  IsChecked="False"
+                                                  Click="SelectCustomLogo_Click">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <Grid Width="64" Height="64">
+                                                <Image x:Name="CustomLogoOptionImage" Stretch="Uniform"/>
+                                                <TextBlock x:Name="CustomLogoPlaceholderText" Text="+"
+                                                           FontSize="34" Foreground="#66CBEA"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <TextBlock Text="Özel görsel" HorizontalAlignment="Center"
+                                                       TextAlignment="Center" FontSize="11"
+                                                       FontWeight="SemiBold" Margin="0,8,0,0"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                </UniformGrid>
 
-                                <WrapPanel>
-                                    <Button Content="Siyah temalı logo"
-                                            Style="{StaticResource SecondaryButton}"
-                                            Click="SelectDarkLogo_Click"
-                                            Margin="0,0,8,8"/>
-                                    <Button Content="Şeffaf uygulama ikonu"
-                                            Style="{StaticResource SecondaryButton}"
-                                            Click="SelectAppIconLogo_Click"
-                                            Margin="0,0,8,8"/>
-                                    <Button Content="Kayıtlı özel logoyu kullan"
-                                            Style="{StaticResource SecondaryButton}"
-                                            Click="UseCustomLogo_Click"
-                                            Margin="0,0,8,8"/>
-                                    <Button Content="Bilgisayardan görsel seç"
-                                            Style="{StaticResource PrimaryButton}"
-                                            Click="SelectCustomLogo_Click"
-                                            Margin="0,0,8,8"/>
-                                    <Button Content="Varsayılana dön"
-                                            Style="{StaticResource SecondaryButton}"
-                                            Click="ResetLogo_Click"
-                                            Margin="0,0,0,8"/>
-                                </WrapPanel>
+                                <Button Content="KR / Kralus varsayılanına dön"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Click="ResetLogo_Click"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,5,0,0"
+                                        ToolTip="Ana pencerede KR / Kralus logosunu kullan"/>
                             </StackPanel>
                         </Border>
 
@@ -406,27 +507,7 @@
 
                         </Border>
 
-                        <Border Style="{StaticResource Card}">
 
-                            <StackPanel>
-
-                                <TextBlock Text="Başlangıç"
-                                           FontSize="14"
-                                           FontWeight="SemiBold"/>
-
-                                <CheckBox x:Name="AgentStartupGeneralCheckBox"
-                                          Content="Windows açılışında MynAgent'i çalıştır"
-                                          Margin="0,12,0,0"/>
-
-                                <TextBlock Text="Agent zamanlayıcı ve arka plan görevlerini UI'dan bağımsız yürütür."
-                                           Foreground="#7E8A9D"
-                                           FontSize="11"
-                                           Margin="0,6,0,0"
-                                           TextWrapping="Wrap"/>
-
-                            </StackPanel>
-
-                        </Border>
 
                     </StackPanel>
 
@@ -537,26 +618,7 @@
 
                         </Border>
 
-                        <Border Style="{StaticResource Card}">
 
-                            <StackPanel>
-
-                                <TextBlock Text="Başlangıç"
-                                           FontSize="14"
-                                           FontWeight="SemiBold"/>
-
-                                <CheckBox x:Name="AgentStartupCheckBox"
-                                          Content="Windows açılışında Agent'i çalıştır"
-                                          Margin="0,12,0,0"/>
-
-                                <TextBlock Text="Kullanıcı oturumu açıldığında Agent otomatik başlar."
-                                           Foreground="#7E8A9D"
-                                           FontSize="11"
-                                           Margin="0,6,0,0"/>
-
-                            </StackPanel>
-
-                        </Border>
 
                         <!-- ANDROID - WINDOWS BAGLANTISI -->
 
@@ -594,11 +656,11 @@
                                            FontSize="10"
                                            TextWrapping="Wrap"/>
 
-                                <TextBlock x:Name="DesktopBridgeOAuthPathText"
+                                <TextBlock x:Name="DesktopBridgeMessageText"
                                            Text=""
                                            Margin="0,5,0,0"
-                                           Foreground="#627084"
-                                           FontSize="10"
+                                           Foreground="#9BA9BB"
+                                           FontSize="11"
                                            TextWrapping="Wrap"/>
 
                                 <WrapPanel Margin="0,12,0,0">
@@ -624,7 +686,7 @@
                                           Content="Windows açılışında telefon-PC bağlantısını başlat"
                                           Margin="0,8,0,0"/>
 
-                                <TextBlock Text="İlk bağlantıda tarayıcıyla Google girişi açılır. Telefonda kullandığın aynı hesapla giriş yap."
+                                <TextBlock Text="Telefon-PC bağlantısı Hesap bölümündeki Firebase oturumunu kullanır. Yerel Agent bu oturumdan bağımsızdır."
                                            Foreground="#7E8A9D"
                                            FontSize="11"
                                            Margin="0,6,0,0"
@@ -646,31 +708,44 @@
                                    FontWeight="SemiBold"
                                    Margin="0,0,0,5"/>
 
-                        <TextBlock Text="Google hesabını ve Google Kişiler erişimini yönet."
+                        <TextBlock Text="Telefon-PC bağlantısı için Android uygulamasında kullandığın Firebase hesabıyla giriş yap. Google Kişiler isteğe bağlıdır."
                                    Foreground="#718096"
                                    FontSize="12"
-                                   Margin="0,0,0,18"/>
+                                   Margin="0,0,0,18"
+                                   TextWrapping="Wrap"/>
 
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
-                                <TextBlock Text="Google OAuth yapılandırması"
+                                <TextBlock Text="Telefon-PC hesabı"
                                            FontSize="14"
                                            FontWeight="SemiBold"/>
-                                <TextBlock Text="Google Desktop OAuth JSON dosyanı bir kez seç. Uygulama dosyanın güvenli bir kopyasını kullanıcı verileri klasöründe saklar; dosya içeriği loglara yazılmaz."
-                                           Foreground="#7E8A9D"
-                                           FontSize="11"
-                                           Margin="0,6,0,10"
+                                <TextBlock Text="Android MynAssistant uygulamasında kullandığın Firebase hesabıyla giriş yap. OAuth JSON dosyası istenmez."
+                                           Foreground="#7E8A9D" FontSize="11" Margin="0,6,0,12"
                                            TextWrapping="Wrap"/>
-                                <TextBlock x:Name="OAuthConfigStatusText"
-                                           Text="Yapılandırma kontrol ediliyor..."
-                                           Foreground="#7E8A9D"
-                                           FontSize="10"
-                                           Margin="0,0,0,10"
+                                <TextBlock x:Name="FirebaseSessionStatusText"
+                                           Text="Oturum durumu kontrol ediliyor..."
+                                           Foreground="#D6E5F4" FontSize="11" Margin="0,0,0,10"
                                            TextWrapping="Wrap"/>
-                                <Button Content="OAuth JSON dosyasını seç"
-                                        Style="{StaticResource PrimaryButton}"
-                                        HorizontalAlignment="Left"
-                                        Click="ChooseGoogleOAuthConfig_Click"/>
+                                <TextBlock Text="E-posta" FontSize="11" Foreground="#A9B7C8" Margin="0,0,0,4"/>
+                                <TextBox x:Name="FirebaseEmailTextBox"
+                                         Background="#080D13" Foreground="#F2F6FB"
+                                         BorderBrush="#2A3B52" BorderThickness="1"
+                                         Padding="10,8" FontSize="12" Margin="0,0,0,10"
+                                         AutomationProperties.Name="Firebase hesap e-posta adresi"/>
+                                <TextBlock Text="Şifre" FontSize="11" Foreground="#A9B7C8" Margin="0,0,0,4"/>
+                                <PasswordBox x:Name="FirebasePasswordBox"
+                                             Background="#080D13" Foreground="#F2F6FB"
+                                             BorderBrush="#2A3B52" BorderThickness="1"
+                                             Padding="10,8" FontSize="12" Margin="0,0,0,12"
+                                             AutomationProperties.Name="Firebase hesap şifresi"/>
+                                <WrapPanel>
+                                    <Button x:Name="FirebaseSignInButton" Content="Giriş yap"
+                                            Style="{StaticResource PrimaryButton}" Click="FirebaseSignIn_Click"
+                                            Margin="0,0,8,0"/>
+                                    <Button x:Name="FirebaseSignOutButton" Content="Çıkış yap"
+                                            Style="{StaticResource SecondaryButton}" Click="FirebaseSignOut_Click"
+                                            IsEnabled="False"/>
+                                </WrapPanel>
                             </StackPanel>
                         </Border>
 
@@ -714,7 +789,7 @@
 
                                 <Button x:Name="GoogleConnectButton"
                                         Grid.Column="2"
-                                        Content="Google ile bağlan"
+                                        Content="Kişileri bağla"
                                         Style="{StaticResource PrimaryButton}"
                                         Click="GoogleConnectButton_Click"
                                         VerticalAlignment="Center"/>
@@ -727,7 +802,7 @@
 
                             <StackPanel>
 
-                                <TextBlock Text="Google Kişiler"
+                                <TextBlock Text="Google Kişiler (isteğe bağlı)"
                                            FontSize="14"
                                            FontWeight="SemiBold"/>
 
