@@ -276,7 +276,7 @@ jobs:
             "1. MynAssistant-Setup.exe dosyasını çalıştırın.",
             "2. Kurulum hedef klasörünü her kurulumda seçebilirsiniz. Aynı anda birden fazla bağımsız kurulum desteklenmez; mevcut klasör duruyorsa önce mevcut kurulumu kaldırın.",
             "3. MynAgent uygulama açılışında arka planda otomatik başlatılır; kurulum ekranında ayrı başlatma seçeneği yoktur.",
-            "4. Telefon-PC işlemleri için Ayarlar > Hesap bölümünde Android uygulamasında kullandığınız Firebase e-posta/şifre hesabıyla giriş yapın.",
+            "4. Telefon-PC köprüsü bilgisayarda önceden güvenli şekilde kaydedilmiş geçerli oturumu varsa otomatik kullanır. Bu 0.1.5 sürümünde ilk kez hesap eşleştiren sunucu akışı henüz bulunmadığından, oturum yoksa bağlantı çevrimdışı kalır; Firebase parolası veya OAuth JSON dosyası istemeyin.",
             "5. Müşteriden client_secret.json veya ayrı logo dosyası istenmez.",
             "",
             "Not: Kuruluşunuz Windows Application Control politikasını kullanıyorsa imzasız dosyalar engellenebilir. Güvenlik politikasını kapatmayın; yayıncı imzası/Code Integrity günlükleri yöneticiniz tarafından doğrulanmalıdır."
