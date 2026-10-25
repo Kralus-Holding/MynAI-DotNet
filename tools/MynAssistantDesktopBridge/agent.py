@@ -157,13 +157,29 @@ def load_device_id(uid: str) -> str:
     return device_id
 
 
+def find_oauth_credentials_path() -> Path | None:
+    # Match DesktopBridgeStartupManager and the installer: the persistent per-user
+    # configuration is authoritative; a sidecar is only a development fallback.
+    candidates = (
+        APP_DATA.parent / "Google" / OAUTH_FILE_NAME,
+        APP_DATA.parent.parent / "MynAI" / "Google" / OAUTH_FILE_NAME,
+        running_directory() / OAUTH_FILE_NAME,
+    )
+    return next((path for path in candidates if path.is_file()), None)
+
+
 def google_oauth_credentials():
-    credentials_path = running_directory() / OAUTH_FILE_NAME
-    if not credentials_path.is_file():
+    credentials_path = find_oauth_credentials_path()
+    if credentials_path is None:
+        expected_paths = (
+            APP_DATA.parent / "Google" / OAUTH_FILE_NAME,
+            APP_DATA.parent.parent / "MynAI" / "Google" / OAUTH_FILE_NAME,
+            running_directory() / OAUTH_FILE_NAME,
+        )
+        searched = "\\n".join(str(path) for path in expected_paths)
         raise FileNotFoundError(
-            "Google OAuth dosyası bulunamadı.\n"
-            f"Google Cloud Console'dan Desktop app türündeki OAuth istemcisinin JSON dosyasını indirip\n"
-            f"adı '{OAUTH_FILE_NAME}' olacak şekilde şu klasöre koy:\n{running_directory()}"
+            "Google OAuth dosyası bulunamadı. Google Desktop OAuth istemci JSON dosyasını "
+            "aşağıdaki konumlardan birine yerleştir:\\n" + searched
         )
     flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
     return flow.run_local_server(
