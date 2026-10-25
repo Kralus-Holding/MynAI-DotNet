@@ -27,7 +27,7 @@ IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1"
 SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token"
 FIRESTORE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents"
 SCOPES = ["openid", "email", "profile"]
-AGENT_VERSION = "0.2.0"
+AGENT_VERSION = "0.2.1"
 POLL_SECONDS = 2.0
 COMMAND_POLL_SECONDS = 2.0
 SCREEN_CHECK_SECONDS = 8.0
@@ -490,6 +490,85 @@ def press_virtual_key(vk: int, repeat: int = 1) -> None:
         user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
 
 
+
+KEYEVENTF_UNICODE = 0x0004
+INPUT_KEYBOARD = 1
+MAX_REMOTE_TEXT_LENGTH = 1000
+
+
+class _KeyboardInput(ctypes.Structure):
+    _fields_ = [
+        ("wVk", ctypes.c_ushort),
+        ("wScan", ctypes.c_ushort),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
+
+
+class _MouseInput(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_int32),
+        ("dy", ctypes.c_int32),
+        ("mouseData", ctypes.c_uint32),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
+
+
+class _HardwareInput(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", ctypes.c_uint32),
+        ("wParamL", ctypes.c_ushort),
+        ("wParamH", ctypes.c_ushort),
+    ]
+
+
+class _InputUnion(ctypes.Union):
+    _fields_ = [
+        ("mi", _MouseInput),
+        ("ki", _KeyboardInput),
+        ("hi", _HardwareInput),
+    ]
+
+
+class _Input(ctypes.Structure):
+    _fields_ = [
+        ("type", ctypes.c_uint32),
+        ("union", _InputUnion),
+    ]
+
+
+def send_unicode_text(text: str) -> None:
+    """Type Unicode text via Win32 SendInput without replacing the clipboard."""
+    if os.name != "nt":
+        raise RuntimeError("Uzaktan metin yazma yalnızca Windows Agent üzerinde kullanılabilir.")
+    if len(text) > MAX_REMOTE_TEXT_LENGTH:
+        raise ValueError(f"Metin en fazla {MAX_REMOTE_TEXT_LENGTH} karakter olabilir.")
+    safe_text = "".join(char for char in text if ord(char) >= 32 and ord(char) != 127)
+    if not safe_text:
+        raise ValueError("Yazılacak metin boş.")
+
+    utf16 = safe_text.encode("utf-16-le", errors="strict")
+    events = []
+    for index in range(0, len(utf16), 2):
+        unit = utf16[index] | (utf16[index + 1] << 8)
+        events.append(_Input(
+            type=INPUT_KEYBOARD,
+            union=_InputUnion(ki=_KeyboardInput(0, unit, KEYEVENTF_UNICODE, 0, 0)),
+        ))
+        events.append(_Input(
+            type=INPUT_KEYBOARD,
+            union=_InputUnion(ki=_KeyboardInput(0, unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, 0, 0)),
+        ))
+    inputs = (_Input * len(events))(*events)
+    user32 = ctypes.windll.user32
+    sent = user32.SendInput(len(inputs), inputs, ctypes.sizeof(_Input))
+    if sent != len(inputs):
+        raise RuntimeError("Windows Unicode klavye girdisinin tamamını kabul etmedi.")
+
+
 def normalize_text_command(text: str) -> str:
     normalized = unicodedata.normalize("NFKD", text.casefold())
     normalized = "".join(char for char in normalized if not unicodedata.combining(char))
@@ -578,6 +657,22 @@ def execute_command(command: str, fields: dict) -> str:
     command = command.strip().lower()
     if command == "text_command":
         return execute_text_command(str(fields.get("text") or ""))
+    if command == "type_text":
+        text = str(fields.get("text") or "")
+        if not text.strip():
+            return "Bilgisayara yazılacak metni gir."
+        if len(text) > MAX_REMOTE_TEXT_LENGTH:
+            return f"Metin en fazla {MAX_REMOTE_TEXT_LENGTH} karakter olabilir."
+        send_unicode_text(text)
+        if fields.get("pressEnter") is True:
+            pyautogui.press("enter")
+        return "Metin bilgisayara yazıldı." + (" Enter gönderildi." if fields.get("pressEnter") is True else "")
+    if command == "key_backspace":
+        pyautogui.press("backspace")
+        return "Backspace tuşu gönderildi."
+    if command == "key_enter":
+        pyautogui.press("enter")
+        return "Enter tuşu gönderildi."
     if command == "mute":
         press_virtual_key(VK_VOLUME_MUTE)
         return "Bilgisayarın sesi aç/kapat tuşuyla değiştirildi."
@@ -609,7 +704,8 @@ def execute_command(command: str, fields: dict) -> str:
 def command_is_supported(command: str) -> bool:
     return command in {
         "mute", "volume_up", "volume_down", "home",
-        "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command"
+        "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command",
+        "type_text", "key_backspace", "key_enter"
     }
 
 

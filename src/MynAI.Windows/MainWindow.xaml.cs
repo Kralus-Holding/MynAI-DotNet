@@ -74,7 +74,7 @@ public partial class MainWindow : Window
         var path = Path.Combine(
             AppContext.BaseDirectory,
             "Resources",
-            "myn.jpg");
+            "mynassistant-logo.png");
 
         if (!File.Exists(path))
         {
@@ -94,9 +94,8 @@ public partial class MainWindow : Window
 
             LogoImage.Source = image;
 
-            // Use the already-supported JPEG for the WPF window icon.
-            // The .ico remains the executable/tray icon, but is not decoded
-            // by WPF's BitmapImage converter during XAML initialization.
+            // Load the shared PNG only after XAML initialization. The .ico is
+            // reserved for executable/tray branding and is not decoded by WPF here.
             Icon = image;
         }
         catch (Exception ex)
@@ -113,7 +112,31 @@ public partial class MainWindow : Window
         RoutedEventArgs e)
     {
         DockNormal();
+        StartConfiguredDesktopBridge();
         await RefreshTasksAsync();
+    }
+
+    private void StartConfiguredDesktopBridge()
+    {
+        // Remote PC control is opt-in via the installer task or Settings.
+        if (!DesktopBridgeStartupManager.IsEnabled())
+            return;
+
+        if (DesktopBridgeStartupManager.TryGetExecutablePath() is null ||
+            !File.Exists(DesktopBridgeStartupManager.GetOAuthConfigPath()))
+            return;
+
+        try
+        {
+            // Normalize legacy Run-key entries to hidden launch and start this session.
+            DesktopBridgeStartupManager.SetEnabled(true);
+            DesktopBridgeStartupManager.StartAgent();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"MynAssistant remote PC bridge could not start: {ex}");
+        }
     }
 
     private void DockNormal()

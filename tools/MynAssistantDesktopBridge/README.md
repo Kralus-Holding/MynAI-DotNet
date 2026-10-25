@@ -1,28 +1,22 @@
-# MynAssistant Desktop Bridge bundled with MynAI
+# MynAssistant Desktop Bridge (paketlenmiş Windows bileşeni)
 
-This folder contains the Windows Firebase bridge agent used to connect Android MynAssistant to the installed Windows MynAI application.
+Bu klasör, Android MynAssistant ve Windows uygulaması arasında Firebase/Firestore üzerinden bağlantı kuran Windows Desktop Bridge ajanını içerir. Paket adı `MynAssistantDesktopBridge.exe`, sürüm 0.2.1'dir.
 
-Canonical source: `MynKralus/MynAssistant-Android/desktop-agent`, branch `feature/android-pc-firebase-bridge`, source blob SHA `d38880884c14b431ddfb2dbc04270cde40bf41b1` at the time of vendoring.
+## Eşleştirme
 
-Keep this copy in sync when the canonical Android-repository agent changes. The packaged executable is named `MynAssistantDesktopBridge.exe`.
+- İlk çalıştırmada Google Desktop OAuth akışı tarayıcıda açılır. Android uygulamasında oturum açılan aynı Google hesabı kullanılmalıdır.
+- OAuth JSON dosyası önce EXE yanındaki `client_secret.json`, sonra `%LOCALAPPDATA%\MynAssistant\Google\client_secret.json` konumunda aranır.
+- Bridge kendi UID'siyle sınırlanmış `devices`/`commands` verisini Firestore REST API üzerinden yönetir; PC için IP/port açmak gerekmez.
+- Gerçek OAuth JSON'u, servis hesabı anahtarı, refresh token veya kullanıcı oturumunu kaynak denetimine ekleme.
 
-## OAuth configuration
+## Uzaktan komutlar
 
-The agent first looks for `client_secret.json` beside its executable (standalone/developer mode), then falls back to:
+Bridge ses aç/kapat, ses yükseltme/azaltma, masaüstünü gösterme, fare hareketi/tıklama ve Unicode metin/Enter/Backspace komutlarını destekler. Metin girdisi 1000 karakterle sınırlıdır ve panoyu değiştirmez. Ekran karesi yalnızca süreli önizleme isteği etkinken gönderilir; bu akıcı video aktarımı değildir.
 
-`%LOCALAPPDATA%\MynAI\Google\client_secret.json`
-
-The Windows installer is designed to place the desktop OAuth client configuration in this per-user location. Never commit a real OAuth JSON file, refresh token, Firebase service-account key, or user session to source control.
-
-## Local build
+## Yerel test
 
 ```powershell
 py -m pip install -r tools/MynAssistantDesktopBridge/requirements.txt
 py -m unittest discover -s tools/MynAssistantDesktopBridge/tests -v
 pyinstaller --noconfirm --clean --onefile --console --name MynAssistantDesktopBridge --collect-all google_auth_oauthlib --collect-all google.auth --hidden-import win32crypt tools/MynAssistantDesktopBridge/agent.py
 ```
-
-
-## Firestore screen-frame size
-
-Screen frames are reduced through several resolution/quality levels until the encoded Base64 string is at most 650 KB. This checks the actual string stored in Firestore, not only the smaller binary JPEG payload, leaving room for the other fields in the document.

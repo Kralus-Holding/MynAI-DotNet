@@ -1,5 +1,5 @@
-#define MyAppName "MynAssistant"
-#define MyAppVersion "0.1.3"
+﻿#define MyAppName "MynAssistant"
+#define MyAppVersion "0.1.5"
 #define MyAppPublisher "MynKralus"
 #define MyAppExeName "MynAssistant.exe"
 #define MyAgentExeName "MynAgent.exe"
@@ -22,8 +22,8 @@ WizardSmallImageBackColor=clWhite
 
 OutputDir=..\build\installer
 OutputBaseFilename=MynAssistant-Setup
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 WizardStyle=modern
@@ -35,7 +35,7 @@ VersionInfoCompany=MynKralus
 VersionInfoDescription=MynAssistant Windows Installer
 VersionInfoProductName=MynAssistant
 VersionInfoProductVersion={#MyAppVersion}
-VersionInfoVersion=0.1.3.0
+VersionInfoVersion=0.1.5.0
 VersionInfoCopyright=Copyright (C) MynKralus
 
 [Languages]
@@ -44,11 +44,15 @@ Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Masaüstüne kısayol oluştur"; GroupDescription: "Ek kısayollar:"; Flags: unchecked
+Name: "desktopbridge"; Description: "Telefon ve web panelinden PC kontrolünü etkinleştir (Google hesabıyla giriş gerekir)"; GroupDescription: "Uzaktan bağlantı:"; Flags: checkedonce
 
 [Files]
 Source: "..\build\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build\agent-publish\*"; DestDir: "{app}\Agent"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build\config\client_secret.json"; DestDir: "{localappdata}\MynAssistant\Google"; Flags: onlyifdoesntexist uninsneveruninstall
+
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "MynAssistant.DesktopBridge"; ValueType: string; ValueData: """{app}\MynAssistantDesktopBridge.exe"""; Tasks: desktopbridge; Flags: uninsdeletevalue
 
 [Icons]
 Name: "{autoprograms}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
