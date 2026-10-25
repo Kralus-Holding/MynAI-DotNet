@@ -27,7 +27,7 @@ IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1"
 SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token"
 FIRESTORE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents"
 SCOPES = ["openid", "email", "profile"]
-AGENT_VERSION = "0.2.0"
+AGENT_VERSION = "0.2.1"
 POLL_SECONDS = 2.0
 COMMAND_POLL_SECONDS = 2.0
 SCREEN_CHECK_SECONDS = 8.0
@@ -39,6 +39,7 @@ APP_DATA = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MynAssistan
 OAUTH_FILE_NAME = "client_secret.json"
 SESSION_FILE = APP_DATA / "session.bin"
 DEVICE_FILE = APP_DATA / "devices.json"
+STATUS_FILE = APP_DATA / "status.json"
 
 VK_VOLUME_MUTE = 0xAD
 VK_VOLUME_DOWN = 0xAE
@@ -259,6 +260,25 @@ def firestore_patch(session: FirebaseSession, document_path: str, fields: dict, 
             f"Firestore PATCH {document_path} HTTP {response.status_code}: {response.text[:500]}"
         )
     return response.json()
+
+
+def write_local_status(session: FirebaseSession, device_id: str, status: str) -> None:
+    """Expose the last successful Firestore heartbeat to the local Settings UI only."""
+    try:
+        APP_DATA.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "status": status,
+            "ownerId": session.uid,
+            "deviceId": device_id,
+            "deviceName": platform.node().strip() or "Windows bilgisayarım",
+            "connectionMode": "firebase-agent",
+            "agentVersion": AGENT_VERSION,
+            "updatedAt": utc_now(),
+        }
+        STATUS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:
+        # The local status display is diagnostic only; it must never stop the Agent.
+        print(f"[Uyarı] Yerel bağlantı durumu kaydedilemedi: {exc}")
 
 
 def register_or_heartbeat(session: FirebaseSession, device_id: str, initial: bool = False) -> None:
@@ -656,6 +676,7 @@ def run_agent() -> int:
 
     device_id = load_device_id(session.uid)
     register_or_heartbeat(session, device_id, initial=True)
+    write_local_status(session, device_id, "online")
     print(f"Cihaz çevrimiçi: {platform.node()} (ID: {device_id})")
     print("Android uygulamasında Cihazlarım bölümünde otomatik görünmesi gerekir.")
     print("PC Kumandası açıkken masaüstü önizlemesi yaklaşık saniyede bir güncellenir.")
@@ -674,6 +695,7 @@ def run_agent() -> int:
 
             if now - last_heartbeat >= HEARTBEAT_SECONDS:
                 register_or_heartbeat(session, device_id)
+                write_local_status(session, device_id, "online")
                 last_heartbeat = now
 
             screen_check_interval = 3.0 if screen_active else SCREEN_CHECK_SECONDS
@@ -760,6 +782,7 @@ def run_agent() -> int:
             )
         except Exception as exc:
             print(f"[Uyarı] Çevrimdışı durumu kaydedilemedi: {exc}")
+        write_local_status(session, device_id, "offline")
     return 0
 
 
