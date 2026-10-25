@@ -256,8 +256,8 @@
                             BorderThickness="1"
                             Margin="4,2,0,14">
 
-                        <Image Source="Resources/myn.jpg"
-                               Stretch="UniformToFill"/>
+                        <Image x:Name="SettingsLogoImage"
+                               Stretch="Uniform"/>
 
                     </Border>
 
