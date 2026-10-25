@@ -721,13 +721,13 @@
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <TextBlock Text="Telefon-PC bağlantısı" FontSize="14" FontWeight="SemiBold"/>
-                                <TextBlock x:Name="DesktopBridgeStatusText" Text="Bağlantı durumu kontrol ediliyor..."
+                                <TextBlock x:Name="AccountDesktopBridgeStatusText" Text="Bağlantı durumu kontrol ediliyor..."
                                            Foreground="#D6E5F4" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap"/>
-                                <Ellipse x:Name="DesktopBridgeStatusDot" Width="10" Height="10" Fill="#667085"
+                                <Ellipse x:Name="AccountDesktopBridgeStatusDot" Width="10" Height="10" Fill="#667085"
                                          HorizontalAlignment="Left" Margin="0,8,0,0"/>
-                                <TextBlock x:Name="DesktopBridgeExecutablePathText" Text="" Margin="0,7,0,0"
+                                <TextBlock x:Name="AccountDesktopBridgeExecutablePathText" Text="" Margin="0,7,0,0"
                                            Foreground="#627084" FontSize="10" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="DesktopBridgeMessageText" Text="" Margin="0,5,0,0"
+                                <TextBlock x:Name="AccountDesktopBridgeMessageText" Text="" Margin="0,5,0,0"
                                            Foreground="#9BA9BB" FontSize="11" TextWrapping="Wrap"/>
                                 <Button Content="Bağlantıyı yenile" Style="{StaticResource PrimaryButton}"
                                         Click="RefreshDesktopBridge_Click" HorizontalAlignment="Left" Margin="0,12,0,0"/>
