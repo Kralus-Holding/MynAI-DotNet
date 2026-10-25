@@ -1,28 +1,49 @@
-# MynAssistant Desktop Bridge bundled with MynAI
+# MynAssistant Desktop Bridge
 
-This folder contains the Windows Firebase bridge agent used to connect Android MynAssistant to the installed Windows MynAI application.
+This packaged Windows bridge is synchronized with the canonical agent in
+`MynKralus/MynAssistant-Android/desktop-agent/agent.py` (agent version 0.2.2).
+The bridge connects the installed Windows PC to Android and the web admin panel
+through the shared Firebase project; it does not expose an inbound PC port.
 
-Canonical source: `MynKralus/MynAssistant-Android/desktop-agent`, branch `feature/android-pc-firebase-bridge`, source blob SHA `d38880884c14b431ddfb2dbc04270cde40bf41b1` at the time of vendoring.
+## Connection flow
 
-Keep this copy in sync when the canonical Android-repository agent changes. The packaged executable is named `MynAssistantDesktopBridge.exe`.
+1. The installer installs `MynAssistantDesktopBridge.exe` next to `MynAssistant.exe`.
+2. By default, the installer enables the per-user Windows startup entry
+   `MynAssistant.DesktopBridge` and launches the bridge hidden after install.
+   The checkbox can be turned off during installation or later in Settings → Agent.
+3. On first launch, a browser opens for Google OAuth. Sign in with the same Google
+   account used by MynAssistant Android. The bridge then registers the Windows
+   device in Firestore and sends heartbeats every 25 seconds.
+4. Android discovers the PC through the Firestore `devices` collection and sends
+   approved commands into the `commands` collection. The bridge only claims
+   commands for the current user and this device; command claiming uses Firestore
+   update-time preconditions to prevent a cancelled or stale command from running.
+5. The web control panel uses the Render API and its Firebase service account to
+   list the same device documents and queue approved commands. The Render API
+   must be deployed and its `FIREBASE_SERVICE_ACCOUNT_JSON` environment variable
+   must have Firestore access.
 
-## OAuth configuration
+Logs are written to
+`%LOCALAPPDATA%\MynAssistant\DesktopAgent\bridge.log`.
+The Google Desktop OAuth client is stored at
+`%LOCALAPPDATA%\MynAssistant\Google\client_secret.json`. Do not commit that
+file or any user session/service-account secrets.
 
-The agent first looks for `client_secret.json` beside its executable (standalone/developer mode), then falls back to:
+## Supported remote actions
 
-`%LOCALAPPDATA%\MynAI\Google\client_secret.json`
+The current bridge supports volume mute/up/down, show desktop, relative mouse move,
+left/right click, safe predefined Windows actions, Unicode text entry (up to 1000
+characters), Backspace, and Enter. It rejects unsupported commands and checks
+user/device ownership before execution.
 
-The Windows installer is designed to place the desktop OAuth client configuration in this per-user location. Never commit a real OAuth JSON file, refresh token, Firebase service-account key, or user session to source control.
-
-## Local build
+## Local build and tests
 
 ```powershell
-py -m pip install -r tools/MynAssistantDesktopBridge/requirements.txt
+py -m pip install -r tools/MynAssistantDesktopBridge/requirements.txt Pillow
 py -m unittest discover -s tools/MynAssistantDesktopBridge/tests -v
-pyinstaller --noconfirm --clean --onefile --console --name MynAssistantDesktopBridge --collect-all google_auth_oauthlib --collect-all google.auth --hidden-import win32crypt tools/MynAssistantDesktopBridge/agent.py
+py -m PyInstaller --noconfirm --clean --onefile --noconsole --name MynAssistantDesktopBridge --collect-all google_auth_oauthlib --collect-all google.auth --hidden-import win32crypt tools/MynAssistantDesktopBridge/agent.py
 ```
 
-
-## Firestore screen-frame size
-
-Screen frames are reduced through several resolution/quality levels until the encoded Base64 string is at most 650 KB. This checks the actual string stored in Firestore, not only the smaller binary JPEG payload, leaving room for the other fields in the document.
+The Windows installer workflow runs the same tests and generates the Windows
+application icon, tray icon and Inno Setup logo from
+`assets/branding/mynassistant-icon-source.png` before compiling .NET or Inno Setup.
