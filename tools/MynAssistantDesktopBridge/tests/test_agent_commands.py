@@ -228,7 +228,8 @@ class FirebaseLoginRequiredTests(unittest.TestCase):
                  mock.patch.object(agent, "STATUS_FILE", status_path), \
                  mock.patch.object(agent, "SESSION_FILE", root / "session.bin"), \
                  mock.patch.object(agent, "load_protected_session", return_value=None), \
-                 mock.patch.object(agent.requests, "post") as post:
+                 mock.patch.object(agent.requests, "post") as post, \
+                 mock.patch("builtins.print"):
                 result = agent.run_agent()
 
             self.assertEqual(result, 2)
@@ -247,7 +248,8 @@ class FirebaseLoginRequiredTests(unittest.TestCase):
                  mock.patch.object(agent, "SESSION_FILE", root / "session.bin"), \
                  mock.patch.object(agent, "load_protected_session", return_value=stored), \
                  mock.patch.object(agent, "FirebaseSession", side_effect=agent.FirebaseSessionExpiredError("expired")), \
-                 mock.patch.object(agent, "delete_protected_session") as delete_session:
+                 mock.patch.object(agent, "delete_protected_session") as delete_session, \
+                 mock.patch("builtins.print"):
                 result = agent.run_agent()
 
             self.assertEqual(result, 2)
