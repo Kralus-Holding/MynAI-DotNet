@@ -257,5 +257,5 @@ class FirebaseLoginRequiredTests(unittest.TestCase):
             self.assertIn("Hesap bölümünden giriş", status["message"])
 
 
-if __name__ == "__main__":if __name__ == "__main__":
+if __name__ == "__main__":
     unittest.main(verbosity=2)
