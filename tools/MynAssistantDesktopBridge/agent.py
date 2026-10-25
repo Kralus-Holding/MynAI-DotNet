@@ -758,13 +758,26 @@ def run_agent() -> int:
             delete_protected_session()
 
     if session is None:
+        write_bridge_status("connecting", "Google girişi bekleniyor.")
         session = FirebaseSession.sign_in()
         print(f"Firebase hesabı: {session.email or session.uid}")
         if not getattr(sys, "frozen", False):
             ask_install_startup()
 
     device_id = load_device_id(session.uid)
+    write_bridge_status(
+        "connecting",
+        "Google hesabı doğrulandı; Windows PC Firestore'a kaydediliyor.",
+        email=session.email,
+        device_id=device_id,
+    )
     register_or_heartbeat(session, device_id, initial=True)
+    write_bridge_status(
+        "online",
+        "PC Firestore'a kaydedildi; Android ve web paneli için hazır.",
+        email=session.email,
+        device_id=device_id,
+    )
     print(f"Cihaz çevrimiçi: {platform.node()} (ID: {device_id})")
     print("Android uygulamasında Cihazlarım bölümünde otomatik görünmesi gerekir.")
     print("PC Kumandası açıkken masaüstü önizlemesi yaklaşık saniyede bir güncellenir.")
