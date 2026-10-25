@@ -21,6 +21,8 @@ public partial class SettingsWindow : Window
     private readonly MynAISettingsStore _settingsStore;
 
     private readonly DispatcherTimer _agentTimer;
+    private DateTime _lastBridgeRefreshAttemptUtc = DateTime.MinValue;
+
 
     public SettingsWindow()
     {
@@ -499,6 +501,12 @@ public partial class SettingsWindow : Window
 
     private void RefreshDesktopBridge_Click(object sender, RoutedEventArgs e)
     {
+        var now = DateTime.UtcNow;
+        if (now - _lastBridgeRefreshAttemptUtc < TimeSpan.FromMilliseconds(1200))
+            return;
+
+        _lastBridgeRefreshAttemptUtc = now;
+        AccountBridgeRefreshButton.IsEnabled = false;
         try
         {
             if (FirebaseDesktopSessionStore.HasValidStoredSession())
@@ -518,6 +526,12 @@ public partial class SettingsWindow : Window
             AccountDesktopBridgeStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
             AccountDesktopBridgeMessageText.Text = ex.Message;
             AccountDesktopBridgeStatusDot.Fill = new SolidColorBrush(Colors.IndianRed);
+        }
+        finally
+        {
+            AccountBridgeRefreshButton.IsEnabled = true;
+            // Start the debounce window after the operation too, so queued double-clicks are ignored.
+            _lastBridgeRefreshAttemptUtc = DateTime.UtcNow;
         }
     }
 
