@@ -230,7 +230,7 @@ class OAuthConfigPathTests(unittest.TestCase):
         user_config = google_dir / "client_secret.json"
         return install_dir, app_data, sidecar, user_config
 
-    def test_side_by_side_config_is_preferred(self):
+    def test_per_user_google_config_is_preferred_over_sidecar(self):
         import tempfile
         with tempfile.TemporaryDirectory() as temp_dir:
             install_dir, app_data, sidecar, user_config = self._make_config_tree(Path(temp_dir))
@@ -238,16 +238,36 @@ class OAuthConfigPathTests(unittest.TestCase):
             user_config.write_text("{}", encoding="utf-8")
             with mock.patch.object(agent, "running_directory", return_value=install_dir):
                 with mock.patch.object(agent, "APP_DATA", app_data):
-                    self.assertEqual(agent.find_oauth_credentials_path(), sidecar)
+                    self.assertEqual(agent.find_oauth_credentials_path(), user_config)
 
-    def test_per_user_google_config_is_fallback(self):
+    def test_side_by_side_config_is_development_fallback(self):
         import tempfile
         with tempfile.TemporaryDirectory() as temp_dir:
             install_dir, app_data, sidecar, user_config = self._make_config_tree(Path(temp_dir))
-            user_config.write_text("{}", encoding="utf-8")
+            sidecar.write_text("{}", encoding="utf-8")
             with mock.patch.object(agent, "running_directory", return_value=install_dir):
                 with mock.patch.object(agent, "APP_DATA", app_data):
-                    self.assertEqual(agent.find_oauth_credentials_path(), user_config)
+                    self.assertEqual(agent.find_oauth_credentials_path(), sidecar)
+
+    def test_legacy_mynai_google_config_is_supported(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp_dir:
+            install_dir, app_data, sidecar, _user_config = self._make_config_tree(Path(temp_dir))
+            legacy_google_dir = Path(temp_dir) / "local" / "MynAI" / "Google"
+            legacy_google_dir.mkdir(parents=True)
+            legacy_config = legacy_google_dir / "client_secret.json"
+            legacy_config.write_text("{}", encoding="utf-8")
+            with mock.patch.object(agent, "running_directory", return_value=install_dir):
+                with mock.patch.object(agent, "APP_DATA", app_data):
+                    self.assertEqual(agent.find_oauth_credentials_path(), legacy_config)
+
+    def test_missing_oauth_config_returns_none(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp_dir:
+            install_dir, app_data, _sidecar, _user_config = self._make_config_tree(Path(temp_dir))
+            with mock.patch.object(agent, "running_directory", return_value=install_dir):
+                with mock.patch.object(agent, "APP_DATA", app_data):
+                    self.assertIsNone(agent.find_oauth_credentials_path())
 
 
 if __name__ == "__main__":
