@@ -12,7 +12,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL=https://github.com/Kralus-Holding/MynAI-DotNet
 AppSupportURL=https://github.com/Kralus-Holding/MynAI-DotNet/issues
 DefaultDirName={localappdata}\Programs\MynAssistant
-UsePreviousAppDir=yes
+UsePreviousAppDir=no
 DefaultGroupName=MynAssistant
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=..\src\MynAI.Windows\Resources\myn.ico
@@ -42,6 +42,13 @@ VersionInfoCopyright=Copyright (C) MynKralus
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
 
+[Messages]
+WizardLicense=Lisans sözleşmesi
+LicenseLabel=Lütfen ilerlemeden önce aşağıdaki önemli bilgileri okuyun.
+LicenseLabel3=Lütfen aşağıdaki lisans sözleşmesini okuyun. Uygulamayı kurmak için bu sözleşmeyi kabul etmelisiniz.
+LicenseAccepted=Sözleşmeyi kabul &ediyorum
+LicenseNotAccepted=Sözleşmeyi kabul et&miyorum
+
 [Tasks]
 Name: "desktopicon"; Description: "Masaüstüne kısayol oluştur"; GroupDescription: "Ek kısayollar:"; Flags: unchecked
 
@@ -57,6 +64,48 @@ Name: "{autodesktop}\MynAssistant"; Filename: "{app}\{#MyAppExeName}"; WorkingDi
 Filename: "{app}\{#MyAppExeName}"; Description: "MynAssistant'ı şimdi başlat"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+function NormalizeInstallDir(Path: String): String;
+begin
+  Result := ExpandFileName(Path);
+  while (Length(Result) > 3) and (Result[Length(Result)] = '\') do
+    Delete(Result, Length(Result), 1);
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  ExistingInstallDir: String;
+  SelectedInstallDir: String;
+begin
+  Result := True;
+
+  if CurPageID = wpSelectDir then
+  begin
+    if RegQueryStringValue(
+      HKCU,
+      'Software\Microsoft\Windows\CurrentVersion\Uninstall\{E4FD24F0-B4A0-4D4C-875C-70781DC41F20}_is1',
+      'InstallLocation',
+      ExistingInstallDir) and DirExists(ExistingInstallDir) then
+    begin
+      SelectedInstallDir := ExpandConstant('{app}');
+      if CompareText(
+        NormalizeInstallDir(ExistingInstallDir),
+        NormalizeInstallDir(SelectedInstallDir)) <> 0 then
+      begin
+        MsgBox(
+          'MynAssistant şu klasörde zaten kurulu:' + #13#10 +
+          ExistingInstallDir + #13#10#13#10 +
+          'Aynı anda birden fazla bağımsız kurulum desteklenmiyor. ' +
+          'Güncelleme için aynı klasörü seçin. Farklı bir konuma geçmek için ' +
+          'önce mevcut kurulumu Windows Ayarları > Uygulamalar bölümünden kaldırın. ' +
+          'Önceki kurulum klasörü silinmişse yeni konum seçebilirsiniz.',
+          mbInformation,
+          MB_OK);
+        Result := False;
+      end;
+    end;
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   ResultCode: Integer;
