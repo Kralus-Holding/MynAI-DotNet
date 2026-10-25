@@ -268,7 +268,7 @@
 
 <Border Grid.Row="2"
         VerticalAlignment="Top"
-        Margin="14,0,14,8"
+        Margin="14,8,14,8"
         Background="#0D121A"
         BorderBrush="#233551"
         BorderThickness="1"
@@ -433,7 +433,6 @@
             <!-- PLANLANAN İŞLER -->
 
             <Border Grid.Row="1"
-                    Margin="0,8,0,0"
                     Background="#0C172A"
                     BorderBrush="#203B60"
                     BorderThickness="1"
