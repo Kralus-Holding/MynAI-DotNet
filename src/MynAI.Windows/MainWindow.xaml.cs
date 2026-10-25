@@ -94,7 +94,7 @@ public partial class MainWindow : Window
 
             LogoImage.Source = image;
 
-            // Use the already-supported JPEG for the WPF window icon.
+            // Load the current PNG branding as the WPF window icon.
             // The .ico remains the executable/tray icon, but is not decoded
             // by WPF's BitmapImage converter during XAML initialization.
             Icon = image;
