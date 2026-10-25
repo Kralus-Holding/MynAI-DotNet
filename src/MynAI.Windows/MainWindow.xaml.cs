@@ -74,7 +74,7 @@ public partial class MainWindow : Window
         var path = Path.Combine(
             AppContext.BaseDirectory,
             "Resources",
-            "myn.jpg");
+            "mynassistant.png);
 
         if (!File.Exists(path))
         {
@@ -94,9 +94,8 @@ public partial class MainWindow : Window
 
             LogoImage.Source = image;
 
-            // Use the already-supported JPEG for the WPF window icon.
-            // The .ico remains the executable/tray icon, but is not decoded
-            // by WPF's BitmapImage converter during XAML initialization.
+            // Use the canonical PNG for in-window branding and the WPF window icon.
+            // The native ICO is reserved for executable/tray use and is not parsed by XAML.
             Icon = image;
         }
         catch (Exception ex)
@@ -114,6 +113,66 @@ public partial class MainWindow : Window
     {
         DockNormal();
         await RefreshTasksAsync();
+        EnsurePhonePcBridgeConnection();
+    }
+
+
+    private void EnsurePhonePcBridgeConnection()
+    {
+        if (DesktopBridgeStartupManager.IsRunning())
+            return;
+
+        if (DesktopBridgeStartupManager.TryGetExecutablePath() is null)
+            return;
+
+        if (!File.Exists(DesktopBridgeStartupManager.GetOAuthConfigPath()))
+            return;
+
+        // A previous explicit consent enables reconnection without prompting again.
+        if (DesktopBridgeStartupManager.IsEnabled())
+        {
+            try
+            {
+                DesktopBridgeStartupManager.StartAgent();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Telefon-PC bağlantısı başlatılamadı: {ex}");
+            }
+            return;
+        }
+
+        if (DesktopBridgeStartupManager.HasConnectionConsentPrompted())
+            return;
+
+        DesktopBridgeStartupManager.MarkConnectionConsentPrompted();
+        var answer = MessageBox.Show(
+            "Telefon ve web panelinden bu bilgisayarı yönetmek için MynAssistant PC bağlantısını başlatmak ister misin?\n\n" +
+            "Windows Agent, aynı Google/Firebase hesabınla oturum açıp cihaz durumunu Firestore'a kaydeder. " +
+            "Ekran görüntüleri yalnızca PC Kumandası / ekran önizlemesi açıkken gönderilir. " +
+            "Evet dersen bağlantı şimdi başlar ve Windows açılışında otomatik başlatılır. " +
+            "Hayır dersen daha sonra Ayarlar > Telefon-PC bağlantısı bölümünden başlatabilirsin.",
+            "MynAssistant · Telefon-PC bağlantısı",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (answer != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            DesktopBridgeStartupManager.SetEnabled(true);
+            DesktopBridgeStartupManager.StartAgent();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Telefon-PC bağlantısı başlatılamadı:\n\n{ex.Message}\n\n" +
+                "Ayarlar > Telefon-PC bağlantısı bölümünü ve Google OAuth yapılandırmasını kontrol et.",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     private void DockNormal()
