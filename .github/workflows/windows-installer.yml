@@ -35,11 +35,15 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: "10.0.x"
-          check-latest: false
+      - name: Verify preinstalled .NET 10 SDK
+        shell: pwsh
+        run: |
+          $sdks = dotnet --list-sdks
+          $net10 = $sdks | Where-Object { $_ -match '^10\.0\.\d+' }
+          if (-not $net10) {
+            throw "The hosted Windows runner does not have a .NET 10 SDK. Avoid a network install because dotnetorigin returned HTTP 409."
+          }
+          dotnet --info
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -77,6 +81,36 @@ jobs:
           if (-not (Test-Path "build/bridge-dist/MynAssistantDesktopBridge.exe")) {
             throw "Desktop Bridge EXE was not created."
           }
+
+      - name: Verify bounded UI and installer changes
+        shell: pwsh
+        run: |
+          $settingsPath = "src/MynAI.Windows/SettingsWindow.xaml"
+          $settingsText = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8
+          $accountStart = $settingsText.IndexOf("<!-- HESAP -->")
+          $accountEnd = $settingsText.IndexOf("<!-- GİZLİLİK -->")
+          if ($accountStart -lt 0 -or $accountEnd -le $accountStart) { throw "Could not identify the Account settings section." }
+          $account = $settingsText.Substring($accountStart, $accountEnd - $accountStart)
+          foreach ($forbidden in @("Telefon-PC hesabı", "FirebaseEmailTextBox", "FirebasePasswordBox", "FirebaseSessionStatusText", "FirebaseSignInButton", "FirebaseSignOutButton")) {
+            if ($account.Contains($forbidden)) { throw "Firebase credential UI remains in Account settings: $forbidden" }
+          }
+          foreach ($required in @("AccountDesktopBridgeStatusText", "AccountDesktopBridgeStatusDot", "GooglePhoto", "GoogleConnectButton", "GoogleContactsCheckBox")) {
+            if (-not $account.Contains($required)) { throw "Account section is missing preserved UI: $required" }
+          }
+
+          [xml]$settingsXml = $settingsText
+          $xamlNames = @($settingsXml.SelectNodes('//@*[local-name()="Name" and namespace-uri()="http://schemas.microsoft.com/winfx/2006/xaml"]') | ForEach-Object { $_.Value })
+          $duplicates = @($xamlNames | Group-Object | Where-Object { $_.Count -gt 1 })
+          if ($duplicates.Count -gt 0) { throw "Duplicate x:Name values in SettingsWindow.xaml: $($duplicates.Name -join ', ')" }
+
+          $mainText = Get-Content -LiteralPath "src/MynAI.Windows/MainWindow.xaml" -Raw -Encoding UTF8
+          if (-not $mainText.Contains('Text="= Beklemede"')) { throw "Waiting badge must read '= Beklemede'." }
+          if (-not ($mainText -match 'x:Name="MainHeaderGrid"(?s).*?Margin="0,0,0,5"')) { throw "Main header must have a 5 DIP bottom margin." }
+
+          $installerText = Get-Content -LiteralPath "installer/MynAI.iss" -Raw -Encoding UTF8
+          if (-not $installerText.Contains("MynAssistant bilgisayarınızda zaten kurulu. Mevcut kurulumu güncellemek ister misiniz?")) { throw "Installer update confirmation text is missing." }
+          if (-not $installerText.Contains("GetVersionNumbersString")) { throw "Installer must verify the installed EXE file version." }
+          if ($installerText.Contains("DeleteDir(ExpandConstant('{app}')")) { throw "Installer must not delete the entire install directory." }
 
       - name: Verify WPF window icon loading remains non-fatal
         shell: pwsh
