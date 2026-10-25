@@ -86,8 +86,8 @@ public partial class MainWindow : Window
         Grid.SetColumn(HeaderActionsPanel, compact ? 0 : 2);
         Grid.SetColumnSpan(HeaderActionsPanel, compact ? 3 : 1);
         HeaderActionsPanel.HorizontalAlignment = compact
-            ? HorizontalAlignment.Left
-            : HorizontalAlignment.Right;
+            ? System.Windows.HorizontalAlignment.Left
+            : System.Windows.HorizontalAlignment.Right;
         HeaderActionsPanel.Margin = compact
             ? new Thickness(0, 6, 0, 0)
             : new Thickness(0);
