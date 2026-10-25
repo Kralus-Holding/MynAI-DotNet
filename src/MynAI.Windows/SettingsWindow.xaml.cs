@@ -541,6 +541,7 @@ public partial class SettingsWindow : Window
             }
 
             UpdateDesktopBridgeStatus();
+            UpdateAccountDesktopBridgeStatus();
         }
         catch (Exception ex)
         {
@@ -886,7 +887,6 @@ public partial class SettingsWindow : Window
             SetSaveStatus("Ayarlar kaydedildi.", Colors.LightGreen);
             UpdateDesktopBridgeStatus();
             UpdateAccountDesktopBridgeStatus();
-            UpdateDesktopBridgeStatus();
         }
         catch (Exception ex)
         {
