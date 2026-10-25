@@ -16,6 +16,10 @@
 5. Android'de PC Kumandası / Cihazlarım bölümünü aç. Windows cihazı `firebase-agent` olarak ve son üç dakika içinde heartbeat göndermiş durumda görünmeli.
 6. Web panelinde `/admin/` → Cihazlar sayfasını aç. Aynı kayıt burada görünmeli. Komut göndermek için cihazın çevrimiçi olması, `connectionMode` alanının `firebase-agent` olması ve Render servis hesabının Firestore erişiminin çalışması gerekir.
 
+## Klavye ve metin kontrolü
+
+Android 0.6.1 sürümünün PC Kumandası ekranı Windows Agent’a `type_text`, `key_backspace` ve `key_enter` komutları gönderebilir. Bu işlemler yalnızca seçilen çevrimiçi `firebase-agent` cihazına gönderilir; yazma metni 1000 karakterle sınırlıdır. Windows paketi Agent 0.2.2 veya üzerini içermelidir.
+
 ## Web paneli için sunucu koşulu
 
 Render ortamında `FIREBASE_PROJECT_ID=myncloud-24` ve doğru `FIREBASE_SERVICE_ACCOUNT_JSON` bulunmalı. Panelin Genel Bakış sayfasındaki Firebase veri bağlantısı doğrulanmadıysa Windows uygulaması doğru çalışsa bile web paneli cihazları ve komut geçmişini listeleyemez. Servis hesabı gizli anahtarını GitHub'a, APK'ya ya da sohbete koyma.
