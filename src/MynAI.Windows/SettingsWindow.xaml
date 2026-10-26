@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="MynAssistant Ayarlar"
         Width="900"
-        Height="640"
+        Height="700"
         MinWidth="820"
-        MinHeight="560"
+        MinHeight="620"
         WindowStartupLocation="CenterOwner"
         Background="#080D13"
         Foreground="#EAF0F7">
@@ -352,10 +352,28 @@
                             Click="AccountNav_Click"/>
 
                     <Button x:Name="PrivacyNavButton"
-                            Content="Gizlilik"
+                            Content="İzinler"
                             Tag="Normal"
                             Style="{StaticResource NavButton}"
                             Click="PrivacyNav_Click"/>
+
+                    <Button x:Name="PluginsNavButton"
+                            Content="Eklentiler"
+                            Tag="Normal"
+                            Style="{StaticResource NavButton}"
+                            Click="PluginsNav_Click"/>
+
+                    <Button x:Name="StartupNavButton"
+                            Content="Başlangıç"
+                            Tag="Normal"
+                            Style="{StaticResource NavButton}"
+                            Click="StartupNav_Click"/>
+
+                    <Button x:Name="ErrorLogsNavButton"
+                            Content="Hata günlükleri"
+                            Tag="Normal"
+                            Style="{StaticResource NavButton}"
+                            Click="ErrorLogsNav_Click"/>
 
                     <Button x:Name="ShortcutNavButton"
                             Content="Kısayollar"
@@ -866,6 +884,100 @@
 
                         </Border>
 
+                    </StackPanel>
+
+                    <!-- EKLENTİLER -->
+                    <StackPanel x:Name="PluginsPanel" Visibility="Collapsed">
+                        <TextBlock Text="Eklentiler" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                        <TextBlock Text="Yalnızca tanınan uygulamaları açan, sınırlı entegrasyonlar. Uygulama içi verilere otomatik erişim verilmez."
+                                   Foreground="#718096" FontSize="12" Margin="0,0,0,18" TextWrapping="Wrap"/>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Google Chrome" FontSize="14" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="PluginChromeStatusText" Text="Chrome durumu kontrol ediliyor..."
+                                           Foreground="#9BA9BB" FontSize="11" Margin="0,6,0,10" TextWrapping="Wrap"/>
+                                <Button x:Name="PluginChromeButton" Content="Chrome'u aç"
+                                        Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"
+                                        Click="OpenChrome_Click"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="LocalSend" FontSize="14" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="PluginLocalSendStatusText" Text="LocalSend durumu kontrol ediliyor..."
+                                           Foreground="#9BA9BB" FontSize="11" Margin="0,6,0,10" TextWrapping="Wrap"/>
+                                <Button x:Name="PluginLocalSendButton" Content="LocalSend'i aç"
+                                        Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"
+                                        Click="OpenLocalSend_Click"/>
+                                <TextBlock Text="Bu sürüm LocalSend'in varlığını kontrol eder ve uygulamayı açabilir. Otomatik dosya gönderimi veya kabulü yapmaz."
+                                           Foreground="#718096" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- BAŞLANGIÇ -->
+                    <StackPanel x:Name="StartupPanel" Visibility="Collapsed">
+                        <TextBlock Text="Başlangıç" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                        <TextBlock Text="Windows kullanıcı oturumu açıldığında uygulamanın başlatılmasını yönet. Bu ayar, arka plan Agent ayarından ayrıdır."
+                                   Foreground="#718096" FontSize="12" Margin="0,0,0,18" TextWrapping="Wrap"/>
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Uygulama başlangıcı" FontSize="14" FontWeight="SemiBold"/>
+                                <CheckBox x:Name="StartupAppCheckBox"
+                                          Content="Bilgisayar açıldığında MynAssistant'ı başlat"
+                                          Margin="0,12,0,8"
+                                          Click="StartupAppCheckBox_Click"/>
+                                <TextBlock x:Name="StartupStatusText" Text="Başlangıç ayarı kontrol ediliyor..."
+                                           Foreground="#9BA9BB" FontSize="11" TextWrapping="Wrap"/>
+                                <Button Content="Windows başlangıç ayarlarını aç"
+                                        Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left"
+                                        Margin="0,12,0,0" Click="OpenStartupSettings_Click"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- HATA GÜNLÜKLERİ -->
+                    <StackPanel x:Name="ErrorLogsPanel" Visibility="Collapsed">
+                        <TextBlock Text="Hata günlükleri" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                        <TextBlock Text="Son uygulama, Agent ve Telefon-PC bağlantı tanıları. Destek raporu dışarı aktarılmadan önce bu bilgisayarda hazırlanır."
+                                   Foreground="#718096" FontSize="12" Margin="0,0,0,18" TextWrapping="Wrap"/>
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Son kayıtlar" FontSize="14" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="ErrorLogsStatusText" Text="Günlükler yükleniyor..."
+                                           Foreground="#9BA9BB" FontSize="11" Margin="0,6,0,10" TextWrapping="Wrap"/>
+                                <TextBox x:Name="ErrorLogsTextBox"
+                                         Height="250"
+                                         IsReadOnly="True"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Disabled"
+                                         Background="#080D13"
+                                         Foreground="#D9E5F2"
+                                         BorderBrush="#26374B"
+                                         BorderThickness="1"
+                                         Padding="10"
+                                         FontFamily="Consolas"
+                                         FontSize="11"/>
+                                <WrapPanel Margin="0,12,0,0">
+                                    <Button Content="Yenile" Style="{StaticResource SecondaryButton}"
+                                            Margin="0,0,8,8" Click="RefreshErrorLogs_Click"/>
+                                    <Button Content="Tanı raporunu kopyala" Style="{StaticResource SecondaryButton}"
+                                            Margin="0,0,8,8" Click="CopyDiagnostics_Click"/>
+                                    <Button Content="Destek raporu oluştur" Style="{StaticResource PrimaryButton}"
+                                            Margin="0,0,8,8" Click="ExportSupportReport_Click"/>
+                                    <Button Content="Günlük klasörünü aç" Style="{StaticResource SecondaryButton}"
+                                            Margin="0,0,8,8" Click="OpenDiagnosticLogs_Click"/>
+                                    <Button Content="Günlükleri temizle" Style="{StaticResource SecondaryButton}"
+                                            Margin="0,0,8,8" Click="ClearDiagnosticLogs_Click"/>
+                                </WrapPanel>
+                                <TextBlock Text="Raporlar otomatik olarak sunucuya gönderilmez. Günlükleri temizlemek için açık onay istenir."
+                                           Foreground="#718096" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
 
                     <!-- KISAYOLLAR -->
