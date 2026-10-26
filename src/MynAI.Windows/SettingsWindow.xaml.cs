@@ -91,6 +91,12 @@ public partial class SettingsWindow : Window
         DesktopBridgeStartupCheckBox.IsChecked =
             DesktopBridgeStartupManager.IsEnabled();
 
+        AgentStartupCheckBox.IsChecked =
+            AgentStartupManager.IsEnabled();
+
+        StartupAppCheckBox.IsChecked =
+            StartupSettingsManager.IsEnabled();
+
         MicrophoneCheckBox.IsChecked =
             settings.MicrophoneEnabled;
 
@@ -101,6 +107,9 @@ public partial class SettingsWindow : Window
             settings.BringToFrontHotkey;
 
         UpdateLogoPreview(settings);
+        UpdateStartupStatus();
+        UpdatePluginStatus();
+        RefreshErrorLogViewer();
     }
 
     private void LoadGoogleAccount()
@@ -157,12 +166,18 @@ public partial class SettingsWindow : Window
         AgentPanel.Visibility = Visibility.Collapsed;
         AccountPanel.Visibility = Visibility.Collapsed;
         PrivacyPanel.Visibility = Visibility.Collapsed;
+        PluginsPanel.Visibility = Visibility.Collapsed;
+        StartupPanel.Visibility = Visibility.Collapsed;
+        ErrorLogsPanel.Visibility = Visibility.Collapsed;
         ShortcutPanel.Visibility = Visibility.Collapsed;
 
         GeneralNavButton.Tag = "Normal";
         AgentNavButton.Tag = "Normal";
         AccountNavButton.Tag = "Normal";
         PrivacyNavButton.Tag = "Normal";
+        PluginsNavButton.Tag = "Normal";
+        StartupNavButton.Tag = "Normal";
+        ErrorLogsNavButton.Tag = "Normal";
         ShortcutNavButton.Tag = "Normal";
 
         selectedButton.Tag = "Active";
@@ -200,11 +215,311 @@ public partial class SettingsWindow : Window
         ShowPage(PrivacyPanel, PrivacyNavButton);
     }
 
+    private void PluginsNav_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        ShowPage(PluginsPanel, PluginsNavButton);
+        UpdatePluginStatus();
+    }
+
+    private void StartupNav_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        ShowPage(StartupPanel, StartupNavButton);
+        UpdateStartupStatus();
+    }
+
+    private void ErrorLogsNav_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        ShowPage(ErrorLogsPanel, ErrorLogsNavButton);
+        RefreshErrorLogViewer();
+    }
+
     private void ShortcutNav_Click(
         object sender,
         RoutedEventArgs e)
     {
         ShowPage(ShortcutPanel, ShortcutNavButton);
+    }
+
+    private void UpdateStartupStatus()
+    {
+        var enabled = StartupSettingsManager.IsEnabled();
+        StartupAppCheckBox.IsChecked = enabled;
+        StartupStatusText.Text = enabled
+            ? "MynAssistant, Windows kullanıcı oturumu açıldığında başlatılacak."
+            : "MynAssistant Windows oturum açılışında otomatik başlatılmayacak.";
+        StartupStatusText.Foreground = new SolidColorBrush(
+            enabled ? Colors.LightGreen : Colors.LightBlue);
+    }
+
+    private void UpdatePluginStatus()
+    {
+        var chromePath = PluginIntegrationManager.FindChromeExecutable();
+        var localSendPath = PluginIntegrationManager.FindLocalSendExecutable();
+
+        PluginChromeButton.IsEnabled = chromePath is not null;
+        PluginChromeStatusText.Text = chromePath is not null
+            ? "Chrome bulundu. Düğme yalnızca tarayıcıyı açar."
+            : "Chrome bulunamadı. Kurulu değilse uygulamayı yükledikten sonra Yeniden kontrol et.";
+        PluginChromeStatusText.Foreground = new SolidColorBrush(
+            chromePath is not null ? Colors.LightGreen : Colors.Goldenrod);
+
+        PluginLocalSendButton.IsEnabled = localSendPath is not null;
+        PluginLocalSendStatusText.Text = localSendPath is not null
+            ? "LocalSend bulundu. Düğme yalnızca uygulamayı açar; dosya göndermez."
+            : "LocalSend bulunamadı. Kurulu değilse bu entegrasyon şimdilik kullanılamaz.";
+        PluginLocalSendStatusText.Foreground = new SolidColorBrush(
+            localSendPath is not null ? Colors.LightGreen : Colors.Goldenrod);
+    }
+
+    private void AgentStartupCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        var previous = AgentStartupManager.IsEnabled();
+        var requested = AgentStartupCheckBox.IsChecked == true;
+        try
+        {
+            AgentStartupManager.SetEnabled(requested);
+            var settings = _settingsStore.Load();
+            settings.StartAgentWithWindows = requested;
+            settings.StartApplicationWithWindows = StartupSettingsManager.IsEnabled();
+            _settingsStore.Save(settings);
+            UpdateAgentStatus();
+            UpdateAgentDiagnostics();
+            SetSaveStatus(
+                requested ? "Agent için Windows başlangıcı etkinleştirildi." : "Agent için Windows başlangıcı kapatıldı.",
+                Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                if (AgentStartupManager.IsEnabled() != previous)
+                    AgentStartupManager.SetEnabled(previous);
+            }
+            catch (Exception rollbackError)
+            {
+                DiagnosticLogManager.WriteError(
+                    "MYN-STARTUP-999", "Agent", "Agent başlangıç ayarı geri alınamadı.", rollbackError);
+            }
+
+            AgentStartupCheckBox.IsChecked = previous;
+            DiagnosticLogManager.WriteError(
+                "MYN-STARTUP-001", "Agent", "Agent başlangıç ayarı değiştirilemedi.", ex);
+            MessageBox.Show(
+                $"Agent başlangıç ayarı değiştirilemedi. Önceki ayar korunmaya çalışıldı.\n\n{ex.Message}",
+                "MynAssistant", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void StartupAppCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        var previous = StartupSettingsManager.IsEnabled();
+        var requested = StartupAppCheckBox.IsChecked == true;
+        try
+        {
+            StartupSettingsManager.SetEnabled(requested);
+            var settings = _settingsStore.Load();
+            settings.StartApplicationWithWindows = requested;
+            settings.StartAgentWithWindows = AgentStartupManager.IsEnabled();
+            _settingsStore.Save(settings);
+            UpdateStartupStatus();
+            SetSaveStatus(
+                requested ? "MynAssistant uygulama başlangıcı etkinleştirildi." : "MynAssistant uygulama başlangıcı kapatıldı.",
+                Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                if (StartupSettingsManager.IsEnabled() != previous)
+                    StartupSettingsManager.SetEnabled(previous);
+            }
+            catch (Exception rollbackError)
+            {
+                DiagnosticLogManager.WriteError(
+                    "MYN-STARTUP-999", "Windows", "Uygulama başlangıç ayarı geri alınamadı.", rollbackError);
+            }
+
+            StartupAppCheckBox.IsChecked = previous;
+            UpdateStartupStatus();
+            DiagnosticLogManager.WriteError(
+                "MYN-STARTUP-002", "Windows", "MynAssistant başlangıç ayarı değiştirilemedi.", ex);
+            MessageBox.Show(
+                $"MynAssistant başlangıç ayarı değiştirilemedi. Önceki ayar korunmaya çalışıldı.\n\n{ex.Message}",
+                "MynAssistant", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OpenStartupSettings_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            StartupSettingsManager.OpenStartupSettings();
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-STARTUP-003", "Windows", "Windows başlangıç ayarları açılamadı.", ex);
+            MessageBox.Show(
+                $"Windows başlangıç ayarları açılamadı.\n\n{ex.Message}",
+                "MynAssistant", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OpenChrome_Click(object sender, RoutedEventArgs e)
+    {
+        OpenPlugin("Google Chrome", "MYN-PLUGIN-001", PluginIntegrationManager.FindChromeExecutable);
+    }
+
+    private void OpenLocalSend_Click(object sender, RoutedEventArgs e)
+    {
+        OpenPlugin("LocalSend", "MYN-PLUGIN-002", PluginIntegrationManager.FindLocalSendExecutable);
+    }
+
+    private void OpenPlugin(string displayName, string errorCode, Func<string?> findExecutable)
+    {
+        try
+        {
+            var executablePath = findExecutable();
+            if (executablePath is null)
+            {
+                UpdatePluginStatus();
+                MessageBox.Show(
+                    $"{displayName} bu bilgisayarda bulunamadı. Uygulama açılmadı.",
+                    "MynAssistant — Eklentiler", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            PluginIntegrationManager.OpenApplication(executablePath);
+            SetSaveStatus($"{displayName} başlatma isteği gönderildi.", Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(errorCode, displayName, "Entegrasyon uygulaması açılamadı.", ex);
+            MessageBox.Show(
+                $"{displayName} açılamadı.\n\n{ex.Message}",
+                "MynAssistant — Eklentiler", MessageBoxButton.OK, MessageBoxImage.Error);
+            UpdatePluginStatus();
+        }
+    }
+
+    private void RefreshErrorLogs_Click(object sender, RoutedEventArgs e) =>
+        RefreshErrorLogViewer();
+
+    private void RefreshErrorLogViewer()
+    {
+        try
+        {
+            var lines = DiagnosticLogManager.ReadRecentLines();
+            ErrorLogsTextBox.Text = lines.Count == 0
+                ? "Henüz tanılama kaydı bulunamadı."
+                : string.Join(Environment.NewLine, lines);
+            ErrorLogsStatusText.Text = $"{lines.Count} kayıt gösteriliyor. Günlük klasörü: {DiagnosticLogManager.LogDirectory}";
+            ErrorLogsStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
+        }
+        catch (Exception ex)
+        {
+            ErrorLogsTextBox.Text = "Hata günlükleri okunamadı. Günlük klasörünü açıp erişim izinlerini kontrol edin.";
+            ErrorLogsStatusText.Text = $"MYN-UI-999 — Günlükler okunamadı: {ex.Message}";
+            ErrorLogsStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            DiagnosticLogManager.WriteError(
+                "MYN-UI-999", "Settings", "Hata günlükleri ekranı güncellenemedi.", ex);
+        }
+    }
+
+    private void CopyDiagnostics_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Clipboard.SetText(DiagnosticLogManager.BuildSupportReport());
+            ErrorLogsStatusText.Text = "Tanı raporu panoya kopyalandı. Paylaşmadan önce içeriği inceleyebilirsin.";
+            ErrorLogsStatusText.Foreground = new SolidColorBrush(Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-UI-005", "Diagnostics", "Tanı raporu panoya kopyalanamadı.", ex);
+            MessageBox.Show(
+                $"Tanı raporu panoya kopyalanamadı.\n\n{ex.Message}",
+                "MynAssistant", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void ExportSupportReport_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "MynAssistant destek raporunu kaydet",
+            FileName = "MynAssistant-Destek-Raporu.txt",
+            DefaultExt = ".txt",
+            AddExtension = true,
+            Filter = "Metin raporu (*.txt)|*.txt|JSON Lines günlükler (*.jsonl)|*.jsonl"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            var report = DiagnosticLogManager.BuildSupportReport();
+            File.WriteAllText(dialog.FileName, report, new System.Text.UTF8Encoding(false));
+            ErrorLogsStatusText.Text = "Destek raporu bu bilgisayara kaydedildi; otomatik olarak gönderilmedi.";
+            ErrorLogsStatusText.Foreground = new SolidColorBrush(Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-UI-006", "Diagnostics", "Destek raporu dışa aktarılamadı.", ex);
+            MessageBox.Show(
+                $"Destek raporu kaydedilemedi.\n\n{ex.Message}",
+                "MynAssistant", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OpenDiagnosticLogs_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            DiagnosticLogManager.OpenLogDirectory();
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-UI-007", "Diagnostics", "Günlük klasörü açılamadı.", ex);
+            MessageBox.Show(
+                $"Günlük klasörü açılamadı.\n\n{ex.Message}",
+                "MynAssistant", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void ClearDiagnosticLogs_Click(object sender, RoutedEventArgs e)
+    {
+        var answer = MessageBox.Show(
+            "Tanılama günlükleri silinecek. Bu işlem uygulama ayarlarını veya Firestore cihaz kayıtlarını silmez. Devam edilsin mi?",
+            "Günlükleri temizle", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (answer != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            DiagnosticLogManager.ClearKnownLogs();
+            RefreshErrorLogViewer();
+            ErrorLogsStatusText.Text = "Tanılama günlükleri temizlendi.";
+            ErrorLogsStatusText.Foreground = new SolidColorBrush(Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-UI-008", "Diagnostics", "Tanılama günlükleri temizlenemedi.", ex);
+            MessageBox.Show(
+                $"Tanılama günlükleri temizlenemedi.\n\n{ex.Message}",
+                "MynAssistant", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private void UpdateAgentStatus()
@@ -878,8 +1193,6 @@ public partial class SettingsWindow : Window
     {
         try
         {
-            AgentStartupManager.EnsureAutomaticStartup();
-
             var settings = _settingsStore.Load();
             var startDesktopBridge = DesktopBridgeStartupCheckBox.IsChecked == true
                 && FirebaseDesktopSessionStore.HasValidStoredSession();
@@ -887,7 +1200,8 @@ public partial class SettingsWindow : Window
             DesktopBridgeStartupCheckBox.IsChecked = startDesktopBridge;
             DesktopBridgeStartupManager.SetEnabled(startDesktopBridge);
 
-            settings.StartAgentWithWindows = true;
+            settings.StartAgentWithWindows = AgentStartupManager.IsEnabled();
+            settings.StartApplicationWithWindows = StartupSettingsManager.IsEnabled();
             settings.StartDesktopBridgeWithWindows = startDesktopBridge;
             settings.WindowsNotifications = NotificationsCheckBox.IsChecked == true;
             settings.MicrophoneEnabled = MicrophoneCheckBox.IsChecked == true;
