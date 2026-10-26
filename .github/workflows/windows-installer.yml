@@ -243,6 +243,8 @@ jobs:
           $mainCode = Get-Content -LiteralPath "src/MynAI.Windows/MainWindow.xaml.cs" -Raw -Encoding UTF8
           if (-not $mainCode.Contains('"Aktif•"')) { throw "Connected Agent status must display 'Aktif •'." }
           if (-not $mainCode.Contains('"Bağlantı yok •"')) { throw "Disconnected Agent status must remain explicit." }
+          if (-not $mainCode.Contains('ReadLineAsync(responseCancellation.Token)') -or -not $mainCode.Contains('Agent 3 saniye içinde IPC yanıtı vermedi.')) { throw "Agent IPC response reads must time out instead of hanging the dashboard refresh." }
+          if (-not $mainCode.Contains('_refreshTasksInProgress') -or -not $mainCode.Contains('"MYN-AGENT-001"')) { throw "Overlapping dashboard refreshes must be prevented and IPC failures logged." }
           $pairingClient = Get-Content -LiteralPath "src/MynAI.Windows/Auth/DesktopPairingClient.cs" -Raw -Encoding UTF8
           if (-not $pairingClient.Contains("HttpStatusCode.NotFound") -or -not $pairingClient.Contains("MYN-SERVER-404")) { throw "A missing live pairing endpoint must have a specific diagnosis." }
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
