@@ -741,7 +741,7 @@ public partial class SettingsWindow : Window
         var messageText = connected
             ? "Android uygulamasıyla bilgisayar bağlantısı kuruldu."
             : authRequired
-                ? "Bu bilgisayarda güvenli telefon-PC oturumu yok. İlk eşleştirme sunucu akışı bu sürümde henüz bulunmadığından bağlantı başlatılamaz."
+                ? "Bu bilgisayarda güvenli telefon-PC oturumu yok. Windows'ta Telefonla eşleştir ile kod oluşturup Android MynAssistant → Ayarlar bölümünde onayla. HTTP 404 görülürse Render sunucusunun güncel sürüme dağıtılması gerekir."
                 : hasError
                     ? "Bağlantı kurulamadı. Bağlantıyı yenileyerek tekrar dene."
                     : connecting
@@ -1371,50 +1371,128 @@ public partial class SettingsWindow : Window
         object sender,
         RoutedEventArgs e)
     {
+        var originalSettings = _settingsStore.Load();
+        var previousBridgeStartup = DesktopBridgeStartupManager.IsEnabled();
+        var requestedBridgeStartup = DesktopBridgeStartupCheckBox.IsChecked == true
+            && FirebaseDesktopSessionStore.HasValidStoredSession();
+
+        var updatedSettings = _settingsStore.Load();
+        updatedSettings.StartAgentWithWindows = AgentStartupManager.IsEnabled();
+        updatedSettings.StartApplicationWithWindows = StartupSettingsManager.IsEnabled();
+        updatedSettings.StartDesktopBridgeWithWindows = requestedBridgeStartup;
+        updatedSettings.WindowsNotifications = NotificationsCheckBox.IsChecked == true;
+        updatedSettings.MicrophoneEnabled = MicrophoneCheckBox.IsChecked == true;
+        updatedSettings.CameraEnabled = CameraCheckBox.IsChecked == true;
+        updatedSettings.BringToFrontHotkey = HotkeyTextBox.Text.Trim();
+
+        // Validate/apply the new hotkey before writing settings. Apply unregisters
+        // the old shortcut first, so restore the previous shortcut on any failure.
+        if (!GlobalHotkeyService.Apply(updatedSettings.BringToFrontHotkey, out var hotkeyError))
+        {
+            if (!GlobalHotkeyService.Apply(originalSettings.BringToFrontHotkey, out var restoreError))
+            {
+                DiagnosticLogManager.WriteError(
+                    "MYN-SETTINGS-999",
+                    "GlobalHotkey",
+                    "Yeni kısayol reddedildi ve önceki kısayol geri yüklenemedi.",
+                    new InvalidOperationException(restoreError));
+            }
+
+            HotkeyInfoText.Text = hotkeyError;
+            HotkeyInfoText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            SetSaveStatus("Ayarlar kaydedilmedi; kısayol geçersiz veya kullanımda.", Colors.IndianRed);
+            return;
+        }
+
+        var settingsSaved = false;
         try
         {
-            var settings = _settingsStore.Load();
-            var startDesktopBridge = DesktopBridgeStartupCheckBox.IsChecked == true
-                && FirebaseDesktopSessionStore.HasValidStoredSession();
+            _settingsStore.Save(updatedSettings);
+            settingsSaved = true;
 
-            DesktopBridgeStartupCheckBox.IsChecked = startDesktopBridge;
-            DesktopBridgeStartupManager.SetEnabled(startDesktopBridge);
+            DesktopBridgeStartupManager.SetEnabled(requestedBridgeStartup);
 
-            settings.StartAgentWithWindows = AgentStartupManager.IsEnabled();
-            settings.StartApplicationWithWindows = StartupSettingsManager.IsEnabled();
-            settings.StartDesktopBridgeWithWindows = startDesktopBridge;
-            settings.WindowsNotifications = NotificationsCheckBox.IsChecked == true;
-            settings.MicrophoneEnabled = MicrophoneCheckBox.IsChecked == true;
-            settings.CameraEnabled = CameraCheckBox.IsChecked == true;
-            settings.BringToFrontHotkey = HotkeyTextBox.Text.Trim();
-            _settingsStore.Save(settings);
-
-            if (!GlobalHotkeyService.Apply(settings.BringToFrontHotkey, out var hotkeyError))
+            DesktopBridgeStartupCheckBox.IsChecked = requestedBridgeStartup;
+            if (string.IsNullOrWhiteSpace(updatedSettings.BringToFrontHotkey))
             {
-                HotkeyInfoText.Text = hotkeyError;
-                HotkeyInfoText.Foreground = new SolidColorBrush(Colors.IndianRed);
+                HotkeyInfoText.Text = "Global kısayol kapalı.";
             }
             else
             {
-                HotkeyInfoText.Text = string.IsNullOrWhiteSpace(settings.BringToFrontHotkey)
-                    ? "Global kısayol kapalı."
-                    : "Global kısayol aktif.";
-                HotkeyInfoText.Foreground = new SolidColorBrush(Colors.LightGreen);
+                HotkeyInfoText.Text = "Global kısayol aktif.";
             }
+            HotkeyInfoText.Foreground = new SolidColorBrush(Colors.LightGreen);
 
             SetSaveStatus("Ayarlar kaydedildi.", Colors.LightGreen);
+            UpdateAgentStatus();
             UpdateDesktopBridgeStatus();
             UpdateAccountDesktopBridgeStatus();
 
-            // Close only after every persistent settings write above completed successfully.
+            // Close only after the persistent settings and OS startup setting succeed.
             _agentTimer.Stop();
             Close();
         }
         catch (Exception ex)
         {
+            var rollbackFailures = new List<string>();
+
+            if (settingsSaved)
+            {
+                try
+                {
+                    _settingsStore.Save(originalSettings);
+                }
+                catch (Exception rollbackSettingsError)
+                {
+                    rollbackFailures.Add("Önceki ayarlar geri yüklenemedi.");
+                    DiagnosticLogManager.WriteError(
+                        "MYN-SETTINGS-999",
+                        "Settings",
+                        "Kaydet hatasından sonra önceki ayarlar geri yüklenemedi.",
+                        rollbackSettingsError);
+                }
+            }
+
+            try
+            {
+                if (DesktopBridgeStartupManager.IsEnabled() != previousBridgeStartup)
+                    DesktopBridgeStartupManager.SetEnabled(previousBridgeStartup);
+            }
+            catch (Exception rollbackStartupError)
+            {
+                rollbackFailures.Add("Önceki Bridge başlangıç ayarı geri yüklenemedi.");
+                DiagnosticLogManager.WriteError(
+                    "MYN-STARTUP-999",
+                    "DesktopBridge",
+                    "Kaydet hatasından sonra önceki Bridge başlangıç ayarı geri yüklenemedi.",
+                    rollbackStartupError);
+            }
+
+            if (!GlobalHotkeyService.Apply(originalSettings.BringToFrontHotkey, out var restoreHotkeyError))
+            {
+                rollbackFailures.Add("Önceki global kısayol geri yüklenemedi.");
+                DiagnosticLogManager.WriteError(
+                    "MYN-SETTINGS-999",
+                    "GlobalHotkey",
+                    "Kaydet hatasından sonra önceki global kısayol geri yüklenemedi.",
+                    new InvalidOperationException(restoreHotkeyError));
+            }
+
+            DiagnosticLogManager.WriteError(
+                "MYN-SETTINGS-001",
+                "Settings",
+                "Ayarlar kaydedilemedi; geri alma işlemi denendi.",
+                ex);
+
             SetSaveStatus("Kaydedilemedi.", Colors.IndianRed);
-            MessageBox.Show($"Ayarlar kaydedilemedi:\n\n{ex.Message}",
-                "MynAssistant", MessageBoxButton.OK, MessageBoxImage.Error);
+            var rollbackText = rollbackFailures.Count == 0
+                ? "Önceki ayarlar korunmaya çalışıldı."
+                : string.Join(Environment.NewLine, rollbackFailures);
+            MessageBox.Show(
+                $"Ayarlar kaydedilemedi.\n\n{ex.Message}\n\n{rollbackText}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
         }
     }
 
