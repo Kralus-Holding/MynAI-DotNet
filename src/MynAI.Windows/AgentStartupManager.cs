@@ -201,6 +201,9 @@ public static class AgentStartupManager
 
         try
         {
+            // Repair the canonical executable path on upgrades only when this
+            // preference was already enabled; never opt users in silently.
+            SetEnabled(true);
             if (!IsRunning())
                 StartAgent();
         }
