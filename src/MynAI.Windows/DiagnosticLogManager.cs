@@ -192,7 +192,7 @@ public static class DiagnosticLogManager
 
         var output = Regex.Replace(
             value,
-            @"(?i)(refreshToken|idToken|access[_-]?token|client[_-]?secret|password|api[_-]?key)\s*[:=]\s*[^\s,;""']+",
+            @"(?i)(refreshToken|idToken|access[_-]?token|client[_-]?secret|password|api[_-]?key)""?\s*[:=]\s*""?[^\s,;""'}]+",
             "$1=[MASKELENDİ]");
         output = Regex.Replace(output, @"(?i)Bearer\s+[A-Za-z0-9._~-]+", "Bearer [MASKELENDİ]");
         output = Regex.Replace(output, @"\bAIza[0-9A-Za-z_-]{20,}\b", "[API ANAHTARI MASKELENDİ]");
