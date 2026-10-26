@@ -1247,6 +1247,14 @@ public partial class SettingsWindow : Window
                 || details.Contains("403", StringComparison.OrdinalIgnoreCase)
                 || details.Contains("test users", StringComparison.OrdinalIgnoreCase)
                 || details.Contains("test kullanıcı", StringComparison.OrdinalIgnoreCase);
+            var errorCode = accessDenied ? "MYN-OAUTH-403" : "MYN-OAUTH-001";
+            DiagnosticLogManager.WriteError(
+                errorCode,
+                "GoogleOAuth",
+                accessDenied
+                    ? "Google OAuth erişimi reddedildi; OAuth test kullanıcısı ayarı kontrol edilmeli."
+                    : "Google Kişiler için OAuth bağlantısı başarısız.",
+                ex);
 
             var explanation = accessDenied
                 ? "Google OAuth erişimi 403 access_denied ile reddedildi. Google Cloud Console → Google Auth Platform → Audience → Test users bölümüne bu Google hesabını ekleyin; alternatif olarak OAuth uygulamasını uygun şekilde yayımlayıp gerekiyorsa doğrulayın. Bu izin Google Console ayarıdır ve uygulamayı yeniden derlemek tek başına sorunu çözmez. Telefon-PC eşleştirmesi için Google Kişiler bağlantısı gerekli değildir."
