@@ -33,7 +33,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Verify preinstalled .NET 10 SDK
         shell: pwsh
@@ -46,7 +46,7 @@ jobs:
           dotnet --info
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -314,7 +314,7 @@ jobs:
       - name: Upload Windows installer as Actions artifact
         id: upload_installer
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MynAssistant-Windows-Installer
           path: build/distribution/MynAssistant-Windows-Installer.zip
