@@ -1387,18 +1387,49 @@ public partial class SettingsWindow : Window
 
         // Validate/apply the new hotkey before writing settings. Apply unregisters
         // the old shortcut first, so restore the previous shortcut on any failure.
-        if (!GlobalHotkeyService.Apply(updatedSettings.BringToFrontHotkey, out var hotkeyError))
+        var hotkeyError = string.Empty;
+        var hotkeyApplied = false;
+        try
         {
-            if (!GlobalHotkeyService.Apply(originalSettings.BringToFrontHotkey, out var restoreError))
+            hotkeyApplied = GlobalHotkeyService.Apply(
+                updatedSettings.BringToFrontHotkey,
+                out hotkeyError);
+        }
+        catch (Exception hotkeyException)
+        {
+            hotkeyError = hotkeyException.Message;
+            DiagnosticLogManager.WriteError(
+                "MYN-SETTINGS-002",
+                "GlobalHotkey",
+                "Yeni global kısayol uygulanamadı.",
+                hotkeyException);
+        }
+
+        if (!hotkeyApplied)
+        {
+            try
+            {
+                if (!GlobalHotkeyService.Apply(originalSettings.BringToFrontHotkey, out var restoreError))
+                {
+                    DiagnosticLogManager.WriteError(
+                        "MYN-SETTINGS-999",
+                        "GlobalHotkey",
+                        "Yeni kısayol reddedildi ve önceki kısayol geri yüklenemedi.",
+                        new InvalidOperationException(restoreError));
+                }
+            }
+            catch (Exception restoreException)
             {
                 DiagnosticLogManager.WriteError(
                     "MYN-SETTINGS-999",
                     "GlobalHotkey",
                     "Yeni kısayol reddedildi ve önceki kısayol geri yüklenemedi.",
-                    new InvalidOperationException(restoreError));
+                    restoreException);
             }
 
-            HotkeyInfoText.Text = hotkeyError;
+            HotkeyInfoText.Text = string.IsNullOrWhiteSpace(hotkeyError)
+                ? "Global kısayol uygulanamadı."
+                : hotkeyError;
             HotkeyInfoText.Foreground = new SolidColorBrush(Colors.IndianRed);
             SetSaveStatus("Ayarlar kaydedilmedi; kısayol geçersiz veya kullanımda.", Colors.IndianRed);
             return;
