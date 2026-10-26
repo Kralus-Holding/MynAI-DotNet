@@ -438,7 +438,7 @@ public partial class SettingsWindow : Window
     {
         try
         {
-            Clipboard.SetText(DiagnosticLogManager.BuildSupportReport());
+            System.Windows.Clipboard.SetText(DiagnosticLogManager.BuildSupportReport());
             ErrorLogsStatusText.Text = "Tanı raporu panoya kopyalandı. Paylaşmadan önce içeriği inceleyebilirsin.";
             ErrorLogsStatusText.Foreground = new SolidColorBrush(Colors.LightGreen);
         }
