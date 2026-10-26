@@ -247,6 +247,8 @@ jobs:
           if (-not $pairingClient.Contains("HttpStatusCode.NotFound") -or -not $pairingClient.Contains("MYN-SERVER-404")) { throw "A missing live pairing endpoint must have a specific diagnosis." }
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
           if (-not $settingsCode.Contains("Google Auth Platform") -or -not $settingsCode.Contains("DesktopPairingClientException")) { throw "OAuth and pairing deployment errors must have actionable diagnostics." }
+          if (-not $settingsCode.Contains('if (!hotkeyApplied)') -or -not $settingsCode.Contains('_settingsStore.Save(originalSettings)') -or -not $settingsCode.Contains('"MYN-SETTINGS-001"')) { throw "Settings save must validate hotkeys, attempt rollback, and record save failures." }
+          if (-not $settingsCode.Contains('UpdateAccountDesktopBridgeStatus') -or -not $settingsCode.Contains('HTTP 404 görülürse Render')) { throw "Account status must explain how to begin pairing and recover from an undeployed server API." }
           $compilerCandidates = @(
             "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
             "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
