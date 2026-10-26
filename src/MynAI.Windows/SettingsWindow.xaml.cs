@@ -591,8 +591,22 @@ public partial class SettingsWindow : Window
 
     private void StopDesktopBridge_Click(object sender, RoutedEventArgs e)
     {
-        DesktopBridgeStartupManager.StopAgent();
-        UpdateDesktopBridgeStatus();
+        try
+        {
+            DesktopBridgeStartupManager.StopAgent();
+            UpdateDesktopBridgeStatus();
+            UpdateAccountDesktopBridgeStatus();
+        }
+        catch (Exception ex)
+        {
+            UpdateDesktopBridgeStatus();
+            UpdateAccountDesktopBridgeStatus();
+            MessageBox.Show(
+                $"Telefon-PC bağlantısı durdurulamadı:\n\n{ex.Message}",
+                "MynAssistant — Telefon-PC bağlantısı",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     private void RestartDesktopBridge_Click(object sender, RoutedEventArgs e)
@@ -669,14 +683,24 @@ public partial class SettingsWindow : Window
         object sender,
         RoutedEventArgs e)
     {
-        AgentStartupManager.StopAgent();
-
-        SetSaveStatus(
-            "Agent durduruldu.",
-            Colors.LightGreen);
-
-        UpdateAgentStatus();
-        UpdateAgentDiagnostics();
+        try
+        {
+            AgentStartupManager.StopAgent();
+            UpdateAgentStatus();
+            UpdateAgentDiagnostics();
+            SetSaveStatus("Agent durduruldu ve süreç sonlanması doğrulandı.", Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            UpdateAgentStatus();
+            UpdateAgentDiagnostics();
+            SetSaveStatus("Agent durdurulamadı.", Colors.IndianRed);
+            MessageBox.Show(
+                $"Agent durdurulamadı:\n\n{ex.Message}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     private void RestartAgent_Click(
@@ -887,6 +911,10 @@ public partial class SettingsWindow : Window
             SetSaveStatus("Ayarlar kaydedildi.", Colors.LightGreen);
             UpdateDesktopBridgeStatus();
             UpdateAccountDesktopBridgeStatus();
+
+            // Close only after every persistent settings write above completed successfully.
+            _agentTimer.Stop();
+            Close();
         }
         catch (Exception ex)
         {
