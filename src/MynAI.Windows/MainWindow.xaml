@@ -468,7 +468,6 @@
 
 
                     <ScrollViewer Grid.Row="1"
-                                  MaxHeight="72"
                                   VerticalAlignment="Stretch"
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
