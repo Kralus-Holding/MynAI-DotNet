@@ -92,8 +92,27 @@ public static class DesktopBridgeStartupManager
     public static string GetOAuthConfigPath() =>
         GoogleOAuthConfigStore.GetPath();
 
-    public static bool IsRunning() =>
-        Process.GetProcessesByName(Path.GetFileNameWithoutExtension(ExecutableName)).Length > 0;
+    public static bool IsRunning()
+    {
+        var isRunning = false;
+        foreach (var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(ExecutableName)))
+        {
+            try
+            {
+                isRunning |= !process.HasExited;
+            }
+            catch (InvalidOperationException)
+            {
+                // The process exited between enumeration and inspection.
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+
+        return isRunning;
+    }
 
     public static void StartAgent()
     {
@@ -102,10 +121,8 @@ public static class DesktopBridgeStartupManager
 
         var executablePath = TryGetExecutablePath();
         if (executablePath is null)
-        {
             throw new FileNotFoundException(
                 $"{ExecutableName} bulunamadı. MynAssistant kurulumunu onar veya yeniden yükle.");
-        }
 
         if (!FirebaseDesktopSessionStore.HasValidStoredSession())
             throw new InvalidOperationException("Telefon işlemleri için lütfen önce Hesap bölümünden giriş yapın.");
@@ -136,7 +153,7 @@ public static class DesktopBridgeStartupManager
         process.EnableRaisingEvents = true;
         process.Exited += (_, _) =>
         {
-            try { process.Dispose(); } catch { }
+            try { process.Dispose(); } catch (ObjectDisposedException) { }
         };
 
         try
@@ -147,41 +164,91 @@ public static class DesktopBridgeStartupManager
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             AppendLog($"Bridge başlatıldı. PID={process.Id}");
+
+            // Verify that a real process remains alive instead of reporting success
+            // merely because Process.Start returned without throwing.
+            if (!WaitForProcessToAppear(TimeSpan.FromSeconds(2)))
+                throw new InvalidOperationException(
+                    "Desktop Bridge başlatıldıktan sonra çalışan süreç doğrulanamadı. bridge.log dosyasını kontrol edin.");
         }
-        catch
+        catch (Exception ex)
         {
-            process.Dispose();
+            AppendLog($"Bridge başlatma hatası: {ex.GetType().Name}: {ex.Message}");
+            try { process.Dispose(); } catch (ObjectDisposedException) { }
             throw;
         }
     }
 
+    private static bool WaitForProcessToAppear(TimeSpan timeout)
+    {
+        var timer = Stopwatch.StartNew();
+        do
+        {
+            if (IsRunning())
+                return true;
+
+            Thread.Sleep(100);
+        }
+        while (timer.Elapsed < timeout);
+
+        return false;
+    }
+
     public static void StopAgent()
     {
-        foreach (var process in Process.GetProcessesByName(
-                     Path.GetFileNameWithoutExtension(ExecutableName)))
+        var failures = new List<string>();
+
+        foreach (var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(ExecutableName)))
         {
+            var processId = 0;
             try
             {
-                process.Kill(entireProcessTree: true);
-                process.WaitForExit(3000);
-                AppendLog("Bridge durduruldu.");
+                processId = process.Id;
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    if (!process.WaitForExit(5000))
+                        throw new TimeoutException($"Bridge PID {processId} 5 saniye içinde kapanmadı.");
+                }
+
+                if (!process.HasExited)
+                    throw new InvalidOperationException($"Bridge PID {processId} durdurma sonrası hâlâ çalışıyor.");
+
+                AppendLog($"Bridge süreci doğrulanarak durduruldu. PID={processId}");
             }
             catch (Exception ex)
             {
-                AppendLog("Bridge durdurulamadı: " + ex.Message);
+                AppendLog($"Bridge durdurma hatası PID={processId}: {ex.GetType().Name}: {ex.Message}");
+                failures.Add($"PID {processId}: {ex.Message}");
             }
             finally
             {
                 process.Dispose();
             }
         }
+
+        if (IsRunning())
+            failures.Add("Desktop Bridge durdurma denemesinden sonra hâlâ çalışıyor.");
+
+        if (failures.Count > 0)
+            throw new InvalidOperationException(
+                "Desktop Bridge tamamen durdurulamadı. bridge.log dosyasını kontrol edin. " +
+                string.Join(" ", failures));
     }
 
     public static void RestartAgent()
     {
         StopAgent();
-        Thread.Sleep(400);
+
+        if (IsRunning())
+            throw new InvalidOperationException(
+                "Desktop Bridge kapanmadığı için yeniden başlatma iptal edildi; ikinci bir süreç açılmadı.");
+
         StartAgent();
+
+        if (!IsRunning())
+            throw new InvalidOperationException(
+                "Desktop Bridge başlatma isteğinden sonra çalışır durumda doğrulanamadı.");
     }
 
     private static void AppendLog(string message)
