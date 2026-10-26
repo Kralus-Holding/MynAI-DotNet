@@ -219,6 +219,68 @@ class RemoteKeyboardCommandTests(unittest.TestCase):
             self.assertTrue(agent.command_is_supported(command))
 
 
+class SafeFileListingCommandTests(unittest.TestCase):
+    def test_root_listing_contains_only_existing_allowlisted_profile_folders(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            for folder in ("Desktop", "Documents", "Pictures", "Music", "Private"):
+                (profile / folder).mkdir()
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                payload = json.loads(agent.execute_command("list_files", {"path": ""}))
+
+        names = {entry["name"] for entry in payload["entries"]}
+        self.assertEqual(names, {"Masaüstü", "Belgeler", "Resimler", "Müzik"})
+        self.assertIsNone(payload["parentPath"])
+        self.assertTrue(agent.command_is_supported("list_files"))
+
+    def test_directory_listing_returns_metadata_without_reading_file_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            documents = profile / "Documents"
+            documents.mkdir()
+            nested = documents / "Raporlar"
+            nested.mkdir()
+            report = documents / "rapor.txt"
+            report.write_text("private contents", encoding="utf-8")
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                payload = json.loads(
+                    agent.execute_command("list_files", {"path": str(documents)})
+                )
+
+        self.assertEqual(payload["currentPath"], str(documents.resolve()))
+        self.assertEqual(payload["parentPath"], "")
+        self.assertEqual(
+            {entry["name"] for entry in payload["entries"]},
+            {"Raporlar", "rapor.txt"},
+        )
+        file_entry = next(entry for entry in payload["entries"] if entry["name"] == "rapor.txt")
+        self.assertFalse(file_entry["isDirectory"])
+        self.assertEqual(file_entry["size"], len("private contents".encode("utf-8")))
+        self.assertNotIn("contents", json.dumps(payload).lower())
+
+    def test_path_outside_allowlisted_profile_folders_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir) / "profile"
+            profile.mkdir()
+            (profile / "Documents").mkdir()
+            outside = Path(temp_dir) / "private"
+            outside.mkdir()
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                with self.assertRaisesRegex(ValueError, "erişim izni yok"):
+                    agent.execute_command("list_files", {"path": str(outside)})
+
+    def test_legacy_text_request_is_routed_to_real_file_listing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            (profile / "Desktop").mkdir()
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                payload = json.loads(agent.execute_command(
+                    "text_command", {"text": "bilgisayar dosyalarını listele"}
+                ))
+
+        self.assertEqual([entry["name"] for entry in payload["entries"]], ["Masaüstü"])
+
+
 class FirebaseLoginRequiredTests(unittest.TestCase):
     def test_bridge_without_saved_session_requests_app_login_without_oauth_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
