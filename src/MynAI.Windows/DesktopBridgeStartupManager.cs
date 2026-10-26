@@ -174,6 +174,8 @@ public static class DesktopBridgeStartupManager
         catch (Exception ex)
         {
             AppendLog($"Bridge başlatma hatası: {ex.GetType().Name}: {ex.Message}");
+            DiagnosticLogManager.WriteError(
+                "MYN-AGENT-999", "DesktopBridge", "Desktop Bridge başlatılamadı.", ex);
             try { process.Dispose(); } catch (ObjectDisposedException) { }
             throw;
         }
@@ -219,6 +221,8 @@ public static class DesktopBridgeStartupManager
             catch (Exception ex)
             {
                 AppendLog($"Bridge durdurma hatası PID={processId}: {ex.GetType().Name}: {ex.Message}");
+                DiagnosticLogManager.WriteError(
+                    "MYN-AGENT-999", "DesktopBridge", $"Bridge PID {processId} durdurulamadı.", ex);
                 failures.Add($"PID {processId}: {ex.Message}");
             }
             finally
