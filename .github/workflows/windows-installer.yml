@@ -210,11 +210,11 @@ jobs:
               throw "Required installer asset is missing: $path"
             }
           }
-          if (-not (Select-String -Path "src/MynAI.Windows/MynAI.Windows.csproj" -Pattern '<Version>0.1.5</Version>' -Quiet)) {
-            throw "Windows app version is not 0.1.5."
+          if (-not (Select-String -Path "src/MynAI.Windows/MynAI.Windows.csproj" -Pattern '<Version>0.1.6</Version>' -Quiet)) {
+            throw "Windows app version is not 0.1.6."
           }
-          if (-not (Select-String -Path "installer/MynAI.iss" -Pattern '#define MyAppVersion "0.1.5"' -Quiet)) {
-            throw "Installer version does not match 0.1.5."
+          if (-not (Select-String -Path "installer/MynAI.iss" -Pattern '#define MyAppVersion "0.1.6"' -Quiet)) {
+            throw "Installer version does not match 0.1.6."
           }
           if (Select-String -Path "installer/MynAI.iss" -Pattern 'ArchitecturesAllowed=x64$|ArchitecturesInstallIn64BitMode=x64$' -Quiet) {
             throw "Use x64compatible architecture identifiers to avoid deprecated Inno Setup settings."
@@ -226,9 +226,9 @@ jobs:
           if (-not (Select-String -Path "installer/MynAI.iss" -SimpleMatch 'UsePreviousAppDir=no' -Quiet)) {
             throw "The installer must not force the previous installation directory."
           }
-          if (-not (Select-String -Path "installer/LICENSE-AGREEMENT.rtf" -SimpleMatch '0.1.5' -Quiet) -or
+          if (-not (Select-String -Path "installer/LICENSE-AGREEMENT.rtf" -SimpleMatch '0.1.6' -Quiet) -or
               (Select-String -Path "installer/LICENSE-AGREEMENT.rtf" -SimpleMatch '0.1.2' -Quiet)) {
-            throw "License version must match release 0.1.5."
+            throw "License version must match release 0.1.6."
           }
           if (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml" -SimpleMatch 'KR / Kralus varsayılanına dön' -Quiet) {
             throw "The unwanted default-logo reset button must stay removed."
