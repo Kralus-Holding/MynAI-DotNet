@@ -106,6 +106,9 @@ jobs:
           $mainText = Get-Content -LiteralPath "src/MynAI.Windows/MainWindow.xaml" -Raw -Encoding UTF8
           if (-not $mainText.Contains('Text="= Beklemede"')) { throw "Waiting badge must read '= Beklemede'." }
           if (-not ($mainText -match 'x:Name="MainHeaderGrid"(?s).*?Margin="0,0,0,5"')) { throw "Main header must have a 5 DIP bottom margin." }
+          if (-not $mainText.Contains('Text="Bağlanıyor •"')) { throw "The initial Agent status label must stay visible and concise." }
+          if (-not $mainText.Contains('Text="Planlanan Görevler"')) { throw "Planned tasks heading must be localized to 'Planlanan Görevler'." }
+          if (-not ($mainText -match '(?s)<!-- PLANLANAN GÖREVLER -->.*?<Border Grid.Row="1".*?CornerRadius="17"')) { throw "Planned tasks card must keep the requested rounded corners." }
 
           $installerText = Get-Content -LiteralPath "installer/MynAI.iss" -Raw -Encoding UTF8
           if (-not $installerText.Contains("MynAssistant bilgisayarınızda zaten kurulu. Mevcut kurulumu güncellemek ister misiniz?")) { throw "Installer update confirmation text is missing." }
@@ -236,6 +239,13 @@ jobs:
           if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern 'PlannedCountText.Visibility\s*=' -Quiet)) {
             throw "The planned task count must hide when zero and show when nonzero."
           }
+          $mainCode = Get-Content -LiteralPath "src/MynAI.Windows/MainWindow.xaml.cs" -Raw -Encoding UTF8
+          if (-not $mainCode.Contains('"Aktif •"')) { throw "Connected Agent status must display 'Aktif •'." }
+          if (-not $mainCode.Contains('"Bağlantı yok •"')) { throw "Disconnected Agent status must remain explicit." }
+          $pairingClient = Get-Content -LiteralPath "src/MynAI.Windows/Auth/DesktopPairingClient.cs" -Raw -Encoding UTF8
+          if (-not $pairingClient.Contains("HttpStatusCode.NotFound") -or -not $pairingClient.Contains("MYN-SERVER-404")) { throw "A missing live pairing endpoint must have a specific diagnosis." }
+          $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
+          if (-not $settingsCode.Contains("Google Auth Platform") -or -not $settingsCode.Contains("DesktopPairingClientException")) { throw "OAuth and pairing deployment errors must have actionable diagnostics." }
           $compilerCandidates = @(
             "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
             "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
