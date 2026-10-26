@@ -62,7 +62,7 @@ jobs:
         shell: pwsh
         run: |
           $bridgePath = "tools/MynAssistantDesktopBridge/agent.py"
-          foreach ($pattern in @("claim_pending_command", "claimToken", '"type_text"', '"key_backspace"', '"key_enter"', "configure_packaged_logging", '"auth_required"', "FirebaseSessionExpiredError")) {
+          foreach ($pattern in @("claim_pending_command", "claimToken", '"type_text"', '"key_backspace"', '"key_enter"', '"list_files"', "configure_packaged_logging", '"auth_required"', "FirebaseSessionExpiredError")) {
             if (-not (Select-String -Path $bridgePath -Pattern $pattern -Quiet)) {
               throw "Windows bridge is missing required feature: $pattern"
             }
