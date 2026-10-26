@@ -45,6 +45,7 @@ public partial class SettingsWindow : Window
 
         LoadSettings();
         LoadGoogleAccount();
+        UpdateDesktopLoginStatus();
         ShowPage(GeneralPanel, GeneralNavButton);
 
         _agentTimer =
@@ -843,6 +844,23 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void UpdateDesktopLoginStatus()
+    {
+        var session = FirebaseDesktopSessionStore.Load();
+        if (session is null)
+        {
+            DesktopLoginStatusText.Text =
+                "Giriş yapılmadı. Giriş yapmak için Android uygulamasından onay ver.";
+            GoogleConnectButton.Content = "Giriş yap";
+            return;
+        }
+
+        DesktopLoginStatusText.Text = string.IsNullOrWhiteSpace(session.Email)
+            ? "Oturum açık."
+            : $"Oturum açık: {session.Email}";
+        GoogleConnectButton.Content = "Hesabı değiştir";
+    }
+
     private async void LoginDesktopAccount_Click(object sender, RoutedEventArgs e)
     {
         await StartDesktopPairingAsync();
@@ -909,9 +927,7 @@ public partial class SettingsWindow : Window
 
                     // The existing user session is only replaced after the phone has explicitly approved.
                     FirebaseDesktopSessionStore.Save(session);
-                    DesktopLoginStatusText.Text = string.IsNullOrWhiteSpace(session.Email)
-                        ? "Giriş yapıldı."
-                        : $"Giriş yapıldı: {session.Email}";
+                    UpdateDesktopLoginStatus();
 
                     try
                     {
@@ -951,6 +967,7 @@ public partial class SettingsWindow : Window
                 await Task.Delay(TimeSpan.FromSeconds(2), cancellation.Token);
             }
 
+            UpdateDesktopLoginStatus();
             DesktopPairingStatusText.Text =
                 "Eşleştirme kodunun süresi doldu. Yeniden eşleştirme başlat.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
