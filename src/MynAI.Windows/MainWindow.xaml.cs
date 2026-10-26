@@ -601,9 +601,9 @@ public partial class MainWindow : Window
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
-            // "Aktif•" means the Agent answered the IPC request successfully;
+            // "Aktif •" means the Agent answered the IPC request successfully;
             // it is not a claim that the cloud/Render service is online.
-            AgentStatusText.Text = "Aktif•";
+            AgentStatusText.Text = "Aktif •";
             AgentStatusText.Foreground = new SolidColorBrush(Color.FromRgb(126, 212, 145));
 
             if (_scheduledTasks.Count == 0)
