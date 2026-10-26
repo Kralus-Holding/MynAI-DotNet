@@ -97,6 +97,8 @@ jobs:
           foreach ($required in @("AccountDesktopBridgeStatusText", "AccountDesktopBridgeStatusDot", "AccountDesktopBridgeMessageText", "AccountBridgeRefreshButton", "GooglePhoto", "GoogleConnectButton", "GoogleContactsConnectButton", "DesktopLoginStatusText", "GoogleContactsCheckBox")) {
             if (-not $account.Contains($required)) { throw "Account section is missing preserved UI: $required" }
           }
+          if (-not $account.Contains('Content="Giriş yap"') -or -not $account.Contains('Click="LoginDesktopAccount_Click"')) { throw "Account sign-in must start the Firebase phone-approved login flow." }
+          if (-not $account.Contains('Content="Kişileri bağla"') -or -not $account.Contains('Click="GoogleConnectButton_Click"')) { throw "Optional Google Contacts connection must remain available separately from app login." }
 
           [xml]$settingsXml = $settingsText
           $xamlNames = @($settingsXml.SelectNodes('//@*[local-name()="Name" and namespace-uri()="http://schemas.microsoft.com/winfx/2006/xaml"]') | ForEach-Object { $_.Value })
