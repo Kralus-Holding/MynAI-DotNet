@@ -194,11 +194,13 @@ public static class AgentStartupManager
 
     public static void EnsureAutomaticStartup()
     {
+        // The Agent's Windows auto-start preference is independent of the main
+        // MynAssistant application's startup preference. Never silently enable it.
+        if (!IsEnabled())
+            return;
+
         try
         {
-            // Always write the canonical path so upgrades migrate the legacy
-            // MynAI.Agent value and repair a stale registry entry.
-            SetEnabled(true);
             if (!IsRunning())
                 StartAgent();
         }
@@ -225,6 +227,12 @@ public static class AgentStartupManager
         {
             // Startup diagnostics must never crash the main application.
         }
+
+        DiagnosticLogManager.WriteError(
+            "MYN-AGENT-999",
+            "Agent",
+            operation,
+            exception);
     }
 
     public static void StopAgent()
