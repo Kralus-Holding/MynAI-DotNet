@@ -45,6 +45,7 @@ public partial class SettingsWindow : Window
 
         LoadSettings();
         LoadGoogleAccount();
+        UpdateDesktopLoginStatus();
         ShowPage(GeneralPanel, GeneralNavButton);
 
         _agentTimer =
@@ -160,7 +161,7 @@ public partial class SettingsWindow : Window
         GoogleContactsCheckBox.IsChecked =
             true;
 
-        GoogleConnectButton.Content =
+        GoogleContactsConnectButton.Content =
             "Kişiler bağlı";
     }
 
@@ -741,7 +742,7 @@ public partial class SettingsWindow : Window
         var messageText = connected
             ? "Android uygulamasıyla bilgisayar bağlantısı kuruldu."
             : authRequired
-                ? "Bu bilgisayarda güvenli telefon-PC oturumu yok. İlk eşleştirme sunucu akışı bu sürümde henüz bulunmadığından bağlantı başlatılamaz."
+                ? "Bu bilgisayarda güvenli telefon-PC oturumu yok. Windows'ta Telefonla eşleştir ile kod oluşturup Android MynAssistant → Ayarlar bölümünde onayla. HTTP 404 görülürse Render sunucusunun güncel sürüme dağıtılması gerekir."
                 : hasError
                     ? "Bağlantı kurulamadı. Bağlantıyı yenileyerek tekrar dene."
                     : connecting
@@ -843,7 +844,34 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void UpdateDesktopLoginStatus()
+    {
+        var session = FirebaseDesktopSessionStore.Load();
+        if (session is null)
+        {
+            DesktopLoginStatusText.Text =
+                "Giriş yapılmadı. Giriş yapmak için Android uygulamasından onay ver.";
+            GoogleConnectButton.Content = "Giriş yap";
+            return;
+        }
+
+        DesktopLoginStatusText.Text = string.IsNullOrWhiteSpace(session.Email)
+            ? "Oturum açık."
+            : $"Oturum açık: {session.Email}";
+        GoogleConnectButton.Content = "Hesabı değiştir";
+    }
+
+    private async void LoginDesktopAccount_Click(object sender, RoutedEventArgs e)
+    {
+        await StartDesktopPairingAsync();
+    }
+
     private async void StartDesktopPairing_Click(object sender, RoutedEventArgs e)
+    {
+        await StartDesktopPairingAsync();
+    }
+
+    private async Task StartDesktopPairingAsync()
     {
         if (_pairingCancellation is { IsCancellationRequested: false })
             return;
@@ -863,7 +891,9 @@ public partial class SettingsWindow : Window
         var cancellation = new CancellationTokenSource();
         _pairingCancellation = cancellation;
         StartDesktopPairingButton.IsEnabled = false;
+        GoogleConnectButton.IsEnabled = false;
         CancelDesktopPairingButton.IsEnabled = true;
+        DesktopLoginStatusText.Text = "Telefon onayı bekleniyor...";
         DesktopPairingCodeText.Text = "";
         DesktopPairingCodeText.Visibility = Visibility.Collapsed;
         DesktopPairingStatusText.Text = "Sunucudan güvenli eşleştirme kodu alınıyor...";
@@ -897,6 +927,7 @@ public partial class SettingsWindow : Window
 
                     // The existing user session is only replaced after the phone has explicitly approved.
                     FirebaseDesktopSessionStore.Save(session);
+                    UpdateDesktopLoginStatus();
 
                     try
                     {
@@ -936,6 +967,7 @@ public partial class SettingsWindow : Window
                 await Task.Delay(TimeSpan.FromSeconds(2), cancellation.Token);
             }
 
+            UpdateDesktopLoginStatus();
             DesktopPairingStatusText.Text =
                 "Eşleştirme kodunun süresi doldu. Yeniden eşleştirme başlat.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
@@ -943,6 +975,9 @@ public partial class SettingsWindow : Window
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
+            DesktopLoginStatusText.Text = FirebaseDesktopSessionStore.HasValidStoredSession()
+                ? "Önceki oturum korunuyor."
+                : "Giriş iptal edildi.";
             DesktopPairingStatusText.Text =
                 "Eşleştirme iptal edildi. Kullanılmayan kod kısa süre içinde sona erecek.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
@@ -955,6 +990,7 @@ public partial class SettingsWindow : Window
                 "DesktopBridge",
                 "Telefon-PC eşleştirme API'si hata yanıtı verdi.",
                 ex);
+            DesktopLoginStatusText.Text = $"Giriş yapılamadı: {ex.Message}";
             DesktopPairingStatusText.Text = $"{ex.Message} ({ex.ErrorCode})";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
         }
@@ -962,6 +998,7 @@ public partial class SettingsWindow : Window
         {
             DiagnosticLogManager.WriteError(
                 "MYN-SERVER-001", "DesktopBridge", "Eşleştirme sunucusuna ulaşılamadı.", ex);
+            DesktopLoginStatusText.Text = "Giriş yapılamadı; sunucuya ulaşılamadı.";
             DesktopPairingStatusText.Text =
                 "Eşleştirme sunucusuna ulaşılamadı. İnternet bağlantısını veya sunucu durumunu kontrol et. (MYN-SERVER-001)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
@@ -970,6 +1007,7 @@ public partial class SettingsWindow : Window
         {
             DiagnosticLogManager.WriteError(
                 "MYN-SERVER-002", "DesktopBridge", "Eşleştirme isteği zaman aşımına uğradı.", ex);
+            DesktopLoginStatusText.Text = "Giriş yapılamadı; sunucu yanıt vermedi.";
             DesktopPairingStatusText.Text =
                 "Sunucu yanıtı zaman aşımına uğradı. Biraz sonra yeniden dene. (MYN-SERVER-002)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
@@ -978,6 +1016,7 @@ public partial class SettingsWindow : Window
         {
             DiagnosticLogManager.WriteError(
                 "MYN-DEVICE-999", "DesktopBridge", "Telefon-PC eşleştirmesi tamamlanamadı.", ex);
+            DesktopLoginStatusText.Text = $"Giriş yapılamadı: {ex.Message}";
             DesktopPairingStatusText.Text =
                 $"{ex.Message} (MYN-DEVICE-999)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
@@ -988,6 +1027,7 @@ public partial class SettingsWindow : Window
                 _pairingCancellation = null;
             cancellation.Dispose();
             StartDesktopPairingButton.IsEnabled = true;
+            GoogleConnectButton.IsEnabled = true;
             CancelDesktopPairingButton.IsEnabled = false;
         }
     }
@@ -1213,17 +1253,17 @@ public partial class SettingsWindow : Window
         if (!File.Exists(GoogleOAuthConfigStore.GetPath()))
         {
             MessageBox.Show(
-                "Google Kişiler masaüstü yetkilendirmesi bu kurulumda yapılandırılmamış. Müşteriden OAuth JSON dosyası istenmez. Telefon-PC bağlantısı için Firebase hesabıyla giriş yapmanız yeterlidir.",
+                "Google Kişiler bu kurulumda yapılandırılmamış. Uygulama oturumu için üstteki Giriş yap düğmesini kullan; Google Kişiler bağlantısı isteğe bağlıdır.",
                 "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
             return;
         }
 
-        GoogleConnectButton.IsEnabled =
+        GoogleContactsConnectButton.IsEnabled =
             false;
 
-        GoogleConnectButton.Content =
+        GoogleContactsConnectButton.Content =
             "Bağlanıyor...";
 
         try
@@ -1240,7 +1280,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            GoogleConnectButton.Content = "Kişileri bağla";
+            GoogleContactsConnectButton.Content = "Kişileri bağla";
 
             var details = ex.ToString();
             var accessDenied = details.Contains("access_denied", StringComparison.OrdinalIgnoreCase)
@@ -1261,14 +1301,14 @@ public partial class SettingsWindow : Window
                 : ex.Message;
 
             MessageBox.Show(
-                $"Google bağlantısı başarısız:\n\n{explanation}",
+                $"Google Kişiler bağlantısı başarısız:\n\n{explanation}",
                 "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
         finally
         {
-            GoogleConnectButton.IsEnabled =
+            GoogleContactsConnectButton.IsEnabled =
                 true;
         }
     }
@@ -1371,50 +1411,159 @@ public partial class SettingsWindow : Window
         object sender,
         RoutedEventArgs e)
     {
+        var originalSettings = _settingsStore.Load();
+        var previousBridgeStartup = DesktopBridgeStartupManager.IsEnabled();
+        var requestedBridgeStartup = DesktopBridgeStartupCheckBox.IsChecked == true
+            && FirebaseDesktopSessionStore.HasValidStoredSession();
+
+        var updatedSettings = _settingsStore.Load();
+        updatedSettings.StartAgentWithWindows = AgentStartupManager.IsEnabled();
+        updatedSettings.StartApplicationWithWindows = StartupSettingsManager.IsEnabled();
+        updatedSettings.StartDesktopBridgeWithWindows = requestedBridgeStartup;
+        updatedSettings.WindowsNotifications = NotificationsCheckBox.IsChecked == true;
+        updatedSettings.MicrophoneEnabled = MicrophoneCheckBox.IsChecked == true;
+        updatedSettings.CameraEnabled = CameraCheckBox.IsChecked == true;
+        updatedSettings.BringToFrontHotkey = HotkeyTextBox.Text.Trim();
+
+        // Validate/apply the new hotkey before writing settings. Apply unregisters
+        // the old shortcut first, so restore the previous shortcut on any failure.
+        var hotkeyError = string.Empty;
+        var hotkeyApplied = false;
         try
         {
-            var settings = _settingsStore.Load();
-            var startDesktopBridge = DesktopBridgeStartupCheckBox.IsChecked == true
-                && FirebaseDesktopSessionStore.HasValidStoredSession();
+            hotkeyApplied = GlobalHotkeyService.Apply(
+                updatedSettings.BringToFrontHotkey,
+                out hotkeyError);
+        }
+        catch (Exception hotkeyException)
+        {
+            hotkeyError = hotkeyException.Message;
+            DiagnosticLogManager.WriteError(
+                "MYN-SETTINGS-002",
+                "GlobalHotkey",
+                "Yeni global kısayol uygulanamadı.",
+                hotkeyException);
+        }
 
-            DesktopBridgeStartupCheckBox.IsChecked = startDesktopBridge;
-            DesktopBridgeStartupManager.SetEnabled(startDesktopBridge);
-
-            settings.StartAgentWithWindows = AgentStartupManager.IsEnabled();
-            settings.StartApplicationWithWindows = StartupSettingsManager.IsEnabled();
-            settings.StartDesktopBridgeWithWindows = startDesktopBridge;
-            settings.WindowsNotifications = NotificationsCheckBox.IsChecked == true;
-            settings.MicrophoneEnabled = MicrophoneCheckBox.IsChecked == true;
-            settings.CameraEnabled = CameraCheckBox.IsChecked == true;
-            settings.BringToFrontHotkey = HotkeyTextBox.Text.Trim();
-            _settingsStore.Save(settings);
-
-            if (!GlobalHotkeyService.Apply(settings.BringToFrontHotkey, out var hotkeyError))
+        if (!hotkeyApplied)
+        {
+            try
             {
-                HotkeyInfoText.Text = hotkeyError;
-                HotkeyInfoText.Foreground = new SolidColorBrush(Colors.IndianRed);
+                if (!GlobalHotkeyService.Apply(originalSettings.BringToFrontHotkey, out var restoreError))
+                {
+                    DiagnosticLogManager.WriteError(
+                        "MYN-SETTINGS-999",
+                        "GlobalHotkey",
+                        "Yeni kısayol reddedildi ve önceki kısayol geri yüklenemedi.",
+                        new InvalidOperationException(restoreError));
+                }
+            }
+            catch (Exception restoreException)
+            {
+                DiagnosticLogManager.WriteError(
+                    "MYN-SETTINGS-999",
+                    "GlobalHotkey",
+                    "Yeni kısayol reddedildi ve önceki kısayol geri yüklenemedi.",
+                    restoreException);
+            }
+
+            HotkeyInfoText.Text = string.IsNullOrWhiteSpace(hotkeyError)
+                ? "Global kısayol uygulanamadı."
+                : hotkeyError;
+            HotkeyInfoText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            SetSaveStatus("Ayarlar kaydedilmedi; kısayol geçersiz veya kullanımda.", Colors.IndianRed);
+            return;
+        }
+
+        var settingsSaved = false;
+        try
+        {
+            _settingsStore.Save(updatedSettings);
+            settingsSaved = true;
+
+            DesktopBridgeStartupManager.SetEnabled(requestedBridgeStartup);
+
+            DesktopBridgeStartupCheckBox.IsChecked = requestedBridgeStartup;
+            if (string.IsNullOrWhiteSpace(updatedSettings.BringToFrontHotkey))
+            {
+                HotkeyInfoText.Text = "Global kısayol kapalı.";
             }
             else
             {
-                HotkeyInfoText.Text = string.IsNullOrWhiteSpace(settings.BringToFrontHotkey)
-                    ? "Global kısayol kapalı."
-                    : "Global kısayol aktif.";
-                HotkeyInfoText.Foreground = new SolidColorBrush(Colors.LightGreen);
+                HotkeyInfoText.Text = "Global kısayol aktif.";
             }
+            HotkeyInfoText.Foreground = new SolidColorBrush(Colors.LightGreen);
 
             SetSaveStatus("Ayarlar kaydedildi.", Colors.LightGreen);
+            UpdateAgentStatus();
             UpdateDesktopBridgeStatus();
             UpdateAccountDesktopBridgeStatus();
 
-            // Close only after every persistent settings write above completed successfully.
+            // Close only after the persistent settings and OS startup setting succeed.
             _agentTimer.Stop();
             Close();
         }
         catch (Exception ex)
         {
+            var rollbackFailures = new List<string>();
+
+            if (settingsSaved)
+            {
+                try
+                {
+                    _settingsStore.Save(originalSettings);
+                }
+                catch (Exception rollbackSettingsError)
+                {
+                    rollbackFailures.Add("Önceki ayarlar geri yüklenemedi.");
+                    DiagnosticLogManager.WriteError(
+                        "MYN-SETTINGS-999",
+                        "Settings",
+                        "Kaydet hatasından sonra önceki ayarlar geri yüklenemedi.",
+                        rollbackSettingsError);
+                }
+            }
+
+            try
+            {
+                if (DesktopBridgeStartupManager.IsEnabled() != previousBridgeStartup)
+                    DesktopBridgeStartupManager.SetEnabled(previousBridgeStartup);
+            }
+            catch (Exception rollbackStartupError)
+            {
+                rollbackFailures.Add("Önceki Bridge başlangıç ayarı geri yüklenemedi.");
+                DiagnosticLogManager.WriteError(
+                    "MYN-STARTUP-999",
+                    "DesktopBridge",
+                    "Kaydet hatasından sonra önceki Bridge başlangıç ayarı geri yüklenemedi.",
+                    rollbackStartupError);
+            }
+
+            if (!GlobalHotkeyService.Apply(originalSettings.BringToFrontHotkey, out var restoreHotkeyError))
+            {
+                rollbackFailures.Add("Önceki global kısayol geri yüklenemedi.");
+                DiagnosticLogManager.WriteError(
+                    "MYN-SETTINGS-999",
+                    "GlobalHotkey",
+                    "Kaydet hatasından sonra önceki global kısayol geri yüklenemedi.",
+                    new InvalidOperationException(restoreHotkeyError));
+            }
+
+            DiagnosticLogManager.WriteError(
+                "MYN-SETTINGS-001",
+                "Settings",
+                "Ayarlar kaydedilemedi; geri alma işlemi denendi.",
+                ex);
+
             SetSaveStatus("Kaydedilemedi.", Colors.IndianRed);
-            MessageBox.Show($"Ayarlar kaydedilemedi:\n\n{ex.Message}",
-                "MynAssistant", MessageBoxButton.OK, MessageBoxImage.Error);
+            var rollbackText = rollbackFailures.Count == 0
+                ? "Önceki ayarlar korunmaya çalışıldı."
+                : string.Join(Environment.NewLine, rollbackFailures);
+            MessageBox.Show(
+                $"Ayarlar kaydedilemedi.\n\n{ex.Message}\n\n{rollbackText}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
         }
     }
 

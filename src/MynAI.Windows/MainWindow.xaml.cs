@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<string> _recentCommands = [];
     private readonly ObservableCollection<ScheduledTask> _scheduledTasks = [];
     private readonly DispatcherTimer _refreshTimer;
+    private bool _refreshTasksInProgress;
 
     private bool _expanded;
     private bool _dragging;
@@ -577,59 +578,52 @@ public partial class MainWindow : Window
 
     private async Task RefreshTasksAsync()
     {
+        // Loaded and DispatcherTimer can both request a refresh. Do not let
+        // overlapping pipe requests race and overwrite the Agent status.
+        if (_refreshTasksInProgress)
+            return;
+
+        _refreshTasksInProgress = true;
         try
         {
-            var tasks =
-                await _agentClient
-                    .GetScheduledTasksAsync();
+            var tasks = await _agentClient.GetScheduledTasksAsync();
 
             _scheduledTasks.Clear();
-
             foreach (var task in tasks
-                .Where(x =>
-                    x.Status ==
-                    ScheduledTaskStatus.Pending)
+                .Where(x => x.Status == ScheduledTaskStatus.Pending)
                 .OrderBy(x => x.ExecuteAt))
             {
                 _scheduledTasks.Add(task);
             }
 
-            PlannedCountText.Text =
-                _scheduledTasks.Count.ToString();
-            PlannedCountText.Visibility =
-                _scheduledTasks.Count > 0
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
+            PlannedCountText.Text = _scheduledTasks.Count.ToString();
+            PlannedCountText.Visibility = _scheduledTasks.Count > 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
 
-            AgentStatusText.Text =
-                "Aktif•";
-
-            AgentStatusText.Foreground =
-                new SolidColorBrush(
-                    Color.FromRgb(
-                        126,
-                        212,
-                        145));
+            // "Aktif •" means the Agent answered the IPC request successfully;
+            // it is not a claim that the cloud/Render service is online.
+            AgentStatusText.Text = "Aktif •";
+            AgentStatusText.Foreground = new SolidColorBrush(Color.FromRgb(126, 212, 145));
 
             if (_scheduledTasks.Count == 0)
-            {
                 SetStatus("Beklemede");
-            }
         }
-        catch
+        catch (Exception ex)
         {
-            AgentStatusText.Text =
-                "Bağlantı yok •";
+            DiagnosticLogManager.WriteError(
+                "MYN-AGENT-001",
+                "Agent",
+                "Planlanan görevler yenilenemedi; Agent IPC yanıtı alınamadı.",
+                ex);
 
-            AgentStatusText.Foreground =
-                new SolidColorBrush(
-                    Color.FromRgb(
-                        220,
-                        125,
-                        125));
-
-            SetStatus(
-                "Agent bağlantısı bekleniyor");
+            AgentStatusText.Text = "Bağlantı yok •";
+            AgentStatusText.Foreground = new SolidColorBrush(Color.FromRgb(220, 125, 125));
+            SetStatus("Agent bağlantısı bekleniyor");
+        }
+        finally
+        {
+            _refreshTasksInProgress = false;
         }
     }
 
@@ -849,8 +843,20 @@ internal sealed class AgentClient
         await writer.WriteLineAsync(
             JsonSerializer.Serialize(request));
 
-        var response =
-            await reader.ReadLineAsync();
+        string? response;
+        using (var responseCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+        {
+            try
+            {
+                response = await reader.ReadLineAsync(responseCancellation.Token);
+            }
+            catch (OperationCanceledException ex) when (responseCancellation.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    "Agent 3 saniye içinde IPC yanıtı vermedi. Agent durumunu ve Hata günlükleri bölümünü kontrol et.",
+                    ex);
+            }
+        }
 
         if (string.IsNullOrWhiteSpace(response))
         {

@@ -806,37 +806,39 @@
 
                                 <Border Width="52"
                                         Height="52"
-                                        CornerRadius="26"
+                                        CornerRadius="14"
                                         BorderBrush="#29405A"
-                                        BorderThickness="1">
+                                        BorderThickness="1"
+                                        Background="#101720">
 
-                                    <Image x:Name="GooglePhoto"
-                                           Source="Resources/myn.jpg"
-                                           Stretch="UniformToFill"/>
+                                    <Image Source="Resources/myn.jpg"
+                                           Stretch="Uniform"
+                                           Margin="5"/>
 
                                 </Border>
 
                                 <StackPanel Grid.Column="1"
-                                            Margin="14,0,0,0">
+                                            Margin="14,0,0,0"
+                                            VerticalAlignment="Center">
 
-                                    <TextBlock x:Name="GoogleNameText"
-                                               Text="Google hesabı bağlı değil"
+                                    <TextBlock Text="MynAssistant hesabı"
                                                FontSize="14"
                                                FontWeight="SemiBold"/>
 
-                                    <TextBlock x:Name="GoogleEmailText"
-                                               Text=""
+                                    <TextBlock x:Name="DesktopLoginStatusText"
+                                               Text="Giriş yapılmadı. Telefon üzerinden güvenli giriş yap."
                                                Foreground="#7D899B"
                                                FontSize="11"
-                                               Margin="0,4,0,0"/>
+                                               Margin="0,4,0,0"
+                                               TextWrapping="Wrap"/>
 
                                 </StackPanel>
 
                                 <Button x:Name="GoogleConnectButton"
                                         Grid.Column="2"
-                                        Content="Kişileri bağla"
+                                        Content="Giriş yap"
                                         Style="{StaticResource PrimaryButton}"
-                                        Click="GoogleConnectButton_Click"
+                                        Click="LoginDesktopAccount_Click"
                                         VerticalAlignment="Center"/>
 
                             </Grid>
@@ -850,6 +852,52 @@
                                 <TextBlock Text="Google Kişiler (isteğe bağlı)"
                                            FontSize="14"
                                            FontWeight="SemiBold"/>
+
+                                <Grid Margin="0,12,0,0">
+
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Width="52"
+                                            Height="52"
+                                            CornerRadius="26"
+                                            BorderBrush="#29405A"
+                                            BorderThickness="1">
+
+                                        <Image x:Name="GooglePhoto"
+                                               Source="Resources/myn.jpg"
+                                               Stretch="UniformToFill"/>
+
+                                    </Border>
+
+                                    <StackPanel Grid.Column="1"
+                                                Margin="14,0,8,0"
+                                                VerticalAlignment="Center">
+
+                                        <TextBlock x:Name="GoogleNameText"
+                                                   Text="Google hesabı bağlı değil"
+                                                   FontSize="14"
+                                                   FontWeight="SemiBold"/>
+
+                                        <TextBlock x:Name="GoogleEmailText"
+                                                   Text=""
+                                                   Foreground="#7D899B"
+                                                   FontSize="11"
+                                                   Margin="0,4,0,0"/>
+
+                                    </StackPanel>
+
+                                    <Button x:Name="GoogleContactsConnectButton"
+                                            Grid.Column="2"
+                                            Content="Kişileri bağla"
+                                            Style="{StaticResource PrimaryButton}"
+                                            Click="GoogleConnectButton_Click"
+                                            VerticalAlignment="Center"/>
+
+                                </Grid>
 
                                 <CheckBox x:Name="GoogleContactsCheckBox"
                                           Content="Google Kişiler listeme eriş"

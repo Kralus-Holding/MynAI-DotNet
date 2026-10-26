@@ -94,9 +94,11 @@ jobs:
           foreach ($forbidden in @("Telefon-PC hesabı", "FirebaseEmailTextBox", "FirebasePasswordBox", "FirebaseSessionStatusText", "FirebaseSignInButton", "FirebaseSignOutButton")) {
             if ($account.Contains($forbidden)) { throw "Firebase credential UI remains in Account settings: $forbidden" }
           }
-          foreach ($required in @("AccountDesktopBridgeStatusText", "AccountDesktopBridgeStatusDot", "AccountDesktopBridgeMessageText", "AccountBridgeRefreshButton", "GooglePhoto", "GoogleConnectButton", "GoogleContactsCheckBox")) {
+          foreach ($required in @("AccountDesktopBridgeStatusText", "AccountDesktopBridgeStatusDot", "AccountDesktopBridgeMessageText", "AccountBridgeRefreshButton", "GooglePhoto", "GoogleConnectButton", "GoogleContactsConnectButton", "DesktopLoginStatusText", "GoogleContactsCheckBox")) {
             if (-not $account.Contains($required)) { throw "Account section is missing preserved UI: $required" }
           }
+          if (-not $account.Contains('Content="Giriş yap"') -or -not $account.Contains('Click="LoginDesktopAccount_Click"')) { throw "Account sign-in must start the Firebase phone-approved login flow." }
+          if (-not $account.Contains('Content="Kişileri bağla"') -or -not $account.Contains('Click="GoogleConnectButton_Click"')) { throw "Optional Google Contacts connection must remain available separately from app login." }
 
           [xml]$settingsXml = $settingsText
           $xamlNames = @($settingsXml.SelectNodes('//@*[local-name()="Name" and namespace-uri()="http://schemas.microsoft.com/winfx/2006/xaml"]') | ForEach-Object { $_.Value })
@@ -208,11 +210,11 @@ jobs:
               throw "Required installer asset is missing: $path"
             }
           }
-          if (-not (Select-String -Path "src/MynAI.Windows/MynAI.Windows.csproj" -Pattern '<Version>0.1.5</Version>' -Quiet)) {
-            throw "Windows app version is not 0.1.5."
+          if (-not (Select-String -Path "src/MynAI.Windows/MynAI.Windows.csproj" -Pattern '<Version>0.1.6</Version>' -Quiet)) {
+            throw "Windows app version is not 0.1.6."
           }
-          if (-not (Select-String -Path "installer/MynAI.iss" -Pattern '#define MyAppVersion "0.1.5"' -Quiet)) {
-            throw "Installer version does not match 0.1.5."
+          if (-not (Select-String -Path "installer/MynAI.iss" -Pattern '#define MyAppVersion "0.1.6"' -Quiet)) {
+            throw "Installer version does not match 0.1.6."
           }
           if (Select-String -Path "installer/MynAI.iss" -Pattern 'ArchitecturesAllowed=x64$|ArchitecturesInstallIn64BitMode=x64$' -Quiet) {
             throw "Use x64compatible architecture identifiers to avoid deprecated Inno Setup settings."
@@ -224,9 +226,9 @@ jobs:
           if (-not (Select-String -Path "installer/MynAI.iss" -SimpleMatch 'UsePreviousAppDir=no' -Quiet)) {
             throw "The installer must not force the previous installation directory."
           }
-          if (-not (Select-String -Path "installer/LICENSE-AGREEMENT.rtf" -SimpleMatch '0.1.5' -Quiet) -or
+          if (-not (Select-String -Path "installer/LICENSE-AGREEMENT.rtf" -SimpleMatch '0.1.6' -Quiet) -or
               (Select-String -Path "installer/LICENSE-AGREEMENT.rtf" -SimpleMatch '0.1.2' -Quiet)) {
-            throw "License version must match release 0.1.5."
+            throw "License version must match release 0.1.6."
           }
           if (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml" -SimpleMatch 'KR / Kralus varsayılanına dön' -Quiet) {
             throw "The unwanted default-logo reset button must stay removed."
@@ -241,12 +243,16 @@ jobs:
             throw "The planned task count must hide when zero and show when nonzero."
           }
           $mainCode = Get-Content -LiteralPath "src/MynAI.Windows/MainWindow.xaml.cs" -Raw -Encoding UTF8
-          if (-not $mainCode.Contains('"Aktif•"')) { throw "Connected Agent status must display 'Aktif •'." }
+          if (-not $mainCode.Contains('"Aktif •"')) { throw "Connected Agent status must display 'Aktif •'." }
           if (-not $mainCode.Contains('"Bağlantı yok •"')) { throw "Disconnected Agent status must remain explicit." }
+          if (-not $mainCode.Contains('ReadLineAsync(responseCancellation.Token)') -or -not $mainCode.Contains('Agent 3 saniye içinde IPC yanıtı vermedi.')) { throw "Agent IPC response reads must time out instead of hanging the dashboard refresh." }
+          if (-not $mainCode.Contains('_refreshTasksInProgress') -or -not $mainCode.Contains('"MYN-AGENT-001"')) { throw "Overlapping dashboard refreshes must be prevented and IPC failures logged." }
           $pairingClient = Get-Content -LiteralPath "src/MynAI.Windows/Auth/DesktopPairingClient.cs" -Raw -Encoding UTF8
           if (-not $pairingClient.Contains("HttpStatusCode.NotFound") -or -not $pairingClient.Contains("MYN-SERVER-404")) { throw "A missing live pairing endpoint must have a specific diagnosis." }
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
           if (-not $settingsCode.Contains("Google Auth Platform") -or -not $settingsCode.Contains("DesktopPairingClientException")) { throw "OAuth and pairing deployment errors must have actionable diagnostics." }
+          if (-not $settingsCode.Contains('if (!hotkeyApplied)') -or -not $settingsCode.Contains('_settingsStore.Save(originalSettings)') -or -not $settingsCode.Contains('"MYN-SETTINGS-001"')) { throw "Settings save must validate hotkeys, attempt rollback, and record save failures." }
+          if (-not $settingsCode.Contains('UpdateAccountDesktopBridgeStatus') -or -not $settingsCode.Contains('HTTP 404 görülürse Render')) { throw "Account status must explain how to begin pairing and recover from an undeployed server API." }
           $compilerCandidates = @(
             "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
             "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
@@ -295,7 +301,7 @@ jobs:
             "2. Kurulum hedef klasörünü her kurulumda seçebilirsiniz. Aynı anda birden fazla bağımsız kurulum desteklenmez; mevcut klasör duruyorsa önce mevcut kurulumu kaldırın.",
             "3. MynAgent uygulama açılışında arka planda otomatik başlatılır; kurulum ekranında ayrı başlatma seçeneği yoktur.",
             "4. İlk telefon-PC bağlantısı için Windows Ayarlar → Hesap → Telefon-PC bağlantısı → Telefonla eşleştir seçeneğini açın. Windows'ta gösterilen 10 karakterli kodu Android MynAssistant → Ayarlar → Windows bilgisayarını eşleştir alanına yazıp onaylayın. Kod 5 dakika geçerlidir.",
-            "5. İlk eşleştirme için sunucu API uç noktalarının yayımlanmış ve Firebase yapılandırmasının tamamlanmış olması gerekir. Canlı sunucu yapılandırması henüz doğrulanmadığından, bu ayarlar tamamlanana kadar ilk eşleştirme çalışmayabilir; önceden kaydedilmiş geçerli oturum varsa köprü onu kullanır.",
+            "5. Canlı sunucuda /api/v1/info yapılandırma kontrolü ve pairing/start HTTP 200 smoke testi geçti. Bu, başlangıç uç noktasının çalıştığını doğrular; telefon onayı sonrası Windows oturumunun tamamı gerçek Android ve Windows cihazlarında ayrıca test edilmelidir. Önceden kaydedilmiş geçerli oturum varsa köprü onu kullanır.",
             "6. Müşteriden client_secret.json veya ayrı logo dosyası istenmez.",
             "7. Google Kişiler bağlantısı isteğe bağlıdır. Google OAuth 403 access_denied verirse, OAuth projesi Google Auth Platform → Audience → Test users bölümünde bu Google hesabına yetki verilmelidir. Bu ayar Google Cloud Console'dadır ve telefon-PC eşleştirmesi için gerekmez.",
             "",
