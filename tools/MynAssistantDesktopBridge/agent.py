@@ -378,9 +378,11 @@ def update_command(
     if marker not in full_name:
         raise RuntimeError("Komut belgesinin yolu geçersiz.")
     document_path = full_name.split(marker, 1)[1]
+    command_name = decode_field(document.get("fields", {}).get("command"))
+    result_limit = FILE_LIST_MAX_RESULT_LENGTH if command_name == "list_files" else 800
     fields = {
         "status": encode_string(status),
-        "result": encode_string(result[:800]),
+        "result": encode_string(result[:result_limit]),
         "processedAt": encode_timestamp(),
     }
     if extra_fields:
@@ -540,6 +542,7 @@ def normalize_text_command(text: str) -> str:
 
 FILE_LIST_MAX_ENTRIES = 200
 FILE_LIST_MAX_PATH_LENGTH = 1024
+FILE_LIST_MAX_RESULT_LENGTH = 350_000
 FILE_LIST_ROOTS = (
     ("Masaüstü", ("Desktop", "Masaüstü")),
     ("Belgeler", ("Documents", "Belgeler")),
@@ -573,8 +576,36 @@ def _allowed_file_roots() -> list[tuple[str, Path]]:
     return roots
 
 
+def _serialize_file_listing(
+    current_path: str,
+    parent_path: str | None,
+    entries: list[dict],
+    truncated: bool,
+    warnings: list[str],
+) -> str:
+    payload = {
+        "schemaVersion": 1,
+        "currentPath": current_path,
+        "parentPath": parent_path,
+        "entries": entries,
+        "truncated": truncated,
+        "warnings": sorted(set(warnings)),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    # Keep the command result below Firestore's 1 MiB document limit and remove
+    # whole entries rather than cutting a JSON document mid-string.
+    while len(encoded.encode("utf-8")) > FILE_LIST_MAX_RESULT_LENGTH and entries:
+        entries.pop()
+        payload["truncated"] = True
+        payload["warnings"] = sorted(set(warnings + ["Liste boyut sınırına ulaştı; bazı öğeler gösterilmiyor."]))
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > FILE_LIST_MAX_RESULT_LENGTH:
+        raise ValueError("Dosya listesi güvenli yanıt boyutuna sığmadı.")
+    return encoded
+
+
 def execute_list_files(path_value: str = "") -> str:
-    """List a single directory inside the allowlisted profile folders; never read file contents."""
+    """List metadata inside allowlisted profile folders; never read file contents."""
     if not isinstance(path_value, str) or len(path_value) > FILE_LIST_MAX_PATH_LENGTH:
         raise ValueError("Klasör yolu geçersiz veya çok uzun.")
 
@@ -590,18 +621,7 @@ def execute_list_files(path_value: str = "") -> str:
             }
             for label, root in roots
         ]
-        return json.dumps(
-            {
-                "schemaVersion": 1,
-                "currentPath": "",
-                "parentPath": None,
-                "entries": entries,
-                "truncated": False,
-                "warnings": [],
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
+        return _serialize_file_listing("", None, entries, False, [])
 
     try:
         current = Path(path_value).expanduser().resolve(strict=True)
@@ -612,15 +632,14 @@ def execute_list_files(path_value: str = "") -> str:
         raise ValueError("Seçilen yol bir klasör değil.")
 
     allowed_root = next(
-        (
-            root
-            for _label, root in roots
-            if current == root or root in current.parents
-        ),
+        (root for _label, root in roots if current == root or root in current.parents),
         None,
     )
     if allowed_root is None:
-        raise ValueError("Bu klasöre erişim izni yok. Yalnızca Masaüstü, Belgeler, Resimler, Müzik, İndirilenler ve Videolar klasörleri açılabilir.")
+        raise ValueError(
+            "Bu klasöre erişim izni yok. Yalnızca Masaüstü, Belgeler, Resimler, "
+            "Müzik, İndirilenler ve Videolar klasörleri açılabilir."
+        )
 
     entries: list[dict] = []
     warnings: list[str] = []
@@ -630,9 +649,13 @@ def execute_list_files(path_value: str = "") -> str:
             for item in iterator:
                 try:
                     item_path = Path(item.path)
-                    if item.is_symlink() or getattr(item_path, "is_junction", lambda: False)():
+                    is_junction = getattr(item_path, "is_junction", lambda: False)
+                    if item.is_symlink() or is_junction():
                         continue
                     resolved_item = item_path.resolve(strict=True)
+                    if len(str(resolved_item)) > FILE_LIST_MAX_PATH_LENGTH:
+                        warnings.append("Yolu çok uzun olan bazı öğeler listelenmedi.")
+                        continue
                     if not (resolved_item == allowed_root or allowed_root in resolved_item.parents):
                         continue
                     is_directory = item.is_dir(follow_symlinks=False)
@@ -658,23 +681,14 @@ def execute_list_files(path_value: str = "") -> str:
     except PermissionError as exc:
         raise ValueError("Windows bu klasörün içeriğini okumaya izin vermedi.") from exc
     except OSError as exc:
-        raise ValueError("Klasör içeriği okunamadı. Diskin ve erişim izinlerinin durumunu kontrol et.") from exc
+        raise ValueError(
+            "Klasör içeriği okunamadı. Diskin ve erişim izinlerinin durumunu kontrol et."
+        ) from exc
 
     entries.sort(key=lambda entry: (not entry["isDirectory"], entry["name"].casefold()))
     entries = entries[:FILE_LIST_MAX_ENTRIES]
     parent_path = "" if current == allowed_root else str(current.parent)
-    return json.dumps(
-        {
-            "schemaVersion": 1,
-            "currentPath": str(current),
-            "parentPath": parent_path,
-            "entries": entries,
-            "truncated": truncated,
-            "warnings": sorted(set(warnings)),
-        },
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
+    return _serialize_file_listing(str(current), parent_path, entries, truncated, warnings)
 
 
 def execute_text_command(text: str) -> str:
