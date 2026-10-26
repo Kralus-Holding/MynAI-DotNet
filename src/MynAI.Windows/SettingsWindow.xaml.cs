@@ -4,6 +4,7 @@ using Color = System.Windows.Media.Color;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
