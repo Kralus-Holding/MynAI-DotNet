@@ -317,13 +317,15 @@ jobs:
           Write-Host "Distribution ZIP size bytes: $($zipInfo.Length)"
           Write-Host "Distribution ZIP SHA-256: $((Get-FileHash $zipPath -Algorithm SHA256).Hash)"
 
-      - name: Upload Windows installer as Actions artifact
+      - name: Upload Windows installer as direct EXE artifact
         id: upload_installer
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: MynAssistant-Windows-Installer
-          path: build/distribution/MynAssistant-Windows-Installer.zip
+          path: |
+            build/distribution/MynAssistant-Windows-Installer/MynAssistant-Setup.exe
+            build/distribution/MynAssistant-Windows-Installer/README-Kurulum.txt
           if-no-files-found: error
           retention-days: 7
 
@@ -372,18 +374,22 @@ jobs:
           } else {
             $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
             foreach ($asset in $assets) {
-              if ($asset.name -eq "MynAssistant-Windows-Installer.zip") {
+              if ($asset.name -eq "MynAssistant-Setup.exe") {
                 Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
               }
             }
           }
 
-          $installerPath = (Resolve-Path "build/distribution/MynAssistant-Windows-Installer.zip").Path
-          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Windows-Installer.zip"
+          $installerPath = (Resolve-Path "build/distribution/MynAssistant-Windows-Installer/MynAssistant-Setup.exe").Path
+          $localInstaller = Get-Item -LiteralPath $installerPath
+          $localSha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup.exe"
           $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
-          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
-            throw "Distribution ZIP upload could not be verified."
+          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded" -or $uploadedAsset.size -ne $localInstaller.Length) {
+            throw "Direct installer EXE upload could not be verified."
           }
 
           Write-Host "Installer fallback release published: $($release.html_url)"
-          Write-Host "Verified customer ZIP URL: $($uploadedAsset.browser_download_url)"
+          Write-Host "Verified customer EXE URL: $($uploadedAsset.browser_download_url)"
+          Write-Host "Installer size bytes: $($localInstaller.Length)"
+          Write-Host "Installer SHA-256: $localSha256"
