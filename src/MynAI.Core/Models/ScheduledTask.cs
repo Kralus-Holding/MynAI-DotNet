@@ -1,4 +1,6 @@
-﻿namespace MynAI.Core.Models;
+﻿using System.Text.Json.Serialization;
+
+namespace MynAI.Core.Models;
 
 public enum ScheduledAction
 {
@@ -25,6 +27,17 @@ public sealed class ScheduledTask
     public DateTimeOffset ExecuteAt { get; init; }
 
     public ScheduledTaskStatus Status { get; set; } = ScheduledTaskStatus.Pending;
+
+    [JsonIgnore]
+    public string DisplayStatus => Status switch
+    {
+        ScheduledTaskStatus.Pending => "Bekliyor",
+        ScheduledTaskStatus.Cancelled => "İptal edildi",
+        ScheduledTaskStatus.Executing => "Çalışıyor",
+        ScheduledTaskStatus.Completed => "Tamamlandı",
+        ScheduledTaskStatus.Failed => "Başarısız",
+        _ => "Bilinmiyor"
+    };
 
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.Now;
 
