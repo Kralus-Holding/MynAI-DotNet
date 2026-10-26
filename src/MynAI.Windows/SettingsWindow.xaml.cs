@@ -21,6 +21,8 @@ public partial class SettingsWindow : Window
     private readonly MynAISettingsStore _settingsStore;
 
     private readonly DispatcherTimer _agentTimer;
+    private readonly DesktopPairingClient _desktopPairingClient = new();
+    private CancellationTokenSource? _pairingCancellation;
     private DateTime _lastBridgeRefreshAttemptUtc = DateTime.MinValue;
 
 
@@ -839,6 +841,150 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private async void StartDesktopPairing_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pairingCancellation is { IsCancellationRequested: false })
+            return;
+
+        if (FirebaseDesktopSessionStore.HasValidStoredSession())
+        {
+            var answer = MessageBox.Show(
+                "Bu bilgisayarda zaten kayıtlı bir telefon-PC oturumu var. Yeni eşleştirme onaylanırsa bu oturum yeni telefon hesabıyla değiştirilecek. Devam edilsin mi?",
+                "Telefon-PC eşleştirmesini değiştir",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (answer != MessageBoxResult.Yes)
+                return;
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _pairingCancellation = cancellation;
+        StartDesktopPairingButton.IsEnabled = false;
+        CancelDesktopPairingButton.IsEnabled = true;
+        DesktopPairingCodeText.Text = "";
+        DesktopPairingCodeText.Visibility = Visibility.Collapsed;
+        DesktopPairingStatusText.Text = "Sunucudan güvenli eşleştirme kodu alınıyor...";
+        DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
+
+        try
+        {
+            var pairing = await _desktopPairingClient.StartAsync(
+                Environment.MachineName,
+                cancellation.Token);
+
+            DesktopPairingCodeText.Text = pairing.Code;
+            DesktopPairingCodeText.Visibility = Visibility.Visible;
+            DesktopPairingStatusText.Text =
+                $"Android MynAssistant → Ayarlar bölümüne bu kodu gir. " +
+                $"Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}. " +
+                "Telefon onay verene kadar bu pencere açık kalmalı.";
+
+            while (DateTimeOffset.UtcNow < pairing.ExpiresAtUtc)
+            {
+                cancellation.Token.ThrowIfCancellationRequested();
+                var status = await _desktopPairingClient.PollAsync(
+                    pairing.PairingId,
+                    pairing.PollSecret,
+                    cancellation.Token);
+
+                if (string.Equals(status.State, "approved", StringComparison.OrdinalIgnoreCase))
+                {
+                    var session = status.Session
+                        ?? throw new InvalidDataException("Onaylanan eşleştirme oturumu eksik.");
+
+                    // The existing user session is only replaced after the phone has explicitly approved.
+                    FirebaseDesktopSessionStore.Save(session);
+
+                    try
+                    {
+                        if (DesktopBridgeStartupManager.IsRunning())
+                            DesktopBridgeStartupManager.RestartAgent();
+                        else
+                            DesktopBridgeStartupManager.StartAgent();
+
+                        UpdateDesktopBridgeStatus();
+                        UpdateAccountDesktopBridgeStatus();
+                        DesktopPairingStatusText.Text =
+                            $"Eşleştirme tamamlandı. {status.MachineName ?? Environment.MachineName} telefon hesabına bağlandı.";
+                        DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightGreen);
+                        DesktopPairingCodeText.Visibility = Visibility.Collapsed;
+                        SetSaveStatus("Telefon-PC bağlantısı eşleştirildi.", Colors.LightGreen);
+                    }
+                    catch (Exception bridgeError)
+                    {
+                        DiagnosticLogManager.WriteError(
+                            "MYN-DEVICE-006",
+                            "DesktopBridge",
+                            "Telefon eşleştirildi ancak Desktop Bridge başlatılamadı.",
+                            bridgeError);
+                        UpdateDesktopBridgeStatus();
+                        UpdateAccountDesktopBridgeStatus();
+                        DesktopPairingStatusText.Text =
+                            "Telefon hesabı eşleştirildi ancak Bridge başlatılamadı. Bağlantı durumunu yenileyip tekrar dene. (MYN-DEVICE-006)";
+                        DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+                    }
+
+                    return;
+                }
+
+                DesktopPairingStatusText.Text =
+                    $"Kod bekleniyor. Android MynAssistant → Ayarlar içinde kodu onayla. " +
+                    $"Kalan süre: {Math.Max(0, (int)(pairing.ExpiresAtUtc - DateTimeOffset.UtcNow).TotalSeconds)} sn.";
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellation.Token);
+            }
+
+            DesktopPairingStatusText.Text =
+                "Eşleştirme kodunun süresi doldu. Yeniden eşleştirme başlat.";
+            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            DesktopPairingCodeText.Visibility = Visibility.Collapsed;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            DesktopPairingStatusText.Text =
+                "Eşleştirme iptal edildi. Kullanılmayan kod kısa süre içinde sona erecek.";
+            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
+            DesktopPairingCodeText.Visibility = Visibility.Collapsed;
+        }
+        catch (HttpRequestException ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-SERVER-001", "DesktopBridge", "Eşleştirme sunucusuna ulaşılamadı.", ex);
+            DesktopPairingStatusText.Text =
+                "Eşleştirme sunucusuna ulaşılamadı. İnternet bağlantısını veya sunucu durumunu kontrol et. (MYN-SERVER-001)";
+            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+        }
+        catch (TaskCanceledException ex) when (!cancellation.IsCancellationRequested)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-SERVER-002", "DesktopBridge", "Eşleştirme isteği zaman aşımına uğradı.", ex);
+            DesktopPairingStatusText.Text =
+                "Sunucu yanıtı zaman aşımına uğradı. Biraz sonra yeniden dene. (MYN-SERVER-002)";
+            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-DEVICE-999", "DesktopBridge", "Telefon-PC eşleştirmesi tamamlanamadı.", ex);
+            DesktopPairingStatusText.Text =
+                $"{ex.Message} (MYN-DEVICE-999)";
+            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+        }
+        finally
+        {
+            if (ReferenceEquals(_pairingCancellation, cancellation))
+                _pairingCancellation = null;
+            cancellation.Dispose();
+            StartDesktopPairingButton.IsEnabled = true;
+            CancelDesktopPairingButton.IsEnabled = false;
+        }
+    }
+
+    private void CancelDesktopPairing_Click(object sender, RoutedEventArgs e)
+    {
+        _pairingCancellation?.Cancel();
+    }
+
     private void RefreshDesktopBridge_Click(object sender, RoutedEventArgs e)
     {
         var now = DateTime.UtcNow;
@@ -882,8 +1028,7 @@ public partial class SettingsWindow : Window
         {
             UpdateDesktopBridgeStatus();
             MessageBox.Show(
-                "Bu bilgisayarda kayıtlı telefon-PC oturumu bulunamadı. Bağlantı başlatılmadı. " +
-                "Bu sürümde ilk eşleştirmeyi güvenli biçimde tamamlayan bir sunucu akışı mevcut değil.",
+                "Bu bilgisayarda kayıtlı telefon-PC oturumu bulunamadı. Ayarlar → Hesap → Telefonla eşleştir bölümünden güvenli eşleştirmeyi başlat.",
                 "MynAssistant — Telefon-PC bağlantısı",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -1305,6 +1450,7 @@ public partial class SettingsWindow : Window
     protected override void OnClosed(
         EventArgs e)
     {
+        _pairingCancellation?.Cancel();
         _agentTimer.Stop();
 
         base.OnClosed(e);
