@@ -377,7 +377,7 @@
                             VerticalAlignment="Center">
 
                         <TextBlock x:Name="AgentStatusText"
-                                   Text="Agent: bağlantı bekleniyor"
+                                   Text="Bağlanıyor •"
                                    Foreground="#7FD495"
                                    FontSize="9"/>
 
@@ -431,13 +431,13 @@
             </Grid>
 
 
-            <!-- PLANLANAN İŞLER -->
+            <!-- PLANLANAN GÖREVLER -->
 
             <Border Grid.Row="1"
                     Background="#0C172A"
                     BorderBrush="#203B60"
                     BorderThickness="1"
-                    CornerRadius="10"
+                    CornerRadius="17"
                     Padding="10"
                     Height="116"
                     VerticalAlignment="Top">
@@ -452,7 +452,7 @@
 
                     <Grid>
 
-                        <TextBlock Text="Planlanan İşler"
+                        <TextBlock Text="Planlanan Görevler"
                                    Foreground="#F1F4F8"
                                    FontSize="11"
                                    FontWeight="SemiBold"/>
@@ -481,7 +481,7 @@
                         <StackPanel>
 
                             <TextBlock x:Name="EmptyTasksText"
-                                       Text="Planlanmış görev yok."
+                                       Text="Planlanan görev yok."
                                        Foreground="#697587"
                                        FontSize="10"
                                        Margin="0,4,0,0"/>
