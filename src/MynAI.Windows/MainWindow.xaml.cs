@@ -602,7 +602,7 @@ public partial class MainWindow : Window
                     : Visibility.Collapsed;
 
             AgentStatusText.Text =
-                "Agent: bağlı";
+                "Aktif •";
 
             AgentStatusText.Foreground =
                 new SolidColorBrush(
@@ -619,7 +619,7 @@ public partial class MainWindow : Window
         catch
         {
             AgentStatusText.Text =
-                "Agent: bağlantı yok";
+                "Bağlantı yok •";
 
             AgentStatusText.Foreground =
                 new SolidColorBrush(
