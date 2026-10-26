@@ -313,7 +313,7 @@
             </Grid.RowDefinitions>
 
 
-            <!-- BAŞLIK + AGENT + BUTONLAR -->
+            <!-- BAŞLIK + BUTONLAR -->
 
             <Grid x:Name="MainHeaderGrid"
                   Grid.Row="0"
@@ -366,7 +366,7 @@
                             HorizontalAlignment="Right"
                             VerticalAlignment="Center">
 
-                    <!-- AGENT DURUMU -->
+                    <!-- Teknik Agent durumu kod tarafında tutulur, ana arayüzde gösterilmez. -->
 
                     <Border Background="#101B16"
                             BorderBrush="#244A36"
@@ -374,7 +374,8 @@
                             CornerRadius="9"
                             Padding="8,5"
                             Margin="0,0,2,0"
-                            VerticalAlignment="Center">
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed">
 
                         <TextBlock x:Name="AgentStatusText"
                                    Text="Agent: bağlantı bekleniyor"
