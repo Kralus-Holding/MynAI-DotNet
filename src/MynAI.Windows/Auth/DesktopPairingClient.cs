@@ -83,12 +83,12 @@ public sealed class DesktopPairingClient
         throw await CreateSafeExceptionAsync(response, cancellationToken);
     }
 
-    private static async Task<InvalidOperationException> CreateSafeExceptionAsync(
+    private static async Task<DesktopPairingClientException> CreateSafeExceptionAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
         string? detail = null;
-        string? code = null;
+        string? serverCode = null;
         try
         {
             using var document = JsonDocument.Parse(
@@ -99,41 +99,67 @@ public sealed class DesktopPairingClient
                 detail = detailValue.GetString();
             if (root.TryGetProperty("code", out var codeValue) &&
                 codeValue.ValueKind == JsonValueKind.String)
-                code = codeValue.GetString();
-            if (string.IsNullOrWhiteSpace(code) &&
+                serverCode = codeValue.GetString();
+            if (string.IsNullOrWhiteSpace(serverCode) &&
                 root.TryGetProperty("extensions", out var extensions) &&
                 extensions.ValueKind == JsonValueKind.Object &&
                 extensions.TryGetProperty("code", out var nestedCode) &&
                 nestedCode.ValueKind == JsonValueKind.String)
-                code = nestedCode.GetString();
+                serverCode = nestedCode.GetString();
         }
         catch (JsonException)
         {
-            // Do not expose raw server response bodies.
+            // Some reverse proxies return an HTML 404 page; never show its raw body.
         }
 
-        var message = response.StatusCode switch
+        var (message, fallbackCode) = response.StatusCode switch
         {
+            HttpStatusCode.NotFound =>
+                ("Sunucuda telefon-PC eşleştirme API'si henüz yayımlanmamış (HTTP 404). Sunucu dağıtımı tamamlanmalı.", "MYN-SERVER-404"),
+            HttpStatusCode.MethodNotAllowed =>
+                ("Sunucudaki telefon-PC eşleştirme uç noktası bu isteği kabul etmiyor (HTTP 405). Sunucu sürümünü kontrol et.", "MYN-SERVER-405"),
             HttpStatusCode.TooManyRequests =>
-                "Çok fazla eşleştirme isteği yapıldı. Biraz bekleyip tekrar dene.",
+                ("Çok fazla eşleştirme isteği yapıldı. Biraz bekleyip tekrar dene.", "MYN-SERVER-429"),
             HttpStatusCode.Unauthorized =>
-                "Eşleştirme oturumu doğrulanamadı. Yeni bir kod alıp tekrar dene.",
+                ("Eşleştirme oturumu doğrulanamadı. Yeni bir kod alıp tekrar dene.", "MYN-SERVER-401"),
             HttpStatusCode.Gone =>
-                "Eşleştirme kodunun süresi doldu. Yeniden eşleştirme başlat.",
+                ("Eşleştirme kodunun süresi doldu. Yeniden eşleştirme başlat.", "MYN-DEVICE-003"),
             HttpStatusCode.ServiceUnavailable =>
-                string.IsNullOrWhiteSpace(detail)
+                (string.IsNullOrWhiteSpace(detail)
                     ? "Telefon-PC eşleştirmesi sunucuda henüz yapılandırılmamış."
-                    : detail,
-            _ => string.IsNullOrWhiteSpace(detail)
-                ? $"Sunucu eşleştirmeyi tamamlayamadı (HTTP {(int)response.StatusCode})."
-                : detail
+                    : detail, "MYN-SERVER-503"),
+            _ =>
+                (string.IsNullOrWhiteSpace(detail)
+                    ? $"Sunucu eşleştirmeyi tamamlayamadı (HTTP {(int)response.StatusCode})."
+                    : detail, "MYN-SERVER-999")
         };
 
-        if (!string.IsNullOrWhiteSpace(code) && code.StartsWith("MYN-", StringComparison.Ordinal))
-            message += $" ({code})";
+        // Prefer the server's stable error code except for 404/405, where the
+        // actionable diagnosis is that this endpoint isn't deployed/available.
+        var errorCode = response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed
+            ? fallbackCode
+            : !string.IsNullOrWhiteSpace(serverCode) &&
+              serverCode.StartsWith("MYN-", StringComparison.Ordinal)
+                ? serverCode
+                : fallbackCode;
 
-        return new InvalidOperationException(message);
+        return new DesktopPairingClientException(message, response.StatusCode, errorCode);
     }
+}
+
+public sealed class DesktopPairingClientException : InvalidOperationException
+{
+    public DesktopPairingClientException(
+        string message,
+        HttpStatusCode statusCode,
+        string errorCode) : base(message)
+    {
+        StatusCode = statusCode;
+        ErrorCode = errorCode;
+    }
+
+    public HttpStatusCode StatusCode { get; }
+    public string ErrorCode { get; }
 }
 
 public sealed record DesktopPairingStartRequest(string MachineName);
