@@ -439,7 +439,7 @@
                     BorderThickness="1"
                     CornerRadius="10"
                     Padding="10"
-                    Height="94"
+                    Height="116"
                     VerticalAlignment="Top">
 
                 <Grid>
@@ -468,7 +468,7 @@
 
 
                     <ScrollViewer Grid.Row="1"
-                                  Height="62" MaxHeight="62" VerticalScrollBarVisibility="Auto"
+                                  Height="72" MaxHeight="72" VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
 
                         <ScrollViewer.Resources>
@@ -483,7 +483,7 @@
                             <TextBlock x:Name="EmptyTasksText"
                                        Text="Planlanmış görev yok."
                                        Foreground="#697587"
-                                       FontSize="9"
+                                       FontSize="10"
                                        Margin="0,4,0,0"/>
 
                             <ItemsControl x:Name="ScheduledTasksList"
@@ -507,24 +507,33 @@
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
 
-                                                <StackPanel Orientation="Horizontal">
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock
+                                                            Text="{Binding ExecuteAt, StringFormat={}{0:HH:mm}}"
+                                                            Foreground="#F2F5FA"
+                                                            FontSize="11"
+                                                            FontWeight="SemiBold"/>
 
-                                                    <TextBlock
-                                                        Text="{Binding ExecuteAt, StringFormat={}{0:HH:mm}}"
-                                                        Foreground="#F2F5FA"
-                                                        FontSize="11"
-                                                        FontWeight="SemiBold"/>
+                                                        <TextBlock
+                                                            Text="  •  "
+                                                            Foreground="#4D5B70"
+                                                            FontSize="9"/>
 
-                                                    <TextBlock
-                                                        Text="  •  "
-                                                        Foreground="#4D5B70"
-                                                        FontSize="9"/>
+                                                        <TextBlock
+                                                            Text="{Binding DisplayStatus}"
+                                                            Foreground="#7FD495"
+                                                            FontSize="9"
+                                                            FontWeight="SemiBold"/>
+                                                    </StackPanel>
 
                                                     <TextBlock
                                                         Text="{Binding Description}"
                                                         Foreground="#8490A2"
-                                                        FontSize="9"/>
-
+                                                        FontSize="10"
+                                                        TextWrapping="Wrap"
+                                                        ToolTip="{Binding Description}"
+                                                        Margin="0,2,0,0"/>
                                                 </StackPanel>
 
                                                 <Button Grid.Column="1"
