@@ -92,10 +92,10 @@ public partial class SettingsWindow : Window
             DesktopBridgeStartupManager.IsEnabled();
 
         AgentStartupCheckBox.IsChecked =
-            AgentStartupManager.IsEnabled();
+            settings.StartAgentWithWindows || AgentStartupManager.IsEnabled();
 
         StartupAppCheckBox.IsChecked =
-            StartupSettingsManager.IsEnabled();
+            settings.StartApplicationWithWindows || StartupSettingsManager.IsEnabled();
 
         MicrophoneCheckBox.IsChecked =
             settings.MicrophoneEnabled;
@@ -914,6 +914,8 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
+            DiagnosticLogManager.WriteError(
+                "MYN-AGENT-003", "DesktopBridge", "Telefon-PC bağlantısı durdurulamadı.", ex);
             UpdateDesktopBridgeStatus();
             UpdateAccountDesktopBridgeStatus();
             MessageBox.Show(
@@ -1007,6 +1009,8 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
+            DiagnosticLogManager.WriteError(
+                "MYN-AGENT-002", "Agent", "Agent durdurma işlemi başarısız oldu.", ex);
             UpdateAgentStatus();
             UpdateAgentDiagnostics();
             SetSaveStatus("Agent durdurulamadı.", Colors.IndianRed);
