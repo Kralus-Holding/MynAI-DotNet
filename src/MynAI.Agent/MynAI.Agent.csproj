@@ -12,6 +12,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <AssemblyName>MynAgent</AssemblyName>
+    <ApplicationIcon>..\MynAI.Windows\Resources\myn.ico</ApplicationIcon>
     <Company>MynKralus</Company>
     <Product>MynAssistant</Product>
     <Description>MynAssistant background agent</Description>
