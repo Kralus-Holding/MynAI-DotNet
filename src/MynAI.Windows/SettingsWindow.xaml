@@ -757,6 +757,44 @@
                         </Border>
 
                         <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Telefonla güvenli eşleştirme"
+                                           FontSize="14" FontWeight="SemiBold"/>
+                                <TextBlock Text="Windows için kod üret. Ardından Android MynAssistant → Ayarlar bölümünde bu kodu girip bilgisayarı onayla. Kod 5 dakika geçerlidir."
+                                           Foreground="#718096" FontSize="11" Margin="0,6,0,10"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock x:Name="DesktopPairingCodeText"
+                                           Text=""
+                                           Visibility="Collapsed"
+                                           FontSize="26"
+                                           FontWeight="Bold"
+                                           Foreground="#9DD9D2"
+                                           Margin="0,8,0,8"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock x:Name="DesktopPairingStatusText"
+                                           Text="Henüz eşleştirme başlatılmadı."
+                                           Foreground="#9BA9BB"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"/>
+                                <WrapPanel Margin="0,12,0,0">
+                                    <Button x:Name="StartDesktopPairingButton"
+                                            Content="Telefonla eşleştir"
+                                            Style="{StaticResource PrimaryButton}"
+                                            Click="StartDesktopPairing_Click"
+                                            Margin="0,0,8,8"/>
+                                    <Button x:Name="CancelDesktopPairingButton"
+                                            Content="İptal"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="CancelDesktopPairing_Click"
+                                            IsEnabled="False"
+                                            Margin="0,0,8,8"/>
+                                </WrapPanel>
+                                <TextBlock Text="Eşleştirme açık onay gerektirir. Kodunu başkalarıyla paylaşma; oturum anahtarları ekranda gösterilmez."
+                                           Foreground="#718096" FontSize="11" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
 
                             <Grid>
 
