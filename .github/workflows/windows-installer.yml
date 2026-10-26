@@ -240,7 +240,7 @@ jobs:
             throw "The planned task count must hide when zero and show when nonzero."
           }
           $mainCode = Get-Content -LiteralPath "src/MynAI.Windows/MainWindow.xaml.cs" -Raw -Encoding UTF8
-          if (-not $mainCode.Contains('"Aktif •"')) { throw "Connected Agent status must display 'Aktif •'." }
+          if (-not $mainCode.Contains('"Aktif•"')) { throw "Connected Agent status must display 'Aktif •'." }
           if (-not $mainCode.Contains('"Bağlantı yok •"')) { throw "Disconnected Agent status must remain explicit." }
           $pairingClient = Get-Content -LiteralPath "src/MynAI.Windows/Auth/DesktopPairingClient.cs" -Raw -Encoding UTF8
           if (-not $pairingClient.Contains("HttpStatusCode.NotFound") -or -not $pairingClient.Contains("MYN-SERVER-404")) { throw "A missing live pairing endpoint must have a specific diagnosis." }

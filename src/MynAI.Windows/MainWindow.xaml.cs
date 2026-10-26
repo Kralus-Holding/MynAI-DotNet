@@ -602,7 +602,7 @@ public partial class MainWindow : Window
                     : Visibility.Collapsed;
 
             AgentStatusText.Text =
-                "Aktif •";
+                "Aktif•";
 
             AgentStatusText.Foreground =
                 new SolidColorBrush(
