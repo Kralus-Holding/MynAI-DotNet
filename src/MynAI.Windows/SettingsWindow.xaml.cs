@@ -160,7 +160,7 @@ public partial class SettingsWindow : Window
         GoogleContactsCheckBox.IsChecked =
             true;
 
-        GoogleConnectButton.Content =
+        GoogleContactsConnectButton.Content =
             "Kişiler bağlı";
     }
 
@@ -843,7 +843,17 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private async void LoginDesktopAccount_Click(object sender, RoutedEventArgs e)
+    {
+        await StartDesktopPairingAsync();
+    }
+
     private async void StartDesktopPairing_Click(object sender, RoutedEventArgs e)
+    {
+        await StartDesktopPairingAsync();
+    }
+
+    private async Task StartDesktopPairingAsync()
     {
         if (_pairingCancellation is { IsCancellationRequested: false })
             return;
@@ -863,7 +873,9 @@ public partial class SettingsWindow : Window
         var cancellation = new CancellationTokenSource();
         _pairingCancellation = cancellation;
         StartDesktopPairingButton.IsEnabled = false;
+        GoogleConnectButton.IsEnabled = false;
         CancelDesktopPairingButton.IsEnabled = true;
+        DesktopLoginStatusText.Text = "Telefon onayı bekleniyor...";
         DesktopPairingCodeText.Text = "";
         DesktopPairingCodeText.Visibility = Visibility.Collapsed;
         DesktopPairingStatusText.Text = "Sunucudan güvenli eşleştirme kodu alınıyor...";
@@ -897,6 +909,9 @@ public partial class SettingsWindow : Window
 
                     // The existing user session is only replaced after the phone has explicitly approved.
                     FirebaseDesktopSessionStore.Save(session);
+                    DesktopLoginStatusText.Text = string.IsNullOrWhiteSpace(session.Email)
+                        ? "Giriş yapıldı."
+                        : $"Giriş yapıldı: {session.Email}";
 
                     try
                     {
@@ -943,6 +958,9 @@ public partial class SettingsWindow : Window
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
+            DesktopLoginStatusText.Text = FirebaseDesktopSessionStore.HasValidStoredSession()
+                ? "Önceki oturum korunuyor."
+                : "Giriş iptal edildi.";
             DesktopPairingStatusText.Text =
                 "Eşleştirme iptal edildi. Kullanılmayan kod kısa süre içinde sona erecek.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
@@ -955,6 +973,7 @@ public partial class SettingsWindow : Window
                 "DesktopBridge",
                 "Telefon-PC eşleştirme API'si hata yanıtı verdi.",
                 ex);
+            DesktopLoginStatusText.Text = $"Giriş yapılamadı: {ex.Message}";
             DesktopPairingStatusText.Text = $"{ex.Message} ({ex.ErrorCode})";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
         }
@@ -962,6 +981,7 @@ public partial class SettingsWindow : Window
         {
             DiagnosticLogManager.WriteError(
                 "MYN-SERVER-001", "DesktopBridge", "Eşleştirme sunucusuna ulaşılamadı.", ex);
+            DesktopLoginStatusText.Text = "Giriş yapılamadı; sunucuya ulaşılamadı.";
             DesktopPairingStatusText.Text =
                 "Eşleştirme sunucusuna ulaşılamadı. İnternet bağlantısını veya sunucu durumunu kontrol et. (MYN-SERVER-001)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
@@ -970,6 +990,7 @@ public partial class SettingsWindow : Window
         {
             DiagnosticLogManager.WriteError(
                 "MYN-SERVER-002", "DesktopBridge", "Eşleştirme isteği zaman aşımına uğradı.", ex);
+            DesktopLoginStatusText.Text = "Giriş yapılamadı; sunucu yanıt vermedi.";
             DesktopPairingStatusText.Text =
                 "Sunucu yanıtı zaman aşımına uğradı. Biraz sonra yeniden dene. (MYN-SERVER-002)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
@@ -978,6 +999,7 @@ public partial class SettingsWindow : Window
         {
             DiagnosticLogManager.WriteError(
                 "MYN-DEVICE-999", "DesktopBridge", "Telefon-PC eşleştirmesi tamamlanamadı.", ex);
+            DesktopLoginStatusText.Text = $"Giriş yapılamadı: {ex.Message}";
             DesktopPairingStatusText.Text =
                 $"{ex.Message} (MYN-DEVICE-999)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
@@ -988,6 +1010,7 @@ public partial class SettingsWindow : Window
                 _pairingCancellation = null;
             cancellation.Dispose();
             StartDesktopPairingButton.IsEnabled = true;
+            GoogleConnectButton.IsEnabled = true;
             CancelDesktopPairingButton.IsEnabled = false;
         }
     }
@@ -1213,17 +1236,17 @@ public partial class SettingsWindow : Window
         if (!File.Exists(GoogleOAuthConfigStore.GetPath()))
         {
             MessageBox.Show(
-                "Google Kişiler masaüstü yetkilendirmesi bu kurulumda yapılandırılmamış. Müşteriden OAuth JSON dosyası istenmez. Telefon-PC bağlantısı için Firebase hesabıyla giriş yapmanız yeterlidir.",
+                "Google Kişiler bu kurulumda yapılandırılmamış. Uygulama oturumu için üstteki Giriş yap düğmesini kullan; Google Kişiler bağlantısı isteğe bağlıdır.",
                 "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
             return;
         }
 
-        GoogleConnectButton.IsEnabled =
+        GoogleContactsConnectButton.IsEnabled =
             false;
 
-        GoogleConnectButton.Content =
+        GoogleContactsConnectButton.Content =
             "Bağlanıyor...";
 
         try
@@ -1240,7 +1263,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            GoogleConnectButton.Content = "Kişileri bağla";
+            GoogleContactsConnectButton.Content = "Kişileri bağla";
 
             var details = ex.ToString();
             var accessDenied = details.Contains("access_denied", StringComparison.OrdinalIgnoreCase)
@@ -1261,14 +1284,14 @@ public partial class SettingsWindow : Window
                 : ex.Message;
 
             MessageBox.Show(
-                $"Google bağlantısı başarısız:\n\n{explanation}",
+                $"Google Kişiler bağlantısı başarısız:\n\n{explanation}",
                 "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
         finally
         {
-            GoogleConnectButton.IsEnabled =
+            GoogleContactsConnectButton.IsEnabled =
                 true;
         }
     }
