@@ -11,6 +11,8 @@ on:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
       - "installer/**"
+      - "assets/branding/**"
+      - ".github/scripts/**"
       - ".github/workflows/windows-installer.yml"
   pull_request:
     branches: ["main"]
@@ -18,6 +20,8 @@ on:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
       - "installer/**"
+      - "assets/branding/**"
+      - ".github/scripts/**"
       - ".github/workflows/windows-installer.yml"
   workflow_dispatch:
 
@@ -31,11 +35,15 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: "10.0.x"
-          check-latest: false
+      - name: Verify preinstalled .NET 10 SDK
+        shell: pwsh
+        run: |
+          $sdks = dotnet --list-sdks
+          $net10 = $sdks | Where-Object { $_ -match '^10\.0\.\d+' }
+          if (-not $net10) {
+            throw "The hosted Windows runner does not have a .NET 10 SDK. Avoid a network install because dotnetorigin returned HTTP 409."
+          }
+          dotnet --info
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -45,18 +53,74 @@ jobs:
       - name: Install desktop bridge dependencies
         shell: pwsh
         run: |
-          python -m pip install --disable-pip-version-check --timeout 60 --retries 2 -r tools/MynAssistantDesktopBridge/requirements.txt
+          python -m pip install --disable-pip-version-check --timeout 60 --retries 2 -r tools/MynAssistantDesktopBridge/requirements.txt Pillow
 
       - name: Test desktop bridge command handling
         run: python -m unittest discover -s tools/MynAssistantDesktopBridge/tests -v
+
+      - name: Verify bridge supports atomic claims and keyboard actions
+        shell: pwsh
+        run: |
+          $bridgePath = "tools/MynAssistantDesktopBridge/agent.py"
+          foreach ($pattern in @("claim_pending_command", "claimToken", '"type_text"', '"key_backspace"', '"key_enter"', "configure_packaged_logging", '"auth_required"', "FirebaseSessionExpiredError")) {
+            if (-not (Select-String -Path $bridgePath -Pattern $pattern -Quiet)) {
+              throw "Windows bridge is missing required feature: $pattern"
+            }
+          }
+
+      - name: Generate current MynAssistant branding
+        shell: pwsh
+        run: |
+          python .github/scripts/generate_branding.py
 
       - name: Build desktop bridge executable
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build/bridge-dist, build/pyinstaller-work, build/pyinstaller-spec | Out-Null
-          pyinstaller --noconfirm --clean --onefile --console --name MynAssistantDesktopBridge --distpath build/bridge-dist --workpath build/pyinstaller-work --specpath build/pyinstaller-spec --collect-all google_auth_oauthlib --collect-all google.auth --hidden-import win32crypt tools/MynAssistantDesktopBridge/agent.py
+          pyinstaller --noconfirm --clean --onefile --noconsole --name MynAssistantDesktopBridge --distpath build/bridge-dist --workpath build/pyinstaller-work --specpath build/pyinstaller-spec --hidden-import win32crypt tools/MynAssistantDesktopBridge/agent.py
           if (-not (Test-Path "build/bridge-dist/MynAssistantDesktopBridge.exe")) {
             throw "Desktop Bridge EXE was not created."
+          }
+
+      - name: Verify bounded UI and installer changes
+        shell: pwsh
+        run: |
+          $settingsPath = "src/MynAI.Windows/SettingsWindow.xaml"
+          $settingsText = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8
+          $accountStart = $settingsText.IndexOf("<!-- HESAP -->")
+          $accountEnd = $settingsText.IndexOf("<!-- GİZLİLİK -->")
+          if ($accountStart -lt 0 -or $accountEnd -le $accountStart) { throw "Could not identify the Account settings section." }
+          $account = $settingsText.Substring($accountStart, $accountEnd - $accountStart)
+          foreach ($forbidden in @("Telefon-PC hesabı", "FirebaseEmailTextBox", "FirebasePasswordBox", "FirebaseSessionStatusText", "FirebaseSignInButton", "FirebaseSignOutButton")) {
+            if ($account.Contains($forbidden)) { throw "Firebase credential UI remains in Account settings: $forbidden" }
+          }
+          foreach ($required in @("AccountDesktopBridgeStatusText", "AccountDesktopBridgeStatusDot", "AccountDesktopBridgeMessageText", "AccountBridgeRefreshButton", "GooglePhoto", "GoogleConnectButton", "GoogleContactsCheckBox")) {
+            if (-not $account.Contains($required)) { throw "Account section is missing preserved UI: $required" }
+          }
+
+          [xml]$settingsXml = $settingsText
+          $xamlNames = @($settingsXml.SelectNodes('//@*[local-name()="Name" and namespace-uri()="http://schemas.microsoft.com/winfx/2006/xaml"]') | ForEach-Object { $_.Value })
+          $duplicates = @($xamlNames | Group-Object | Where-Object { $_.Count -gt 1 })
+          if ($duplicates.Count -gt 0) { throw "Duplicate x:Name values in SettingsWindow.xaml: $($duplicates.Name -join ', ')" }
+
+          $mainText = Get-Content -LiteralPath "src/MynAI.Windows/MainWindow.xaml" -Raw -Encoding UTF8
+          if (-not $mainText.Contains('Text="= Beklemede"')) { throw "Waiting badge must read '= Beklemede'." }
+          if (-not ($mainText -match 'x:Name="MainHeaderGrid"(?s).*?Margin="0,0,0,5"')) { throw "Main header must have a 5 DIP bottom margin." }
+          if (-not $mainText.Contains('Text="Bağlanıyor •"')) { throw "The initial Agent status label must stay visible and concise." }
+          if (-not $mainText.Contains('Text="Planlanan Görevler"')) { throw "Planned tasks heading must be localized to 'Planlanan Görevler'." }
+          if (-not ($mainText -match '(?s)<!-- PLANLANAN GÖREVLER -->.*?<Border Grid.Row="1".*?CornerRadius="17".*?MinHeight="116".*?VerticalAlignment="Stretch"')) { throw "Planned tasks card must have rounded corners and stretch to the bottom of its panel." }
+          if ($mainText -match '(?s)<ScrollViewer Grid.Row="1"\s+Height="72"') { throw "Planned tasks scroll area must stretch instead of forcing a fixed height." }
+
+          $installerText = Get-Content -LiteralPath "installer/MynAI.iss" -Raw -Encoding UTF8
+          if (-not $installerText.Contains("MynAssistant bilgisayarınızda zaten kurulu. Mevcut kurulumu güncellemek ister misiniz?")) { throw "Installer update confirmation text is missing." }
+          if (-not $installerText.Contains("GetVersionNumbersString")) { throw "Installer must verify the installed EXE file version." }
+          if ($installerText.Contains("DeleteDir(ExpandConstant('{app}')")) { throw "Installer must not delete the entire install directory." }
+          $prepareStart = $installerText.IndexOf("function PrepareToInstall(var NeedsRestart: Boolean): String;")
+          $normalizeStart = $installerText.IndexOf("function NormalizeInstallDir", $prepareStart)
+          if ($prepareStart -lt 0 -or $normalizeStart -le $prepareStart) { throw "Installer must stop MynAssistant processes in PrepareToInstall before CloseApplications checks locked files." }
+          $prepareCode = $installerText.Substring($prepareStart, $normalizeStart - $prepareStart)
+          foreach ($processStop in @("StopProcessByName('{#MyAppExeName}')", "StopProcessByName('MynAssistantDesktopBridge.exe')", "StopProcessByName('{#MyAgentExeName}')", "StopProcessByName('MynAI.Agent.exe')")) {
+            if (-not $prepareCode.Contains($processStop)) { throw "Installer pre-install process shutdown is missing: $processStop" }
           }
 
       - name: Verify WPF window icon loading remains non-fatal
@@ -74,8 +138,20 @@ jobs:
           if (-not (Test-Path "src/MynAI.Windows/Resources/myn.jpg")) {
             throw "Fallback window image is missing."
           }
-          if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern 'image.CacheOption = BitmapCacheOption.OnLoad' -Quiet)) {
-            throw "The main-window image must be decoded safely with OnLoad."
+          if (-not (Select-String -Path "src/MynAI.Windows/MynAssistantBranding.cs" -Pattern 'BitmapCacheOption.OnLoad' -Quiet)) {
+            throw "The in-app logo loader must decode images safely with OnLoad."
+          }
+          if (-not (Select-String -Path "src/MynAI.Agent/MynAI.Agent.csproj" -Pattern '<OutputType>WinExe</OutputType>' -Quiet)) {
+            throw "MynAgent must not allocate a visible console window."
+          }
+          if (Select-String -Path "installer/MynAI.iss" -Pattern 'MynAgent arka plan hizmetini başlat|build/config/client_secret.json|Tasks: pcbridge' -Quiet) {
+            throw "The installer must not expose an Agent launch option or embed a builder OAuth JSON."
+          }
+          if (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml" -Pattern 'OAuth JSON dosyasını seç|Google OAuth yapılandırması' -Quiet) {
+            throw "Customers must not be asked to provide an OAuth JSON file."
+          }
+          if (Select-String -Path "tools/MynAssistantDesktopBridge/agent.py" -Pattern 'client_secret.json|InstalledAppFlow|ask_install_startup|google_oauth_credentials' -Quiet) {
+            throw "The phone-PC bridge must use the stored Firebase session, not interactive OAuth JSON setup."
           }
           if (-not (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml.cs" -Pattern 'LoadWindowIconSafely' -Quiet)) {
             throw "The settings-window icon must use the safe loader."
@@ -106,102 +182,76 @@ jobs:
             throw "MynAssistantDesktopBridge.exe was not published."
           }
 
-      - name: Prepare CI-only OAuth config
-        if: github.event_name == 'pull_request'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path build/config | Out-Null
-          $placeholder = @'
-          {
-            "installed": {
-              "client_id": "ci-only.apps.googleusercontent.com",
-              "project_id": "myncloud-24",
-              "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-              "token_uri": "https://oauth2.googleapis.com/token",
-              "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-              "client_secret": "CI_ONLY_NOT_A_REAL_SECRET",
-              "redirect_uris": ["http://localhost"]
-            }
-          }
-          '@
-          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-          [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path "build/config/client_secret.json"), $placeholder, $utf8NoBom)
-
-      - name: Prepare production OAuth config
-        if: github.event_name != 'pull_request'
-        shell: pwsh
-        env:
-          MYNAI_GOOGLE_OAUTH_JSON: ${{ secrets.MYNAI_GOOGLE_OAUTH_JSON }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:MYNAI_GOOGLE_OAUTH_JSON)) {
-            throw "Missing repository Actions secret MYNAI_GOOGLE_OAUTH_JSON. Store the Google Desktop OAuth client JSON as this secret before building a distributable installer."
-          }
-
-          $parsed = $env:MYNAI_GOOGLE_OAUTH_JSON | ConvertFrom-Json
-          if (-not $parsed.installed) {
-            throw "MYNAI_GOOGLE_OAUTH_JSON must be a Google Desktop app OAuth client JSON with an installed root object."
-          }
-
-          New-Item -ItemType Directory -Force -Path build/config | Out-Null
-          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-          [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path "build/config/client_secret.json"), $env:MYNAI_GOOGLE_OAUTH_JSON, $utf8NoBom)
-
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --yes --no-progress
 
-      - name: Compile Windows installer
+      - name: Validate and compile Windows installer
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path build/installer | Out-Null
 
-          # Validate all installer assets before invoking Inno Setup.
-          $licensePath = "installer/LICENSE-AGREEMENT.rtf"
-          $iconPath = "src/MynAI.Windows/Resources/myn.ico"
-          if (-not (Test-Path $licensePath)) { throw "License agreement file is missing: $licensePath" }
-          if (-not (Test-Path $iconPath)) { throw "MynAssistant application icon is missing: $iconPath" }
-
-          # Generate only the 55x58 top-right wizard logo from the same app ICO.
-          # Avoids the old large custom wizard artwork that had scaling/rendering issues.
-          Add-Type -AssemblyName System.Drawing
-          $icon = [System.Drawing.Icon]::new((Resolve-Path $iconPath).Path)
-          $sourceBitmap = $icon.ToBitmap()
-          $wizardBitmap = [System.Drawing.Bitmap]::new(
-            55, 58, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb
+          $requiredFiles = @(
+            "installer/LICENSE-AGREEMENT.rtf",
+            "src/MynAI.Windows/Resources/myn.ico",
+            "src/MynAI.Windows/Resources/myn.jpg",
+            "src/MynAI.Windows/Resources/myn.png",
+            "src/MynAI.Windows/Resources/myn-dark.png",
+            "src/MynAI.Windows/Resources/kr-kralus.png",
+            "build/installer/MynAssistantWizardSmall.bmp",
+            "build/publish/MynAssistant.exe",
+            "build/publish/MynAssistantDesktopBridge.exe",
+            "build/agent-publish/MynAgent.exe"
           )
-          $graphics = [System.Drawing.Graphics]::FromImage($wizardBitmap)
-          $wizardSmallImage = "build/installer/MynAssistantWizardSmall.bmp"
-          try {
-            $graphics.Clear([System.Drawing.Color]::White)
-            $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-            $scale = [Math]::Min(48.0 / $sourceBitmap.Width, 50.0 / $sourceBitmap.Height)
-            $logoWidth = [Math]::Max(1, [int][Math]::Round($sourceBitmap.Width * $scale))
-            $logoHeight = [Math]::Max(1, [int][Math]::Round($sourceBitmap.Height * $scale))
-            $logoX = [int](($wizardBitmap.Width - $logoWidth) / 2)
-            $logoY = [int](($wizardBitmap.Height - $logoHeight) / 2)
-            $graphics.DrawImage(
-              $sourceBitmap,
-              [System.Drawing.Rectangle]::new($logoX, $logoY, $logoWidth, $logoHeight)
-            )
-            $wizardBitmap.Save($wizardSmallImage, [System.Drawing.Imaging.ImageFormat]::Bmp)
+          foreach ($path in $requiredFiles) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Required installer asset is missing: $path"
+            }
           }
-          finally {
-            $graphics.Dispose()
-            $wizardBitmap.Dispose()
-            $sourceBitmap.Dispose()
-            $icon.Dispose()
+          if (-not (Select-String -Path "src/MynAI.Windows/MynAI.Windows.csproj" -Pattern '<Version>0.1.5</Version>' -Quiet)) {
+            throw "Windows app version is not 0.1.5."
           }
-          if (-not (Test-Path $wizardSmallImage) -or (Get-Item $wizardSmallImage).Length -lt 100) {
-            throw "MynAssistant wizard icon could not be generated."
+          if (-not (Select-String -Path "installer/MynAI.iss" -Pattern '#define MyAppVersion "0.1.5"' -Quiet)) {
+            throw "Installer version does not match 0.1.5."
+          }
+          if (Select-String -Path "installer/MynAI.iss" -Pattern 'ArchitecturesAllowed=x64$|ArchitecturesInstallIn64BitMode=x64$' -Quiet) {
+            throw "Use x64compatible architecture identifiers to avoid deprecated Inno Setup settings."
           }
 
+          if (-not (Select-String -Path "installer/MynAI.iss" -SimpleMatch 'WizardLicense=Lisans sözleşmesi' -Quiet)) {
+            throw "The installer license-page title must use 'Lisans sözleşmesi'."
+          }
+          if (-not (Select-String -Path "installer/MynAI.iss" -SimpleMatch 'UsePreviousAppDir=no' -Quiet)) {
+            throw "The installer must not force the previous installation directory."
+          }
+          if (-not (Select-String -Path "installer/LICENSE-AGREEMENT.rtf" -SimpleMatch '0.1.5' -Quiet) -or
+              (Select-String -Path "installer/LICENSE-AGREEMENT.rtf" -SimpleMatch '0.1.2' -Quiet)) {
+            throw "License version must match release 0.1.5."
+          }
+          if (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml" -SimpleMatch 'KR / Kralus varsayılanına dön' -Quiet) {
+            throw "The unwanted default-logo reset button must stay removed."
+          }
+          if (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml.cs" -Pattern 'ResetLogo_Click' -Quiet) {
+            throw "The removed logo-reset button must not leave an unused handler."
+          }
+          if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern '_trayIcon\.MouseClick' -Quiet)) {
+            throw "The tray icon must restore the app on a left single click."
+          }
+          if (-not (Select-String -Path "src/MynAI.Windows/MainWindow.xaml.cs" -Pattern 'PlannedCountText.Visibility\s*=' -Quiet)) {
+            throw "The planned task count must hide when zero and show when nonzero."
+          }
+          $mainCode = Get-Content -LiteralPath "src/MynAI.Windows/MainWindow.xaml.cs" -Raw -Encoding UTF8
+          if (-not $mainCode.Contains('"Aktif•"')) { throw "Connected Agent status must display 'Aktif •'." }
+          if (-not $mainCode.Contains('"Bağlantı yok •"')) { throw "Disconnected Agent status must remain explicit." }
+          $pairingClient = Get-Content -LiteralPath "src/MynAI.Windows/Auth/DesktopPairingClient.cs" -Raw -Encoding UTF8
+          if (-not $pairingClient.Contains("HttpStatusCode.NotFound") -or -not $pairingClient.Contains("MYN-SERVER-404")) { throw "A missing live pairing endpoint must have a specific diagnosis." }
+          $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
+          if (-not $settingsCode.Contains("Google Auth Platform") -or -not $settingsCode.Contains("DesktopPairingClientException")) { throw "OAuth and pairing deployment errors must have actionable diagnostics." }
           $compilerCandidates = @(
             "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
             "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
           )
-          $compiler = $compilerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $compiler = $compilerCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           if (-not $compiler) {
             throw "Inno Setup compiler (ISCC.exe) was not found after installation."
           }
@@ -212,15 +262,62 @@ jobs:
           if (-not (Test-Path "build/installer/MynAssistant-Setup.exe")) {
             throw "MynAssistant-Setup.exe was not created."
           }
+          $installerInfo = Get-Item "build/installer/MynAssistant-Setup.exe"
+          if ($installerInfo.Length -lt 50MB) {
+            throw "Installer size is unexpectedly small; refusing to report success."
+          }
+          $installerSha256 = (Get-FileHash "build/installer/MynAssistant-Setup.exe" -Algorithm SHA256).Hash
+          Write-Host "Installer path: $((Resolve-Path "build/installer/MynAssistant-Setup.exe").Path)"
+          Write-Host "Installer size bytes: $($installerInfo.Length)"
+          Write-Host "Installer SHA-256: $installerSha256"
+
+          foreach ($signaturePath in @(
+            "build/publish/MynAssistant.exe",
+            "build/publish/MynAssistantDesktopBridge.exe",
+            "build/agent-publish/MynAgent.exe",
+            "build/installer/MynAssistant-Setup.exe"
+          )) {
+            $signature = Get-AuthenticodeSignature -FilePath $signaturePath
+            $signer = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { "(unsigned)" }
+            Write-Host "Authenticode: file=$signaturePath status=$($signature.Status) signer=$signer"
+            if ($signature.Status -ne "Valid") {
+              Write-Warning "$signaturePath is not Authenticode-verified. Windows Application Control may reject it; signing/trust must be validated on the target policy."
+            }
+          }
+
+          $distributionDir = "build/distribution/MynAssistant-Windows-Installer"
+          New-Item -ItemType Directory -Force -Path $distributionDir | Out-Null
+          Copy-Item "build/installer/MynAssistant-Setup.exe" "$distributionDir/MynAssistant-Setup.exe" -Force
+          @(
+            "MynAssistant Windows Kurulum Paketi",
+            "",
+            "1. MynAssistant-Setup.exe dosyasını çalıştırın.",
+            "2. Kurulum hedef klasörünü her kurulumda seçebilirsiniz. Aynı anda birden fazla bağımsız kurulum desteklenmez; mevcut klasör duruyorsa önce mevcut kurulumu kaldırın.",
+            "3. MynAgent uygulama açılışında arka planda otomatik başlatılır; kurulum ekranında ayrı başlatma seçeneği yoktur.",
+            "4. İlk telefon-PC bağlantısı için Windows Ayarlar → Hesap → Telefon-PC bağlantısı → Telefonla eşleştir seçeneğini açın. Windows'ta gösterilen 10 karakterli kodu Android MynAssistant → Ayarlar → Windows bilgisayarını eşleştir alanına yazıp onaylayın. Kod 5 dakika geçerlidir.",
+            "5. İlk eşleştirme için sunucu API uç noktalarının yayımlanmış ve Firebase yapılandırmasının tamamlanmış olması gerekir. Canlı sunucu yapılandırması henüz doğrulanmadığından, bu ayarlar tamamlanana kadar ilk eşleştirme çalışmayabilir; önceden kaydedilmiş geçerli oturum varsa köprü onu kullanır.",
+            "6. Müşteriden client_secret.json veya ayrı logo dosyası istenmez.",
+            "7. Google Kişiler bağlantısı isteğe bağlıdır. Google OAuth 403 access_denied verirse, OAuth projesi Google Auth Platform → Audience → Test users bölümünde bu Google hesabına yetki verilmelidir. Bu ayar Google Cloud Console'dadır ve telefon-PC eşleştirmesi için gerekmez.",
+            "",
+            "Not: Kuruluşunuz Windows Application Control politikasını kullanıyorsa imzasız dosyalar engellenebilir. Güvenlik politikasını kapatmayın; yayıncı imzası/Code Integrity günlükleri yöneticiniz tarafından doğrulanmalıdır."
+          ) | Set-Content -Path "$distributionDir/README-Kurulum.txt" -Encoding UTF8
+          $zipPath = "build/distribution/MynAssistant-Windows-Installer.zip"
+          Compress-Archive -Path "$distributionDir/*" -DestinationPath $zipPath -Force
+          $zipInfo = Get-Item $zipPath
+          if ($zipInfo.Length -lt 50MB) {
+            throw "Distribution ZIP is unexpectedly small; installer may be missing."
+          }
+          Write-Host "Distribution ZIP: $((Resolve-Path $zipPath).Path)"
+          Write-Host "Distribution ZIP size bytes: $($zipInfo.Length)"
+          Write-Host "Distribution ZIP SHA-256: $((Get-FileHash $zipPath -Algorithm SHA256).Hash)"
 
       - name: Upload Windows installer as Actions artifact
         id: upload_installer
-        if: github.event_name != 'pull_request'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: MynAssistant-Windows-Installer
-          path: build/installer/MynAssistant-Setup.exe
+          path: build/distribution/MynAssistant-Windows-Installer.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -269,18 +366,18 @@ jobs:
           } else {
             $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
             foreach ($asset in $assets) {
-              if ($asset.name -eq "MynAssistant-Setup.exe") {
+              if ($asset.name -eq "MynAssistant-Windows-Installer.zip") {
                 Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
               }
             }
           }
 
-          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup.exe").Path
-          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup.exe"
+          $installerPath = (Resolve-Path "build/distribution/MynAssistant-Windows-Installer.zip").Path
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Windows-Installer.zip"
           $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
           if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
-            throw "Release asset upload could not be verified."
+            throw "Distribution ZIP upload could not be verified."
           }
 
           Write-Host "Installer fallback release published: $($release.html_url)"
-          Write-Host "Verified installer download URL: $($uploadedAsset.browser_download_url)"
+          Write-Host "Verified customer ZIP URL: $($uploadedAsset.browser_download_url)"

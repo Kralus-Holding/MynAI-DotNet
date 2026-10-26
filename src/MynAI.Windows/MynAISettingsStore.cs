@@ -1,5 +1,6 @@
 ﻿using System.IO;
 using System.Text.Json;
+using System.Text;
 
 namespace MynAI.Windows;
 
@@ -55,8 +56,28 @@ public sealed class MynAISettingsStore
                     WriteIndented = true
                 });
 
-        File.WriteAllText(
-            _path,
-            json);
+        // Write beside the current file and replace atomically so an interrupted
+        // save does not truncate the last valid settings JSON.
+        var temporaryPath = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(
+                temporaryPath,
+                json,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            File.Move(temporaryPath, _path, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(temporaryPath))
+                    File.Delete(temporaryPath);
+            }
+            catch
+            {
+                // A leftover temporary file is recoverable; preserve the original save error.
+            }
+        }
     }
 }

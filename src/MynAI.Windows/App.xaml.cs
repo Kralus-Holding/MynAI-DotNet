@@ -23,6 +23,9 @@ public partial class App : System.Windows.Application
                 mainWindow);
 
             mainWindow.Show();
+
+            // Local PC tasks/IPC do not depend on a phone account session.
+            AgentStartupManager.EnsureAutomaticStartup();
         }
         catch (Exception ex)
         {

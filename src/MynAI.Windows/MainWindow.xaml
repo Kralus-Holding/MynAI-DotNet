@@ -268,7 +268,7 @@
 
 <Border Grid.Row="2"
         VerticalAlignment="Top"
-        Margin="14,0,14,8"
+        Margin="14,8,14,8"
         Background="#0D121A"
         BorderBrush="#233551"
         BorderThickness="1"
@@ -287,7 +287,7 @@
         <Border Grid.Column="0"
                 Width="130"
                 Height="130"
-                Background="#020306"
+                Background="Transparent"
                 CornerRadius="3"
                 VerticalAlignment="Top"
                 Margin="0,8,0,0">
@@ -308,32 +308,50 @@
               Margin="16,0,0,0">
 
             <Grid.RowDefinitions>
-                <RowDefinition Height="41"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
 
-            <!-- BAŞLIK + AGENT + BUTONLAR -->
+            <!-- BAŞLIK + BUTONLAR -->
 
-            <Grid Grid.Row="0">
+            <Grid x:Name="MainHeaderGrid"
+                  Grid.Row="0"
+                  SizeChanged="MainHeaderGrid_SizeChanged"
+                  Margin="0,0,0,5">
 
-                <TextBlock Text="MynAssistant"
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="0"/>
+                </Grid.RowDefinitions>
+
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Row="0"
+                           Grid.Column="0"
+                           Text="MynAssistant"
                            Foreground="#F4F7FA"
                            FontSize="22"
                            FontWeight="SemiBold"
-                           VerticalAlignment="Top"/>
+                           VerticalAlignment="Center"/>
 
-                <Border Margin="88,0,0,0"
+                <Border Grid.Row="0"
+                        Grid.Column="1"
+                        Margin="12,0,0,0"
                         Padding="12,6"
                         Background="#0B203C"
                         BorderBrush="#1266DE"
                         BorderThickness="1"
                         CornerRadius="10"
                         HorizontalAlignment="Left"
-                        VerticalAlignment="Top">
+                        VerticalAlignment="Center">
 
                     <TextBlock x:Name="StatusText"
-                               Text="=Beklemede"
+                               Text="= Beklemede"
                                Foreground="#48B5F2"
                                FontSize="10"
                                FontWeight="SemiBold"/>
@@ -341,9 +359,12 @@
                 </Border>
 
 
-                <StackPanel Orientation="Horizontal"
+                <StackPanel x:Name="HeaderActionsPanel"
+                            Grid.Row="0"
+                            Grid.Column="2"
+                            Orientation="Horizontal"
                             HorizontalAlignment="Right"
-                            VerticalAlignment="Top">
+                            VerticalAlignment="Center">
 
                     <!-- AGENT DURUMU -->
 
@@ -356,7 +377,7 @@
                             VerticalAlignment="Center">
 
                         <TextBlock x:Name="AgentStatusText"
-                                   Text="Agent: bağlantı bekleniyor"
+                                   Text="Bağlanıyor •"
                                    Foreground="#7FD495"
                                    FontSize="9"/>
 
@@ -410,16 +431,16 @@
             </Grid>
 
 
-            <!-- PLANLANAN İŞLER -->
+            <!-- PLANLANAN GÖREVLER -->
 
             <Border Grid.Row="1"
                     Background="#0C172A"
                     BorderBrush="#203B60"
                     BorderThickness="1"
-                    CornerRadius="10"
+                    CornerRadius="17"
                     Padding="10"
-                    Height="94"
-                    VerticalAlignment="Top">
+                    MinHeight="116"
+                    VerticalAlignment="Stretch">
 
                 <Grid>
 
@@ -431,13 +452,14 @@
 
                     <Grid>
 
-                        <TextBlock Text="Planlanan İşler"
+                        <TextBlock Text="Planlanan Görevler"
                                    Foreground="#F1F4F8"
                                    FontSize="11"
                                    FontWeight="SemiBold"/>
 
                         <TextBlock x:Name="PlannedCountText"
                                    Text="0"
+                                   Visibility="Collapsed"
                                    Foreground="#6D7A8D"
                                    FontSize="10"
                                    HorizontalAlignment="Right"/>
@@ -446,7 +468,9 @@
 
 
                     <ScrollViewer Grid.Row="1"
-                                  Height="62" MaxHeight="62" VerticalScrollBarVisibility="Auto"
+                                  MaxHeight="72"
+                                  VerticalAlignment="Stretch"
+                                  VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
 
                         <ScrollViewer.Resources>
@@ -459,9 +483,9 @@
                         <StackPanel>
 
                             <TextBlock x:Name="EmptyTasksText"
-                                       Text="Planlanmış görev yok."
+                                       Text="Planlanan görev yok."
                                        Foreground="#697587"
-                                       FontSize="9"
+                                       FontSize="10"
                                        Margin="0,4,0,0"/>
 
                             <ItemsControl x:Name="ScheduledTasksList"
@@ -485,24 +509,33 @@
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
 
-                                                <StackPanel Orientation="Horizontal">
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock
+                                                            Text="{Binding ExecuteAt, StringFormat={}{0:HH:mm}}"
+                                                            Foreground="#F2F5FA"
+                                                            FontSize="11"
+                                                            FontWeight="SemiBold"/>
 
-                                                    <TextBlock
-                                                        Text="{Binding ExecuteAt, StringFormat={}{0:HH:mm}}"
-                                                        Foreground="#F2F5FA"
-                                                        FontSize="11"
-                                                        FontWeight="SemiBold"/>
+                                                        <TextBlock
+                                                            Text="  •  "
+                                                            Foreground="#4D5B70"
+                                                            FontSize="9"/>
 
-                                                    <TextBlock
-                                                        Text="  •  "
-                                                        Foreground="#4D5B70"
-                                                        FontSize="9"/>
+                                                        <TextBlock
+                                                            Text="{Binding DisplayStatus}"
+                                                            Foreground="#7FD495"
+                                                            FontSize="9"
+                                                            FontWeight="SemiBold"/>
+                                                    </StackPanel>
 
                                                     <TextBlock
                                                         Text="{Binding Description}"
                                                         Foreground="#8490A2"
-                                                        FontSize="9"/>
-
+                                                        FontSize="10"
+                                                        TextWrapping="Wrap"
+                                                        ToolTip="{Binding Description}"
+                                                        Margin="0,2,0,0"/>
                                                 </StackPanel>
 
                                                 <Button Grid.Column="1"

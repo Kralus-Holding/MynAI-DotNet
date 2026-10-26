@@ -10,12 +10,14 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MynAI.Core.Commands;
 using MynAI.Core.Models;
+using MynAI.Windows.Auth;
 
 namespace MynAI.Windows;
 
@@ -24,8 +26,6 @@ public partial class MainWindow : Window
     private System.Windows.Forms.NotifyIcon? _trayIcon;
     private System.Drawing.Icon? _trayIconImage;
     private System.IO.Stream? _trayIconStream;
-    private bool _closingApplication;
-
     private SettingsWindow? _settingsWindow;
     private const double NormalWidth = 820;
     private const double NormalHeight = 448;
@@ -69,43 +69,36 @@ public partial class MainWindow : Window
         _refreshTimer.Start();
     }
 
+    private void MainHeaderGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Keep the action controls on the right at the standard window width.
+        // Only move them to a second row when the actual available width is tight.
+        const double compactBreakpoint = 520;
+        var compact = e.NewSize.Width < compactBreakpoint;
+
+        Grid.SetRow(HeaderActionsPanel, compact ? 1 : 0);
+        Grid.SetColumn(HeaderActionsPanel, compact ? 0 : 2);
+        Grid.SetColumnSpan(HeaderActionsPanel, compact ? 3 : 1);
+        HeaderActionsPanel.HorizontalAlignment = System.Windows.HorizontalAlignment.Right;
+        HeaderActionsPanel.Margin = compact
+            ? new Thickness(0, 6, 0, 0)
+            : new Thickness(0);
+        HeaderActionsPanel.VerticalAlignment = VerticalAlignment.Center;
+        MainHeaderGrid.RowDefinitions[1].Height = compact
+            ? GridLength.Auto
+            : new GridLength(0);
+    }
+
     private void LoadLogo()
     {
-        var path = Path.Combine(
-            AppContext.BaseDirectory,
-            "Resources",
-            "myn.jpg");
+        var settings = new MynAISettingsStore().Load();
+        LogoImage.Source = MynAssistantBranding.LoadSelectedLogo(settings);
 
-        if (!File.Exists(path))
-        {
-            System.Diagnostics.Debug.WriteLine(
-                $"MynAssistant logo file was not found: {path}");
-            return;
-        }
-
-        try
-        {
-            var image = new BitmapImage();
-            image.BeginInit();
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.UriSource = new Uri(path, UriKind.Absolute);
-            image.EndInit();
-            image.Freeze();
-
-            LogoImage.Source = image;
-
-            // Use the already-supported JPEG for the WPF window icon.
-            // The .ico remains the executable/tray icon, but is not decoded
-            // by WPF's BitmapImage converter during XAML initialization.
-            Icon = image;
-        }
-        catch (Exception ex)
-        {
-            // Branding is optional: a bad/missing image must never prevent
-            // the assistant window from opening.
-            System.Diagnostics.Debug.WriteLine(
-                $"MynAssistant window logo could not be loaded: {ex}");
-        }
+        // Use the transparent ICO/PNG-derived application mark for the window
+        // and taskbar; the selected in-app logo is independent from the icon.
+        var appIcon = MynAssistantBranding.LoadImage(MynAssistantBranding.GetAppIconPath());
+        if (appIcon is not null)
+            Icon = appIcon;
     }
 
     private async void MainWindow_Loaded(
@@ -274,8 +267,14 @@ public partial class MainWindow : Window
 
             _trayIcon.ContextMenuStrip = menu;
 
-            _trayIcon.DoubleClick +=
-                (_, _) => RestoreFromTray();
+            // Restore on the first left click. A double-click also generates
+            // left-click notifications, so both gestures remain supported.
+            _trayIcon.MouseClick +=
+                (_, args) =>
+                {
+                    if (args.Button == System.Windows.Forms.MouseButtons.Left)
+                        RestoreFromTray();
+                };
         }
         catch (Exception ex)
         {
@@ -377,6 +376,13 @@ public partial class MainWindow : Window
 
         AddRecentCommand(text);
 
+        if (RequiresPhoneConnection(text)
+            && !FirebaseDesktopSessionStore.HasValidStoredSession())
+        {
+            SetStatus("Telefon işlemleri için lütfen önce Hesap bölümünden giriş yapın.");
+            return;
+        }
+
         if (!TryParseCommand(
                 text,
                 out var action,
@@ -416,6 +422,27 @@ public partial class MainWindow : Window
             SetStatus(
                 $"Agent bağlantı hatası: {ex.Message}");
         }
+    }
+
+    private static bool RequiresPhoneConnection(string text)
+    {
+        var normalized = text.Trim().ToLowerInvariant()
+            .Replace('ı', 'i')
+            .Replace('ş', 's')
+            .Replace('ğ', 'g')
+            .Replace('ü', 'u')
+            .Replace('ö', 'o')
+            .Replace('ç', 'c');
+
+        return new[]
+        {
+            "telefonumdan", "telefondan", "telefon uzerinden",
+            "telefon pc", "telefon-pc", "telefon baglantisi",
+            "uzaktan kontrol", "uzaktan komut", "uzaktan baglan",
+            "pc kumanda", "cihazlarim", "android cihaz",
+            "mobil cihaz", "telefonu kontrol et", "telefona komut",
+            "telefonumla kontrol", "telefonla kontrol"
+        }.Any(normalized.Contains);
     }
 
     private static bool TryParseCommand(
@@ -569,9 +596,13 @@ public partial class MainWindow : Window
 
             PlannedCountText.Text =
                 _scheduledTasks.Count.ToString();
+            PlannedCountText.Visibility =
+                _scheduledTasks.Count > 0
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
 
             AgentStatusText.Text =
-                "Agent: bağlı";
+                "Aktif•";
 
             AgentStatusText.Foreground =
                 new SolidColorBrush(
@@ -588,7 +619,7 @@ public partial class MainWindow : Window
         catch
         {
             AgentStatusText.Text =
-                "Agent: bağlantı yok";
+                "Bağlantı yok •";
 
             AgentStatusText.Foreground =
                 new SolidColorBrush(
@@ -655,6 +686,7 @@ public partial class MainWindow : Window
             (_, _) =>
             {
                 _settingsWindow = null;
+                LoadLogo();
             };
 
         _settingsWindow.Show();
@@ -663,10 +695,7 @@ public partial class MainWindow : Window
     private void SetStatus(
         string text)
     {
-        StatusText.Text =
-            text == "Beklemede"
-                ? "=Beklemede"
-                : text;
+        StatusText.Text = text;
     }
 }
 
