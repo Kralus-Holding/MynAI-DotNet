@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -197,6 +198,8 @@ public static class DiagnosticLogManager
         output = Regex.Replace(output, @"\bAIza[0-9A-Za-z_-]{20,}\b", "[API ANAHTARI MASKELENDİ]");
         output = Regex.Replace(output, @"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "[E-POSTA MASKELENDİ]", RegexOptions.IgnoreCase);
         output = Regex.Replace(output, @"(?i)[A-Z]:\\Users\\[^\\\s]+", "[KULLANICI KLASÖRÜ]");
+        output = Regex.Replace(output, @"(?i)\b(ownerId|deviceId|uid)\b\s*[:=]\s*[^\s,;""']+", "$1=[MASKELENDİ]");
+        output = Regex.Replace(output, @"\b(?:win|windows)-[A-Za-z0-9-]{6,}\b", "[CİHAZ KİMLİĞİ MASKELENDİ]");
         return output;
     }
 
