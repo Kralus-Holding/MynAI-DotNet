@@ -843,8 +843,20 @@ internal sealed class AgentClient
         await writer.WriteLineAsync(
             JsonSerializer.Serialize(request));
 
-        var response =
-            await reader.ReadLineAsync();
+        string? response;
+        using (var responseCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+        {
+            try
+            {
+                response = await reader.ReadLineAsync(responseCancellation.Token);
+            }
+            catch (OperationCanceledException ex) when (responseCancellation.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    "Agent 3 saniye içinde IPC yanıtı vermedi. Agent durumunu ve Hata günlükleri bölümünü kontrol et.",
+                    ex);
+            }
+        }
 
         if (string.IsNullOrWhiteSpace(response))
         {
