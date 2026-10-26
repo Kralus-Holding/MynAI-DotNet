@@ -439,8 +439,8 @@
                     BorderThickness="1"
                     CornerRadius="17"
                     Padding="10"
-                    Height="116"
-                    VerticalAlignment="Top">
+                    MinHeight="116"
+                    VerticalAlignment="Stretch">
 
                 <Grid>
 

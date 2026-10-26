@@ -108,7 +108,7 @@ jobs:
           if (-not ($mainText -match 'x:Name="MainHeaderGrid"(?s).*?Margin="0,0,0,5"')) { throw "Main header must have a 5 DIP bottom margin." }
           if (-not $mainText.Contains('Text="Bağlanıyor •"')) { throw "The initial Agent status label must stay visible and concise." }
           if (-not $mainText.Contains('Text="Planlanan Görevler"')) { throw "Planned tasks heading must be localized to 'Planlanan Görevler'." }
-          if (-not ($mainText -match '(?s)<!-- PLANLANAN GÖREVLER -->.*?<Border Grid.Row="1".*?CornerRadius="17"')) { throw "Planned tasks card must keep the requested rounded corners." }
+          if (-not ($mainText -match '(?s)<!-- PLANLANAN GÖREVLER -->.*?<Border Grid.Row="1".*?CornerRadius="17".*?MinHeight="116".*?VerticalAlignment="Stretch"')) { throw "Planned tasks card must have rounded corners and stretch to the bottom of its panel." }
 
           $installerText = Get-Content -LiteralPath "installer/MynAI.iss" -Raw -Encoding UTF8
           if (-not $installerText.Contains("MynAssistant bilgisayarınızda zaten kurulu. Mevcut kurulumu güncellemek ister misiniz?")) { throw "Installer update confirmation text is missing." }
