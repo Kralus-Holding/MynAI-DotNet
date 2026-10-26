@@ -94,7 +94,7 @@ jobs:
           foreach ($forbidden in @("Telefon-PC hesabı", "FirebaseEmailTextBox", "FirebasePasswordBox", "FirebaseSessionStatusText", "FirebaseSignInButton", "FirebaseSignOutButton")) {
             if ($account.Contains($forbidden)) { throw "Firebase credential UI remains in Account settings: $forbidden" }
           }
-          foreach ($required in @("AccountDesktopBridgeStatusText", "AccountDesktopBridgeStatusDot", "AccountDesktopBridgeMessageText", "AccountBridgeRefreshButton", "GooglePhoto", "GoogleConnectButton", "GoogleContactsCheckBox")) {
+          foreach ($required in @("AccountDesktopBridgeStatusText", "AccountDesktopBridgeStatusDot", "AccountDesktopBridgeMessageText", "AccountBridgeRefreshButton", "GooglePhoto", "GoogleConnectButton", "GoogleContactsConnectButton", "DesktopLoginStatusText", "GoogleContactsCheckBox")) {
             if (-not $account.Contains($required)) { throw "Account section is missing preserved UI: $required" }
           }
 
