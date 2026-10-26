@@ -281,6 +281,21 @@ class SafeFileListingCommandTests(unittest.TestCase):
         self.assertEqual([entry["name"] for entry in payload["entries"]], ["Masaüstü"])
 
 
+    def test_file_list_result_is_not_truncated_at_the_status_message_limit(self) -> None:
+        document = {
+            "name": "projects/myncloud-24/databases/(default)/documents/commands/list-files",
+            "fields": {"command": {"stringValue": "list_files"}},
+        }
+        original_result = json.dumps({"entries": [{"name": "x" * 1000} for _ in range(10)]})
+        with mock.patch.object(agent, "firestore_patch") as patch:
+            agent.update_command(FakeSession(), document, "completed", original_result)
+        saved_result = patch.call_args.args[2]["result"]["stringValue"]
+        self.assertEqual(saved_result, original_result)
+        self.assertGreater(len(saved_result), 800)
+        self.assertEqual(len(json.loads(saved_result)["entries"]), 10)
+
+
+
 class FirebaseLoginRequiredTests(unittest.TestCase):
     def test_bridge_without_saved_session_requests_app_login_without_oauth_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
