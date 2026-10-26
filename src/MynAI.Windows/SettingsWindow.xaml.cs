@@ -91,11 +91,13 @@ public partial class SettingsWindow : Window
         DesktopBridgeStartupCheckBox.IsChecked =
             DesktopBridgeStartupManager.IsEnabled();
 
+        // Registry state is authoritative for Windows startup; the JSON values
+        // are a compatibility mirror and must not override the real OS state.
         AgentStartupCheckBox.IsChecked =
-            settings.StartAgentWithWindows || AgentStartupManager.IsEnabled();
+            AgentStartupManager.IsEnabled();
 
         StartupAppCheckBox.IsChecked =
-            settings.StartApplicationWithWindows || StartupSettingsManager.IsEnabled();
+            StartupSettingsManager.IsEnabled();
 
         MicrophoneCheckBox.IsChecked =
             settings.MicrophoneEnabled;
