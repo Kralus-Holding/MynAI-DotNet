@@ -948,6 +948,16 @@ public partial class SettingsWindow : Window
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
             DesktopPairingCodeText.Visibility = Visibility.Collapsed;
         }
+        catch (DesktopPairingClientException ex)
+        {
+            DiagnosticLogManager.WriteError(
+                ex.ErrorCode,
+                "DesktopBridge",
+                "Telefon-PC eşleştirme API'si hata yanıtı verdi.",
+                ex);
+            DesktopPairingStatusText.Text = $"{ex.Message} ({ex.ErrorCode})";
+            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+        }
         catch (HttpRequestException ex)
         {
             DiagnosticLogManager.WriteError(
@@ -1230,11 +1240,20 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            GoogleConnectButton.Content =
-                "Kişileri bağla";
+            GoogleConnectButton.Content = "Kişileri bağla";
+
+            var details = ex.ToString();
+            var accessDenied = details.Contains("access_denied", StringComparison.OrdinalIgnoreCase)
+                || details.Contains("403", StringComparison.OrdinalIgnoreCase)
+                || details.Contains("test users", StringComparison.OrdinalIgnoreCase)
+                || details.Contains("test kullanıcı", StringComparison.OrdinalIgnoreCase);
+
+            var explanation = accessDenied
+                ? "Google OAuth erişimi 403 access_denied ile reddedildi. Google Cloud Console → Google Auth Platform → Audience → Test users bölümüne bu Google hesabını ekleyin; alternatif olarak OAuth uygulamasını uygun şekilde yayımlayıp gerekiyorsa doğrulayın. Bu izin Google Console ayarıdır ve uygulamayı yeniden derlemek tek başına sorunu çözmez. Telefon-PC eşleştirmesi için Google Kişiler bağlantısı gerekli değildir."
+                : ex.Message;
 
             MessageBox.Show(
-                $"Google bağlantısı başarısız:\n\n{ex.Message}",
+                $"Google bağlantısı başarısız:\n\n{explanation}",
                 "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
