@@ -10,7 +10,7 @@ try {
     $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 } catch {}
 
-$repoUrl = 'https://github.com/MynKralus/MynAI-DotNet.git'
+$repoUrl = 'https://github.com/Kralus-Holding/MynAI-DotNet.git'
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $downloads = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'
 $workRoot = Join-Path $env:LOCALAPPDATA "MynAssistant\Builds\MynAI-DotNet-0.1.6-$stamp"
