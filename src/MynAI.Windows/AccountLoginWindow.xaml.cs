@@ -45,6 +45,7 @@ public partial class AccountLoginWindow : Window
         RegisterModeButton.Visibility = _registerMode ? Visibility.Collapsed : Visibility.Visible;
         LoginModeButton.Visibility = _registerMode ? Visibility.Visible : Visibility.Collapsed;
         ForgotPasswordButton.Visibility = _registerMode ? Visibility.Collapsed : Visibility.Visible;
+        GoogleSignInButton.Content = _registerMode ? "Google ile kayıt ol" : "Google ile giriş yap";
         StatusText.Visibility = Visibility.Collapsed;
         StatusText.Text = "";
     }
@@ -132,8 +133,29 @@ public partial class AccountLoginWindow : Window
         try
         {
             SetBusy(true);
-            session = await new FirebaseGoogleSignInService().SignInAsync();
-            StatusMessage = "Google hesabı Firebase ile doğrulandı.";
+            var googleResult = await new FirebaseGoogleSignInService()
+                .SignInAsync(allowAccountCreation: _registerMode);
+
+            if (_registerMode && !googleResult.IsNewUser)
+            {
+                ShowStatus(
+                    "Bu Google hesabıyla zaten bir MynAssistant hesabı bulunuyor. Giriş yap moduna geç.",
+                    isError: true);
+                return;
+            }
+
+            if (!_registerMode && googleResult.IsNewUser)
+            {
+                ShowStatus(
+                    "Giriş modunda yeni hesap oluşturulmadı. Kayıt olmak için kayıt modunu seç.",
+                    isError: true);
+                return;
+            }
+
+            session = googleResult.Session;
+            StatusMessage = googleResult.IsNewUser
+                ? "Google hesabıyla yeni MynAssistant hesabı oluşturuldu."
+                : "Google hesabı Firebase ile doğrulandı.";
             AuthenticatedSession = session;
         }
         catch (FirebaseGoogleSignInException ex)
