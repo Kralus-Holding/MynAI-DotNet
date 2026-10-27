@@ -45,6 +45,7 @@ public partial class SettingsWindow : Window
 
         LoadSettings();
         LoadGoogleAccount();
+        UpdateGoogleOAuthConfigStatus();
         UpdateDesktopLoginStatus();
         ShowPage(GeneralPanel, GeneralNavButton);
 
@@ -1468,6 +1469,61 @@ public partial class SettingsWindow : Window
         {
             MessageBox.Show(
                 $"Agent yeniden başlatılamadı:\n\n{ex.Message}",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private void UpdateGoogleOAuthConfigStatus()
+    {
+        var configured = File.Exists(GoogleOAuthConfigStore.GetPath());
+        GoogleOAuthConfigStatusText.Text = configured
+            ? "Masaüstü OAuth yapılandırması hazır."
+            : "Henüz yapılandırılmadı.";
+        GoogleOAuthConfigStatusText.Foreground = new SolidColorBrush(
+            configured ? Colors.LightGreen : Color.FromRgb(155, 169, 187));
+        GoogleOAuthConfigButton.ToolTip = configured
+            ? "Google masaüstü OAuth JSON yapılandırmasını değiştirmek için tıkla."
+            : "Google Cloud Console'dan Desktop app OAuth istemci JSON dosyasını seç.";
+    }
+
+    private void ImportGoogleOAuthConfig_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Google Desktop app OAuth istemci JSON dosyasını seç",
+            Filter = "Google OAuth JSON (*.json)|*.json",
+            Multiselect = false,
+            CheckFileExists = true
+        };
+
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            GoogleOAuthConfigStore.ImportFromFile(dialog.FileName);
+            UpdateGoogleOAuthConfigStatus();
+            SetSaveStatus(
+                "Google OAuth yapılandırması bu Windows kullanıcısının yerel uygulama verilerine kopyalandı. Kaynak JSON dosyası depoya eklenmedi.",
+                Colors.LightGreen);
+            MessageBox.Show(
+                "Google OAuth istemci yapılandırması hazır. Google ile girişin çalışması için Firebase Console'da Google sağlayıcısı etkin olmalı; Google Cloud Console'da uygulamanın Audience/Testing/Production ayarları da uygun olmalıdır. Google Kişiler erişimi giriş için gerekli değildir.",
+                "MynAssistant — Google OAuth",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            UpdateGoogleOAuthConfigStatus();
+            DiagnosticLogManager.WriteError(
+                "MYN-OAUTH-001",
+                "GoogleOAuth",
+                "Google masaüstü OAuth yapılandırması içe aktarılamadı.",
+                new InvalidOperationException(ex.GetType().Name));
+            MessageBox.Show(
+                $"Google OAuth JSON dosyası içe aktarılamadı:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
                 "MynAssistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
