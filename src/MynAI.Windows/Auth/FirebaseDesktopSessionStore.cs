@@ -58,8 +58,22 @@ public static class FirebaseDesktopSessionStore
     }
 
     public static bool HasValidStoredSession() => Load() is not null;
+
+    // Use this on an explicit sign-out path so the UI cannot report logout success
+    // while the protected token file still exists. The legacy best-effort Delete
+    // method remains for callers that intentionally treat cleanup as optional.
+    public static void DeleteOrThrow()
+    {
+        if (!File.Exists(SessionPath))
+            return;
+
+        File.Delete(SessionPath);
+        if (File.Exists(SessionPath))
+            throw new IOException("Korumalı Firebase oturum dosyası silinemedi.");
+    }
+
     public static void Delete()
     {
-        try { if (File.Exists(SessionPath)) File.Delete(SessionPath); } catch { }
+        try { DeleteOrThrow(); } catch { }
     }
 }
