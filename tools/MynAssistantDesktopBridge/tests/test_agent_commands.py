@@ -374,3 +374,61 @@ class FirebaseLoginRequiredTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+class SafeFileDownloadCommandTests(unittest.TestCase):
+    def test_download_returns_content_hash_and_size_from_allowlisted_file(self) -> None:
+        import base64
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            desktop = profile / "Desktop"
+            desktop.mkdir()
+            content = b"MynAssistant safe file download"
+            target = desktop / "example.txt"
+            target.write_bytes(content)
+
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                payload = json.loads(agent.execute_command("download_file", {"path": str(target)}))
+
+        self.assertEqual(payload["name"], "example.txt")
+        self.assertEqual(payload["size"], len(content))
+        self.assertEqual(base64.b64decode(payload["contentBase64"]), content)
+        self.assertEqual(payload["sha256"], hashlib.sha256(content).hexdigest())
+        self.assertTrue(agent.command_is_supported("download_file"))
+        self.assertLessEqual(len(json.dumps(payload, separators=(",", ":")).encode("utf-8")),
+                             agent.FILE_DOWNLOAD_MAX_RESULT_LENGTH)
+
+    def test_download_rejects_files_outside_allowlisted_profile_folders(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            private = profile / "Private"
+            private.mkdir()
+            target = private / "secret.txt"
+            target.write_text("not allowed", encoding="utf-8")
+
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                with self.assertRaisesRegex(ValueError, "erişim izni yok"):
+                    agent.execute_command("download_file", {"path": str(target)})
+
+    def test_download_rejects_directory_and_oversized_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            desktop = profile / "Desktop"
+            desktop.mkdir()
+            folder = desktop / "Folder"
+            folder.mkdir()
+            oversized = desktop / "large.bin"
+            oversized.write_bytes(b"x" * (agent.FILE_DOWNLOAD_MAX_BYTES + 1))
+
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                with self.assertRaisesRegex(ValueError, "bir dosya değil"):
+                    agent.execute_command("download_file", {"path": str(folder)})
+                with self.assertRaisesRegex(ValueError, "büyük dosyalar"):
+                    agent.execute_command("download_file", {"path": str(oversized)})
+
+    def test_download_rejects_empty_and_overlong_paths(self) -> None:
+        with self.assertRaisesRegex(ValueError, "geçersiz"):
+            agent.execute_command("download_file", {"path": ""})
+        with self.assertRaisesRegex(ValueError, "geçersiz"):
+            agent.execute_command("download_file", {"path": "x" * (agent.FILE_LIST_MAX_PATH_LENGTH + 1)})
