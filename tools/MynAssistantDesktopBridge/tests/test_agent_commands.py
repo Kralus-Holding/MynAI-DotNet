@@ -221,6 +221,63 @@ class RemoteKeyboardCommandTests(unittest.TestCase):
             self.assertTrue(agent.command_is_supported(command))
 
 
+class RemoteControlPermissionTests(unittest.TestCase):
+    def test_missing_settings_file_preserves_legacy_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.dict(agent.os.environ, {"LOCALAPPDATA": directory}):
+                self.assertTrue(agent.remote_control_enabled())
+
+    def test_explicitly_disabled_remote_control_is_respected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings_dir = Path(directory) / "MynAI"
+            settings_dir.mkdir()
+            (settings_dir / "settings.json").write_text(
+                json.dumps({"RemoteControlEnabled": False}),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(agent.os.environ, {"LOCALAPPDATA": directory}):
+                self.assertFalse(agent.remote_control_enabled())
+
+    def test_legacy_settings_without_permission_key_remain_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings_dir = Path(directory) / "MynAI"
+            settings_dir.mkdir()
+            (settings_dir / "settings.json").write_text(
+                json.dumps({"WindowsNotifications": True}),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(agent.os.environ, {"LOCALAPPDATA": directory}):
+                self.assertTrue(agent.remote_control_enabled())
+
+    def test_malformed_settings_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings_dir = Path(directory) / "MynAI"
+            settings_dir.mkdir()
+            (settings_dir / "settings.json").write_text("{bad json", encoding="utf-8")
+            with mock.patch.dict(agent.os.environ, {"LOCALAPPDATA": directory}):
+                self.assertFalse(agent.remote_control_enabled())
+
+    def test_disabled_remote_control_fails_queued_commands(self) -> None:
+        session = FakeSession()
+        document = firestore_doc({
+            "ownerId": "test-user",
+            "deviceId": "win-test",
+            "command": "volume_up",
+            "status": "pending",
+        })
+        with mock.patch.object(agent, "fetch_owner_commands", return_value=[document]), \
+             mock.patch.object(agent, "update_command") as update:
+            agent.fail_pending_commands_when_remote_control_disabled(session, "win-test")
+
+        update.assert_called_once()
+        args, kwargs = update.call_args
+        self.assertEqual(args[0], session)
+        self.assertEqual(args[1], document)
+        self.assertEqual(args[2], "failed")
+        self.assertIn("izin", args[3].lower())
+        self.assertEqual(kwargs["expected_update_time"], document.get("updateTime"))
+
+
 class SafeFileListingCommandTests(unittest.TestCase):
     def test_root_listing_contains_only_existing_allowlisted_profile_folders(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
