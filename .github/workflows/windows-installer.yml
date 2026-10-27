@@ -176,7 +176,7 @@ jobs:
           }
           if (-not $settingsCode.Contains("Path.GetFullPath(MynAssistantBranding.UserLogoDirectory)") -or
               -not $settingsCode.Contains("File.Delete(safePath)") -or
-              -not $settingsCode.Contains("settings.LogoPreset = settings.CustomLogoPath is null ? \"kr\" : \"custom\"")) {
+              -not $settingsCode.Contains('settings.LogoPreset = settings.CustomLogoPath is null ? "kr" : "custom"')) {
             throw "Logo deletion must stay inside the user-logo directory and preserve a valid fallback selection."
           }
           if (-not $brandingCode.Contains("Guid.NewGuid():N")) {
