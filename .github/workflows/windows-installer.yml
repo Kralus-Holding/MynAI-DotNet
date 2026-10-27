@@ -107,6 +107,15 @@ jobs:
           $loginCode = Get-Content -LiteralPath $loginCodePath -Raw -Encoding UTF8
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
           if (-not $settingsCode.Contains("new AccountLoginWindow")) { throw "The account entry point must open the standalone login window." }
+          foreach ($topNav in @("TopGeneralNavButton", "TopAgentNavButton", "TopAccountNavButton", "TopPrivacyNavButton", "TopPluginsNavButton", "TopStartupNavButton", "TopErrorLogsNavButton", "TopShortcutNavButton")) {
+            if (-not $settingsText.Contains("x:Name=`"$topNav`"")) { throw "Horizontal settings navigation is missing: $topNav" }
+          }
+          if (-not $settingsText.Contains('PanningMode="HorizontalOnly"') -or -not $settingsText.Contains('PreviewMouseWheel="TopNavigationScrollViewer_PreviewMouseWheel"')) {
+            throw "Horizontal settings navigation must support touch panning and mouse-wheel scrolling."
+          }
+          if (-not $settingsCode.Contains("private void TopNavigationScrollViewer_PreviewMouseWheel(") -or -not $settingsCode.Contains("TopGeneralNavButton.Tag = ReferenceEquals(page, GeneralPanel)")) {
+            throw "Horizontal navigation must track the selected page and scroll with the mouse wheel."
+          }
           foreach ($requiredLoginText in @('Content="Android ile oturum onayı"', 'x:Name="PhoneApprovalButton"', 'x:Name="EmailTextBox"', 'x:Name="PasswordBox"', 'Şifremi unuttum', 'Yeni hesap oluştur')) {
             if (-not $loginXaml.Contains($requiredLoginText)) { throw "Login window is missing required account UI: $requiredLoginText" }
           }
