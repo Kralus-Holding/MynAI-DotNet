@@ -834,12 +834,19 @@
 
                                 </StackPanel>
 
-                                <Button x:Name="DesktopLoginButton"
-                                        Grid.Column="2"
-                                        Content="Giriş yap"
-                                        Style="{StaticResource PrimaryButton}"
-                                        Click="LoginDesktopAccount_Click"
-                                        VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="2"
+                                            VerticalAlignment="Center">
+                                    <Button x:Name="DesktopLoginButton"
+                                            Content="Giriş yap"
+                                            Style="{StaticResource PrimaryButton}"
+                                            Click="LoginDesktopAccount_Click"
+                                            Margin="0,0,0,6"/>
+                                    <Button x:Name="DesktopSignOutButton"
+                                            Content="Çıkış yap"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="SignOutDesktopAccount_Click"
+                                            Visibility="Collapsed"/>
+                                </StackPanel>
 
                             </Grid>
 
