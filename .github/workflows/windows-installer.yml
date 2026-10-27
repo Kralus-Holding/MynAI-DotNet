@@ -111,7 +111,7 @@ jobs:
           foreach ($requiredLoginText in @("Android ile oturum onayı", "EmailTextBox", "PasswordBox", "Şifremi unuttum", "Yeni hesap oluştur")) {
             if (-not $loginXaml.Contains($requiredLoginText)) { throw "Login window is missing required account UI: $requiredLoginText" }
           }
-          foreach ($requiredLoginCode in @("RegisterAsync(", "SignInAsync(", "SendPasswordResetAsync(", "SendEmailVerificationAsync(", "FirebaseDesktopSessionStore.Save(session)", "MYN-AUTH-004")) {
+          foreach ($requiredLoginCode in @("RegisterAsync(", "SignInAsync(", "SendPasswordResetAsync(", "SendEmailVerificationAsync(", "FirebaseDesktopSessionStore.Save(session)", "MYN-AUTH-006")) {
             if (-not $loginCode.Contains($requiredLoginCode) -and -not $settingsCode.Contains($requiredLoginCode)) { throw "Login flow is missing required auth behavior: $requiredLoginCode" }
           }
           foreach ($handler in @("Submit_Click", "RegisterMode_Click", "LoginMode_Click", "ForgotPassword_Click", "PhoneApproval_Click", "Close_Click")) {
