@@ -246,7 +246,7 @@ class SafeFileListingCommandTests(unittest.TestCase):
             # This does not need elevated symlink privileges on Windows CI.
             with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
                 with mock.patch.object(
-                    agent, "_is_reparse_point", side_effect=lambda path: path == desktop
+                    agent, "_is_reparse_point", side_effect=lambda path: Path(path).name.casefold() == "desktop"
                 ):
                     payload = json.loads(agent.execute_command("list_files", {"path": ""}))
                     names = {entry["name"] for entry in payload["entries"]}
