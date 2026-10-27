@@ -283,6 +283,52 @@ def read_device_state(session: FirebaseSession, device_id: str) -> dict:
     return decode_document(response.json())
 
 
+def remote_control_enabled() -> bool:
+    """Read the user's local permission; legacy settings keep existing behavior."""
+    settings_path = (
+        Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+        / "MynAI"
+        / "settings.json"
+    )
+    if not settings_path.exists():
+        return True
+
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        # The settings file may be replaced while the app is saving it.
+        return True
+    except Exception as exc:
+        print(f"[Permissions] Uzaktan kontrol ayarı okunamadı; güvenlik için kapatıldı: {exc}")
+        return False
+
+    if not isinstance(settings, dict):
+        return False
+    # Settings written before this option existed remain enabled for compatibility.
+    return settings.get("RemoteControlEnabled", True) is True
+
+
+def fail_pending_commands_when_remote_control_disabled(
+    session: FirebaseSession,
+    device_id: str,
+) -> None:
+    """Expire queued work while permission is off so it cannot run after re-enabling."""
+    for document in fetch_owner_commands(session, device_id):
+        fields = decode_document(document)
+        if fields.get("deviceId") != device_id or fields.get("status") != "pending":
+            continue
+        try:
+            update_command(
+                session,
+                document,
+                "failed",
+                "Uzaktan kontrol izni kapalı olduğu için komut çalıştırılmadı.",
+                expected_update_time=document.get("updateTime"),
+            )
+        except Exception as exc:
+            print(f"[Permissions] İzin kapalıyken bekleyen komut başarısız olarak işaretlenemedi: {exc}")
+
+
 def screen_request_is_active(fields: dict) -> bool:
     if not fields.get("screenRequested"):
         return False
@@ -1204,6 +1250,7 @@ def run_agent() -> int:
     last_screen_frame = 0.0
     last_command_poll = 0.0
     screen_active = False
+    remote_control_was_enabled: bool | None = None
     pyautogui.FAILSAFE = False
     try:
         while True:
@@ -1219,6 +1266,48 @@ def run_agent() -> int:
                     device_id=device_id,
                 )
                 last_heartbeat = now
+
+            remote_allowed = remote_control_enabled()
+            if not remote_allowed:
+                if remote_control_was_enabled is not False:
+                    write_bridge_status(
+                        "online",
+                        "Uzaktan kontrol İzinler bölümünde kapalı; uzaktan komutlar ve ekran önizlemesi duraklatıldı.",
+                        email=session.email,
+                        device_id=device_id,
+                    )
+                    try:
+                        firestore_patch(
+                            session,
+                            f"devices/{device_id}",
+                            {
+                                "screenRequested": {"booleanValue": False},
+                                "screenJpegBase64": encode_string(""),
+                                "screenFrameAt": encode_timestamp(),
+                            },
+                            update_mask=["screenRequested", "screenJpegBase64", "screenFrameAt"],
+                        )
+                    except Exception as exc:
+                        print(f"[Permissions] Ekran önizlemesi durdurulamadı: {exc}")
+
+                remote_control_was_enabled = False
+                screen_active = False
+                last_screen_check = now
+                last_screen_frame = now
+                if now - last_command_poll >= COMMAND_POLL_SECONDS:
+                    fail_pending_commands_when_remote_control_disabled(session, device_id)
+                    last_command_poll = now
+                time.sleep(POLL_SECONDS)
+                continue
+
+            if remote_control_was_enabled is False:
+                write_bridge_status(
+                    "online",
+                    "Uzaktan kontrol izni açık; PC telefon ve web paneli için hazır.",
+                    email=session.email,
+                    device_id=device_id,
+                )
+            remote_control_was_enabled = True
 
             screen_check_interval = 3.0 if screen_active else SCREEN_CHECK_SECONDS
             if now - last_screen_check >= screen_check_interval:
