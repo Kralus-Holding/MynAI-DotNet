@@ -438,6 +438,11 @@ jobs:
           $distributionDir = "build/distribution/MynAssistant-Windows-Installer"
           New-Item -ItemType Directory -Force -Path $distributionDir | Out-Null
           Copy-Item "build/installer/MynAssistant-Setup.exe" "$distributionDir/MynAssistant-Setup.exe" -Force
+          if (Test-Path -LiteralPath "build/google-oauth/google-signin-desktop.json") {
+            $googleOAuthReadmeLine = "6. Google masaüstü giriş yapılandırması installer'ın içine dahil edildi; son kullanıcı ayrıca JSON indirmez."
+          } else {
+            $googleOAuthReadmeLine = "6. Bu CI artefaktında Google masaüstü giriş yapılandırması bulunmuyor. Genel dağıtımdan önce GitHub Actions MYNASSISTANT_GOOGLE_DESKTOP_OAUTH_JSON_B64 secret'ı tanımlanmalıdır."
+          }
           @(
             "MynAssistant Windows Kurulum Paketi",
             "",
@@ -446,7 +451,7 @@ jobs:
             "3. MynAgent uygulama açılışında arka planda otomatik başlatılır; kurulum ekranında ayrı başlatma seçeneği yoktur.",
             "4. İlk telefon-PC bağlantısı için Windows Ayarlar → Hesap → Telefon-PC bağlantısı → Telefonla eşleştir seçeneğini açın. Windows'ta gösterilen 10 karakterli kodu Android MynAssistant → Ayarlar → Windows bilgisayarını eşleştir alanına yazıp onaylayın. Kod 5 dakika geçerlidir.",
             "5. Canlı sunucuda /api/v1/info yapılandırma kontrolü ve pairing/start HTTP 200 smoke testi geçti. Bu, başlangıç uç noktasının çalıştığını doğrular; telefon onayı sonrası Windows oturumunun tamamı gerçek Android ve Windows cihazlarında ayrıca test edilmelidir. Önceden kaydedilmiş geçerli oturum varsa köprü onu kullanır.",
-            (if (Test-Path -LiteralPath "build/google-oauth/google-signin-desktop.json") { "6. Google masaüstü giriş yapılandırması installer'ın içine dahil edildi; son kullanıcı ayrıca JSON indirmez." } else { "6. Bu CI artefaktında Google masaüstü giriş yapılandırması bulunmuyor. Genel dağıtımdan önce GitHub Actions MYNASSISTANT_GOOGLE_DESKTOP_OAUTH_JSON_B64 secret'ı tanımlanmalıdır." }),
+            $googleOAuthReadmeLine,
             "7. Google Kişiler bağlantısı isteğe bağlıdır. Google OAuth 403 access_denied verirse, OAuth projesi Google Auth Platform → Audience → Test users bölümünde bu Google hesabına yetki verilmelidir. Bu ayar Google Cloud Console'dadır ve telefon-PC eşleştirmesi için gerekmez.",
             "",
             "Not: Kuruluşunuz Windows Application Control politikasını kullanıyorsa imzasız dosyalar engellenebilir. Güvenlik politikasını kapatmayın; yayıncı imzası/Code Integrity günlükleri yöneticiniz tarafından doğrulanmalıdır."
