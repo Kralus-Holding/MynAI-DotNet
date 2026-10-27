@@ -156,7 +156,7 @@ public partial class AccountLoginWindow : Window
     {
         StatusText.Text = message;
         StatusText.Foreground = new SolidColorBrush(
-            isError ? Color.FromRgb(255, 145, 145) : Color.FromRgb(151, 226, 190));
+            isError ? System.Windows.Media.Color.FromRgb(255, 145, 145) : System.Windows.Media.Color.FromRgb(151, 226, 190));
         StatusText.Visibility = Visibility.Visible;
     }
 }
