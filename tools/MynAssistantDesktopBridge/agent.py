@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import ctypes
 import io
 import json
 import os
 import platform
+import re
+import zipfile
 import subprocess
 import sys
 import unicodedata
@@ -603,6 +606,9 @@ FILE_LIST_MAX_PATH_LENGTH = 1024
 FILE_LIST_MAX_RESULT_LENGTH = 350_000
 FILE_DOWNLOAD_MAX_BYTES = 500_000
 FILE_DOWNLOAD_MAX_RESULT_LENGTH = 700_000
+FILE_UPLOAD_MAX_BYTES = 500_000
+ZIP_MAX_FILES = 2_000
+ZIP_MAX_INPUT_BYTES = 100_000_000
 FILE_LIST_ROOTS = (
     ("Masaüstü", ("Desktop", "Masaüstü")),
     ("Belgeler", ("Documents", "Belgeler")),
@@ -914,6 +920,183 @@ def execute_text_command(text: str) -> str:
     return "Desteklenmeyen komut. Şunları deneyebilirsin: Chrome aç, Not Defteri aç, Hesap makinesi aç, YouTube aç, sesi artır, sesi azalt, masaüstünü göster."
 
 
+def _path_inside_allowed_root(path: Path, roots: list[tuple[str, Path]]) -> Path | None:
+    return next((root for _label, root in roots if path == root or root in path.parents), None)
+
+
+def _safe_transfer_name(raw: object) -> str:
+    if not isinstance(raw, str) or not raw.strip() or len(raw) > 255:
+        raise ValueError("Dosya adı geçersiz.")
+    name = raw.strip()
+    if name in {".", ".."} or re.search(r'[<>:"/\\|?*\x00-\x1f]', name):
+        raise ValueError("Dosya adı yol veya Windows tarafından desteklenmeyen karakter içeriyor.")
+    if name.endswith(".") or name.endswith(" "):
+        raise ValueError("Dosya adı nokta veya boşlukla bitemez.")
+    base = name.split(".", 1)[0].upper()
+    if base in {"CON", "PRN", "AUX", "NUL"} or re.fullmatch(r"(COM|LPT)[1-9]", base):
+        raise ValueError("Bu Windows dosya adı kullanılamaz.")
+    return name
+
+
+def execute_upload_file(fields: dict) -> str:
+    raw_destination = fields.get("destinationPath")
+    if not isinstance(raw_destination, str) or not raw_destination.strip() or len(raw_destination) > FILE_LIST_MAX_PATH_LENGTH:
+        raise ValueError("Hedef klasör yolu geçersiz.")
+    requested = Path(raw_destination).expanduser()
+    if _is_reparse_point(requested):
+        raise ValueError("Sembolik bağlantı veya junction üzerinden dosya yükleme engellendi.")
+    try:
+        destination = requested.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("Hedef klasör bulunamadı.") from exc
+    if not destination.is_dir():
+        raise ValueError("Hedef yol bir klasör olmalı.")
+    roots = _allowed_file_roots()
+    if _path_inside_allowed_root(destination, roots) is None:
+        raise ValueError("Bu klasöre erişim izni yok. Yalnızca izin verilen kullanıcı klasörlerine dosya yüklenebilir.")
+
+    name = _safe_transfer_name(fields.get("name"))
+    size = fields.get("size")
+    if isinstance(size, bool) or not isinstance(size, int) or not 0 <= size <= FILE_UPLOAD_MAX_BYTES:
+        raise ValueError(f"Dosya boyutu geçersiz; en fazla {FILE_UPLOAD_MAX_BYTES} bayt yüklenebilir.")
+    expected_hash = fields.get("sha256")
+    if not isinstance(expected_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_hash):
+        raise ValueError("Dosyanın SHA-256 bilgisi geçersiz.")
+    encoded = fields.get("contentBase64")
+    max_encoded_length = ((FILE_UPLOAD_MAX_BYTES + 2) // 3) * 4 + 8
+    if not isinstance(encoded, str) or len(encoded) > max_encoded_length:
+        raise ValueError("Dosya içeriği geçersiz veya boyut sınırını aşıyor.")
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("Dosya içeriği geçerli Base64 değil.") from exc
+    if len(content) != size:
+        raise ValueError("Dosya boyutu bildirilen değerle uyuşmuyor.")
+    actual_hash = hashlib.sha256(content).hexdigest()
+    if actual_hash.lower() != expected_hash.lower():
+        raise ValueError("Dosyanın SHA-256 doğrulaması başarısız.")
+
+    target = destination / name
+    if target.exists() or target.is_symlink() or _is_reparse_point(target):
+        raise ValueError("Hedefte aynı isimli dosya zaten var; üzerine yazılmadı.")
+    created = False
+    try:
+        with target.open("xb") as stream:
+            created = True
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError as exc:
+        raise ValueError("Hedefte aynı isimli dosya zaten var; üzerine yazılmadı.") from exc
+    except OSError as exc:
+        if created:
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise ValueError("Dosya hedef klasöre yazılamadı; disk ve izinleri kontrol et.") from exc
+    return f"Dosya yüklendi ve SHA-256 doğrulandı: {name} ({len(content)} bayt)."
+
+
+def execute_zip_folder(raw_path: str = "") -> str:
+    if not isinstance(raw_path, str) or not raw_path.strip() or len(raw_path) > FILE_LIST_MAX_PATH_LENGTH:
+        raise ValueError("ZIP yapılacak klasör yolu geçersiz.")
+    requested = Path(raw_path).expanduser()
+    if _is_reparse_point(requested):
+        raise ValueError("Sembolik bağlantı veya junction içeren klasör ZIP yapılamaz.")
+    try:
+        folder = requested.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("ZIP yapılacak klasör bulunamadı.") from exc
+    if not folder.is_dir():
+        raise ValueError("ZIP işlemi için klasör seçmelisin.")
+    roots = _allowed_file_roots()
+    root = _path_inside_allowed_root(folder, roots)
+    if root is None:
+        raise ValueError("Bu klasöre erişim izni yok. Yalnızca izin verilen kullanıcı klasörleri ZIP yapılabilir.")
+
+    files: list[Path] = []
+    total_size = 0
+
+    def collect(directory: Path) -> None:
+        nonlocal total_size
+        with os.scandir(directory) as entries:
+            for item in entries:
+                candidate = Path(item.path)
+                if _is_reparse_point(candidate):
+                    continue
+                try:
+                    resolved = candidate.resolve(strict=True)
+                    if not (resolved == root or root in resolved.parents):
+                        continue
+                    if item.is_dir(follow_symlinks=False):
+                        collect(resolved)
+                    elif item.is_file(follow_symlinks=False):
+                        total_size += int(item.stat(follow_symlinks=False).st_size)
+                        if total_size > ZIP_MAX_INPUT_BYTES:
+                            raise ValueError(f"Klasör ZIP için {ZIP_MAX_INPUT_BYTES} bayt sınırını aşıyor.")
+                        files.append(resolved)
+                        if len(files) > ZIP_MAX_FILES:
+                            raise ValueError(f"Klasör ZIP için {ZIP_MAX_FILES} dosya sınırını aşıyor.")
+                except (OSError, RuntimeError):
+                    continue
+
+    try:
+        collect(folder)
+    except ValueError:
+        raise
+    except OSError as exc:
+        raise ValueError("Klasör içeriği okunamadı; izinleri kontrol et.") from exc
+
+    output_directory = folder.parent if _path_inside_allowed_root(folder.parent, roots) is not None else folder
+    target = output_directory / _safe_transfer_name(folder.name + ".zip")
+    if target.exists() or target.is_symlink() or _is_reparse_point(target):
+        raise ValueError("Aynı isimli ZIP dosyası zaten var; üzerine yazılmadı.")
+    temporary = output_directory / f".mynassistant-zip-{uuid.uuid4().hex}.tmp"
+    target_created = False
+    try:
+        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+            for source in files:
+                try:
+                    resolved = source.resolve(strict=True)
+                    if _is_reparse_point(source) or not (resolved == root or root in resolved.parents):
+                        continue
+                    archive.write(resolved, str(resolved.relative_to(folder)).replace("\\", "/"))
+                except (OSError, RuntimeError, ValueError):
+                    continue
+        with temporary.open("rb") as source, target.open("xb") as output:
+            target_created = True
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+    except FileExistsError as exc:
+        if target_created:
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise ValueError("Aynı isimli ZIP dosyası zaten var; üzerine yazılmadı.") from exc
+    except Exception as exc:
+        if target_created:
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if isinstance(exc, ValueError):
+            raise
+        raise ValueError("ZIP oluşturulamadı; disk alanını ve klasör izinlerini kontrol et.") from exc
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return f"ZIP oluşturuldu: {target.name} ({len(files)} dosya, {target.stat().st_size} bayt)."
+
+
 def execute_command(command: str, fields: dict) -> str:
     command = command.strip().lower()
     if command == "text_command":
@@ -922,6 +1105,10 @@ def execute_command(command: str, fields: dict) -> str:
         return execute_list_files(str(fields.get("path") or ""))
     if command == "download_file":
         return execute_download_file(str(fields.get("path") or ""))
+    if command == "upload_file":
+        return execute_upload_file(fields)
+    if command == "zip_folder":
+        return execute_zip_folder(str(fields.get("path") or ""))
     if command == "type_text":
         text = str(fields.get("text") or "")
         if not text.strip():
@@ -970,7 +1157,7 @@ def command_is_supported(command: str) -> bool:
     return command in {
         "mute", "volume_up", "volume_down", "home",
         "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command",
-        "type_text", "key_backspace", "key_enter", "list_files", "download_file"
+        "type_text", "key_backspace", "key_enter", "list_files", "download_file", "upload_file", "zip_folder"
     }
 
 

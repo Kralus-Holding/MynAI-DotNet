@@ -6,6 +6,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -493,3 +494,90 @@ class CommandExpirationAndQueueScopeTests(unittest.TestCase):
         self.assertEqual(filtered_fields["ownerId"]["stringValue"], "test-user")
         self.assertEqual(filtered_fields["status"]["stringValue"], "pending")
         self.assertEqual(filtered_fields["deviceId"]["stringValue"], "win-test")
+
+
+class SafeFileUploadAndZipCommandTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.profile = Path(self.temp.name) / "profile"
+        self.profile.mkdir()
+        self.documents = self.profile / "Documents"
+        self.documents.mkdir()
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def upload_fields(self, name: str = "from-phone.txt", content: bytes = b"phone to PC") -> dict:
+        import base64
+        import hashlib
+        return {
+            "destinationPath": str(self.documents),
+            "name": name,
+            "size": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "contentBase64": base64.b64encode(content).decode("ascii"),
+        }
+
+    def test_upload_writes_verified_bytes_inside_allowlisted_folder(self) -> None:
+        with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(self.profile)}):
+            result = agent.execute_command("upload_file", self.upload_fields())
+        self.assertEqual((self.documents / "from-phone.txt").read_bytes(), b"phone to PC")
+        self.assertIn("SHA-256", result)
+        self.assertTrue(agent.command_is_supported("upload_file"))
+
+    def test_upload_rejects_folder_outside_allowlist(self) -> None:
+        outside = self.profile / "Private"
+        outside.mkdir()
+        fields = self.upload_fields()
+        fields["destinationPath"] = str(outside)
+        with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(self.profile)}):
+            with self.assertRaisesRegex(ValueError, "erişim izni yok"):
+                agent.execute_command("upload_file", fields)
+
+    def test_upload_rejects_traversal_oversized_content_and_bad_checksum(self) -> None:
+        with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(self.profile)}):
+            with self.assertRaises(ValueError):
+                agent.execute_command("upload_file", self.upload_fields("../evil.txt"))
+            oversized = self.upload_fields(content=b"x" * (agent.FILE_UPLOAD_MAX_BYTES + 1))
+            with self.assertRaisesRegex(ValueError, "en fazla"):
+                agent.execute_command("upload_file", oversized)
+            bad_hash = self.upload_fields()
+            bad_hash["sha256"] = "0" * 64
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                agent.execute_command("upload_file", bad_hash)
+
+    def test_upload_does_not_overwrite_existing_file(self) -> None:
+        target = self.documents / "from-phone.txt"
+        target.write_bytes(b"keep")
+        with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(self.profile)}):
+            with self.assertRaisesRegex(ValueError, "zaten var"):
+                agent.execute_command("upload_file", self.upload_fields(content=b"replace"))
+        self.assertEqual(target.read_bytes(), b"keep")
+
+    def test_zip_folder_creates_valid_archive_in_allowed_parent(self) -> None:
+        folder = self.documents / "Raporlar"
+        folder.mkdir()
+        (folder / "one.txt").write_text("one", encoding="utf-8")
+        (folder / "two.txt").write_text("two", encoding="utf-8")
+        with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(self.profile)}):
+            result = agent.execute_command("zip_folder", {"path": str(folder)})
+        archive_path = self.documents / "Raporlar.zip"
+        self.assertTrue(archive_path.is_file())
+        self.assertIn("ZIP", result)
+        with zipfile.ZipFile(archive_path) as archive:
+            self.assertEqual(set(archive.namelist()), {"one.txt", "two.txt"})
+        self.assertTrue(agent.command_is_supported("zip_folder"))
+
+    def test_zip_rejects_folder_outside_allowlist_and_existing_archive(self) -> None:
+        outside = self.profile / "Private"
+        outside.mkdir()
+        folder = self.documents / "Raporlar"
+        folder.mkdir()
+        archive_path = self.documents / "Raporlar.zip"
+        archive_path.write_bytes(b"keep")
+        with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(self.profile)}):
+            with self.assertRaisesRegex(ValueError, "erişim izni yok"):
+                agent.execute_command("zip_folder", {"path": str(outside)})
+            with self.assertRaisesRegex(ValueError, "zaten var"):
+                agent.execute_command("zip_folder", {"path": str(folder)})
+        self.assertEqual(archive_path.read_bytes(), b"keep")
