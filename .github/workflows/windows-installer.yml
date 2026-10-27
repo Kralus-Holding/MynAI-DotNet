@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: ["main", "fix/windows-pcfiles-list-files"]
+    branches: ["main", "fix/windows-pcfiles-list-files", "feature/stage5-scheduled-actions-permissions"]
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
