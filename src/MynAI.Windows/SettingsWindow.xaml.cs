@@ -849,9 +849,9 @@ public partial class SettingsWindow : Window
         var session = FirebaseDesktopSessionStore.Load();
         if (session is null)
         {
-            DesktopLoginStatusText.Text =
-                "Giriş yapılmadı. Giriş yapmak için Android uygulamasından onay ver.";
+            DesktopLoginStatusText.Text = "Giriş yapılmadı. E-posta/şifre ile giriş yapabilir veya Android'den güvenli eşleştirmeyi onaylayabilirsin.";
             DesktopLoginButton.Content = "Giriş yap";
+            DesktopSignOutButton.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -859,6 +859,58 @@ public partial class SettingsWindow : Window
             ? "Oturum açık."
             : $"Oturum açık: {session.Email}";
         DesktopLoginButton.Content = "Hesabı değiştir";
+        DesktopSignOutButton.Visibility = Visibility.Visible;
+    }
+
+    private void SignOutDesktopAccount_Click(object sender, RoutedEventArgs e)
+    {
+        if (FirebaseDesktopSessionStore.Load() is null)
+        {
+            UpdateDesktopLoginStatus();
+            return;
+        }
+
+        var answer = MessageBox.Show(
+            "Bu bilgisayardaki MynAssistant oturumu kapatılacak. Yerel ayarlar ve kullanıcı dosyaları korunacak; telefon-PC arka plan bağlantısı durdurulacak. Devam edilsin mi?",
+            "MynAssistant oturumunu kapat",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (answer != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            _pairingCancellation?.Cancel();
+            if (DesktopBridgeStartupManager.IsRunning())
+                DesktopBridgeStartupManager.StopAgent();
+
+            // Prevent a signed-out account from silently starting the cloud bridge again.
+            DesktopBridgeStartupManager.SetEnabled(false);
+            FirebaseDesktopSessionStore.Delete();
+            if (FirebaseDesktopSessionStore.Load() is not null)
+                throw new IOException("Windows oturum dosyası kapatıldıktan sonra hâlâ okunabiliyor.");
+
+            UpdateDesktopLoginStatus();
+            UpdateDesktopBridgeStatus();
+            UpdateAccountDesktopBridgeStatus();
+            SetSaveStatus("MynAssistant oturumu kapatıldı. Yerel ayarlar ve dosyalar korundu.", Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-AUTH-005",
+                "FirebaseDesktopAuth",
+                "Windows hesabı kapatılırken Desktop Bridge durumu güvenli biçimde tamamlanamadı.",
+                ex);
+            UpdateDesktopLoginStatus();
+            SetSaveStatus("Oturum kapatma tamamlanamadı. Hesap durumunu ve Bridge işlemini kontrol et. (MYN-AUTH-005)", Colors.IndianRed);
+            MessageBox.Show(
+                "Oturum kapatma tam olarak doğrulanamadı. Bilgisayar bağlantısı ve oturum durumu yeniden kontrol edilmeli.",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
     }
 
     private async void LoginDesktopAccount_Click(object sender, RoutedEventArgs e)
