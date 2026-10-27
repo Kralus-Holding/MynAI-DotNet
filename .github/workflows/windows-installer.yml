@@ -169,7 +169,7 @@ jobs:
           foreach ($requiredLogoModel in @("List<string> UserLogoPaths", "CustomLogoPath")) {
             if (-not $settingsModel.Contains($requiredLogoModel)) { throw "User-logo persistence is missing: $requiredLogoModel" }
           }
-          foreach ($requiredLogoCode in @("UpdateUserLogoGallery(", "SelectUserLogo(", "DeleteUserLogo(", "IsOwnedUserLogoPath(", 'Header = "Logo olarak seç"', 'Header = "Sil"', "MessageBoxButton.YesNo", "UserLogoDirectory", "Guid.NewGuid():N")) {
+          foreach ($requiredLogoCode in @("UpdateUserLogoGallery(", "SelectUserLogo(", "DeleteUserLogo(", "IsOwnedUserLogoPath(", 'Header = "Logo olarak seç"', 'Header = "Sil"', "MessageBoxButton.YesNo", "UserLogoDirectory", "Guid.NewGuid():N", "FileAttributes.ReparsePoint", "Directory.Exists(root)")) {
             if (-not $settingsCode.Contains($requiredLogoCode) -and -not $brandingCode.Contains($requiredLogoCode)) {
               throw "User-logo gallery is missing required safety or menu behavior: $requiredLogoCode"
             }
