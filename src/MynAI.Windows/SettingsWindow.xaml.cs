@@ -831,7 +831,18 @@ public partial class SettingsWindow : Window
             var root = Path.GetFullPath(MynAssistantBranding.UserLogoDirectory)
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             var allowedPrefix = root + Path.DirectorySeparatorChar;
-            if (!fullPath.StartsWith(allowedPrefix, StringComparison.OrdinalIgnoreCase))
+            if (!fullPath.StartsWith(allowedPrefix, StringComparison.OrdinalIgnoreCase)
+                || !Directory.Exists(root))
+                return false;
+
+            // Do not follow a replaced user-content directory or a logo file that
+            // became a symlink/junction after upload. Deletion is only for our own
+            // regular files under the expected application data directory.
+            var rootAttributes = File.GetAttributes(root);
+            if ((rootAttributes & FileAttributes.ReparsePoint) != 0)
+                return false;
+            var fileAttributes = File.GetAttributes(fullPath);
+            if ((fileAttributes & FileAttributes.ReparsePoint) != 0)
                 return false;
 
             var extension = Path.GetExtension(fullPath).ToLowerInvariant();
