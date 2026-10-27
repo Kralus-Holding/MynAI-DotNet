@@ -34,7 +34,7 @@ public sealed class FirebaseGoogleSignInService
         {
             throw new FirebaseGoogleSignInException(
                 "MYN-OAUTH-001",
-                "Google ile giriş henüz bu kurulum için yapılandırılmamış (MYN-OAUTH-001). MynAssistant dağıtım sorumlusu, Google Cloud Console'da uygun Desktop app OAuth istemcisi ve Firebase Google sağlayıcısını yapılandırıp istemci JSON'unu bu bilgisayarda ProgramData\MynAssistant\Auth\google-signin-desktop.json konumuna kurmalıdır. Bu kurulum kullanıcının Google Kişiler bağlantısını kullanmaz ve her kullanıcıdan OAuth JSON dosyası istemez.");
+                "Google ile giriş henüz bu kurulum için yapılandırılmamış (MYN-OAUTH-001). MynAssistant dağıtım sorumlusu, Google Cloud Console'da uygun Desktop app OAuth istemcisi ve Firebase Google sağlayıcısını yapılandırıp istemci JSON'unu bu bilgisayarda ProgramData / MynAssistant / Auth / google-signin-desktop.json konumuna kurmalıdır. Bu kurulum kullanıcının Google Kişiler bağlantısını kullanmaz ve her kullanıcıdan OAuth JSON dosyası istemez.");
         }
 
         Google.Apis.Auth.OAuth2.UserCredential credential;
