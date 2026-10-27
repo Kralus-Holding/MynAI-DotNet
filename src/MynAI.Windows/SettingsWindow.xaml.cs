@@ -973,7 +973,7 @@ public partial class SettingsWindow : Window
             // session, so a live process cannot continue using the old account.
             DesktopBridgeStartupManager.SetEnabled(false);
             DesktopBridgeStartupManager.StopAgent();
-            FirebaseDesktopSessionStore.Delete();
+            FirebaseDesktopSessionStore.DeleteOrThrow();
 
             UpdateDesktopLoginStatus();
             UpdateDesktopBridgeStatus();
