@@ -424,7 +424,7 @@ class SafeFileDownloadCommandTests(unittest.TestCase):
             with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
                 with self.assertRaisesRegex(ValueError, "bir dosya değil"):
                     agent.execute_command("download_file", {"path": str(folder)})
-                with self.assertRaisesRegex(ValueError, "büyük dosyalar"):
+                with self.assertRaisesRegex(ValueError, "(?i)büyük dosyalar"):
                     agent.execute_command("download_file", {"path": str(oversized)})
 
     def test_download_rejects_empty_and_overlong_paths(self) -> None:
