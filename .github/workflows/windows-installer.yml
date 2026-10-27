@@ -125,7 +125,7 @@ jobs:
           $googleSignInServicePath = "src/MynAI.Windows/Auth/FirebaseGoogleSignInService.cs"
           if (-not (Test-Path $googleSignInServicePath)) { throw "Firebase Google sign-in service is missing." }
           $googleSignInServiceText = Get-Content -LiteralPath $googleSignInServicePath -Raw -Encoding UTF8
-          if (-not $loginCode.Contains("private async void GoogleSignIn_Click(") -or -not $loginCode.Contains("new FirebaseGoogleSignInService().SignInAsync()")) {
+          if (-not $loginCode.Contains("private async void GoogleSignIn_Click(") -or -not $loginCode.Contains("new FirebaseGoogleSignInService()") -or -not $loginCode.Contains("allowAccountCreation: _registerMode")) {
             throw "The Google sign-in button must authenticate through Firebase, not just open Contacts."
           }
           if (-not $googleSignInServiceText.Contains('Scopes = ["openid", "email", "profile"]') -or $googleSignInServiceText.Contains("contacts.readonly") -or $googleSignInServiceText.Contains("gmail.readonly")) {
@@ -133,6 +133,15 @@ jobs:
           }
           if (-not $googleSignInServiceText.Contains("accounts:signInWithIdp") -or -not $googleSignInServiceText.Contains("&providerId=") -or -not $googleSignInServiceText.Contains('Uri.EscapeDataString("google.com")')) {
             throw "The Google OpenID token must be exchanged for a Firebase session."
+          }
+          if (-not $googleSignInServiceText.Contains("AutoCreate") -or -not $googleSignInServiceText.Contains("allowAccountCreation")) {
+            throw "Google login must not silently create an account unless registration mode was selected."
+          }
+          if (-not $googleSignInServiceText.Contains("InMemoryOAuthDataStore") -or $googleSignInServiceText.Contains("FileDataStore(")) {
+            throw "Google OAuth refresh tokens must not be persisted to disk by the sign-in-only flow."
+          }
+          if (-not $loginCode.Contains('Google ile kayıt ol') -or -not $loginCode.Contains('Google ile giriş yap')) {
+            throw "Google login and registration modes must have distinct action labels."
           }
           if (-not $settingsText.Contains('x:Name="DesktopProfilePhoto"') -or -not $settingsText.Contains('ImageFailed="DesktopProfilePhoto_ImageFailed"')) {
             throw "Settings must show the account photo with a failure fallback."
