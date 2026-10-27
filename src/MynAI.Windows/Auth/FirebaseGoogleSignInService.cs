@@ -23,7 +23,8 @@ public sealed class FirebaseGoogleSignInService
         GoogleOAuthConfigStore.CurrentDirectory,
         "FirebaseSignInTokens");
 
-    public async Task<FirebaseDesktopSession> SignInAsync(
+    public async Task<FirebaseGoogleSignInResult> SignInAsync(
+        bool allowAccountCreation,
         CancellationToken cancellationToken = default)
     {
         var configPath = GoogleOAuthConfigStore.GetPath();
@@ -75,7 +76,7 @@ public sealed class FirebaseGoogleSignInService
                        "&providerId=" + Uri.EscapeDataString("google.com");
         using var response = await Http.PostAsJsonAsync(
             $"{SignInUrl}?key={ApiKey}",
-            new FirebaseIdpRequest(postBody, "http://localhost", true, true),
+            new FirebaseIdpRequest(postBody, "http://localhost", true, true, allowAccountCreation),
             cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -103,7 +104,7 @@ public sealed class FirebaseGoogleSignInService
         if (!long.TryParse(result.expiresIn, out var expiresIn))
             expiresIn = 3600;
 
-        return new FirebaseDesktopSession
+        var session = new FirebaseDesktopSession
         {
             Uid = result.localId,
             Email = result.email ?? string.Empty,
@@ -115,6 +116,7 @@ public sealed class FirebaseGoogleSignInService
             RefreshToken = result.refreshToken,
             ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(60, expiresIn - 60)).ToUnixTimeSeconds()
         };
+        return new FirebaseGoogleSignInResult(session, result.isNewUser);
     }
 
     private static bool IsAccessDenied(Exception exception)
@@ -160,6 +162,9 @@ public sealed class FirebaseGoogleSignInService
             "INVALID_IDP_RESPONSE" or "INVALID_CREDENTIAL" => new(
                 "MYN-OAUTH-005",
                 "Google kimlik bilgisi Firebase tarafından kabul edilmedi. Firebase Google sağlayıcı ayarını ve OAuth istemci kimliğini kontrol et."),
+            "FEDERATED_USER_ID_NOT_FOUND" or "EMAIL_NOT_FOUND" or "USER_NOT_FOUND" => new(
+                "MYN-AUTH-008",
+                "Bu Google hesabıyla kayıtlı bir MynAssistant hesabı bulunamadı. Yeni hesap oluşturmak için kayıt modunu seç."),
             "EMAIL_EXISTS" or "FEDERATED_USER_ID_ALREADY_LINKED" => new(
                 "MYN-AUTH-007",
                 "Bu Google e-postası farklı bir giriş yöntemiyle kayıtlı. Mevcut giriş yöntemiyle oturum açıp hesapları güvenli şekilde bağlamak gerekiyor."),
@@ -176,7 +181,8 @@ public sealed class FirebaseGoogleSignInService
         [property: JsonPropertyName("postBody")] string PostBody,
         [property: JsonPropertyName("requestUri")] string RequestUri,
         [property: JsonPropertyName("returnSecureToken")] bool ReturnSecureToken,
-        [property: JsonPropertyName("returnIdpCredential")] bool ReturnIdpCredential);
+        [property: JsonPropertyName("returnIdpCredential")] bool ReturnIdpCredential,
+        [property: JsonPropertyName("autoCreate")] bool AutoCreate);
 
     private sealed class FirebaseIdpResponse
     {
@@ -191,6 +197,8 @@ public sealed class FirebaseGoogleSignInService
         public bool needConfirmation { get; set; }
     }
 }
+
+public sealed record FirebaseGoogleSignInResult(FirebaseDesktopSession Session, bool IsNewUser);
 
 public sealed class FirebaseGoogleSignInException : InvalidOperationException
 {
