@@ -850,8 +850,9 @@ public partial class SettingsWindow : Window
         if (session is null)
         {
             DesktopLoginStatusText.Text =
-                "Giriş yapılmadı. Giriş yapmak için Android uygulamasından onay ver.";
+                "Giriş yapılmadı. Giriş veya kayıt için devam et.";
             DesktopLoginButton.Content = "Giriş yap";
+            DesktopLogoutButton.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -859,6 +860,7 @@ public partial class SettingsWindow : Window
             ? "Oturum açık."
             : $"Oturum açık: {session.Email}";
         DesktopLoginButton.Content = "Hesabı değiştir";
+        DesktopLogoutButton.Visibility = Visibility.Visible;
     }
 
     private async void LoginDesktopAccount_Click(object sender, RoutedEventArgs e)
@@ -942,6 +944,63 @@ public partial class SettingsWindow : Window
             SetSaveStatus(
                 "Oturum açıldı ancak telefon-PC köprüsü yeniden başlatılamadı. Bağlantı durumunu yenile. (MYN-DEVICE-006)",
                 Colors.IndianRed);
+        }
+    }
+
+    private void LogoutDesktopAccount_Click(object sender, RoutedEventArgs e)
+    {
+        if (!FirebaseDesktopSessionStore.HasValidStoredSession())
+        {
+            FirebaseDesktopSessionStore.Delete();
+            UpdateDesktopLoginStatus();
+            UpdateDesktopBridgeStatus();
+            UpdateAccountDesktopBridgeStatus();
+            return;
+        }
+
+        var answer = MessageBox.Show(
+            "Bu bilgisayardaki MynAssistant hesabından çıkış yapılsın mı? Yerel uygulama ayarları ve dosyalar korunur; telefon-PC bağlantısı durdurulur.",
+            "MynAssistant hesabından çıkış",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question,
+            MessageBoxResult.No);
+        if (answer != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            // Disable auto-start and stop the bridge before deleting its protected
+            // session, so a live process cannot continue using the old account.
+            DesktopBridgeStartupManager.SetEnabled(false);
+            DesktopBridgeStartupManager.StopAgent();
+            FirebaseDesktopSessionStore.Delete();
+
+            UpdateDesktopLoginStatus();
+            UpdateDesktopBridgeStatus();
+            UpdateAccountDesktopBridgeStatus();
+            DesktopPairingStatusText.Text = "Hesaptan çıkış yapıldı. Yerel ayarlar ve uygulama dosyaları korunuyor.";
+            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
+            DesktopPairingCodeText.Visibility = Visibility.Collapsed;
+            SetSaveStatus("MynAssistant hesabından çıkış yapıldı.", Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-AUTH-005",
+                "FirebaseDesktopAuth",
+                "Hesaptan çıkış tamamlanamadı; korumalı oturum silinmedi.",
+                ex);
+            UpdateDesktopLoginStatus();
+            UpdateDesktopBridgeStatus();
+            UpdateAccountDesktopBridgeStatus();
+            SetSaveStatus(
+                "Çıkış güvenli biçimde tamamlanamadı. Korumalı oturum korunuyor; hata günlüklerini kontrol et. (MYN-AUTH-005)",
+                Colors.IndianRed);
+            MessageBox.Show(
+                "Desktop Bridge durdurulamadığı veya başlangıç ayarı değiştirilemediği için çıkış tamamlanmadı. Güvenlik için kaydedilmiş oturum silinmedi.",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
         }
     }
 
