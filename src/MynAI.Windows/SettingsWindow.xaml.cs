@@ -905,7 +905,7 @@ public partial class SettingsWindow : Window
         catch (Exception ex)
         {
             DiagnosticLogManager.WriteError(
-                "MYN-AUTH-004",
+                "MYN-AUTH-006",
                 "FirebaseDesktopAuth",
                 "Firebase oturumu Windows kullanıcısının korumalı depolamasına kaydedilemedi.",
                 ex);
