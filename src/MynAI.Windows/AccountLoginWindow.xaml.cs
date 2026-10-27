@@ -124,6 +124,60 @@ public partial class AccountLoginWindow : Window
         }
     }
 
+    private async void GoogleSignIn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy) return;
+
+        FirebaseDesktopSession? session = null;
+        try
+        {
+            SetBusy(true);
+            session = await new FirebaseGoogleSignInService().SignInAsync();
+            StatusMessage = "Google hesabı Firebase ile doğrulandı.";
+            AuthenticatedSession = session;
+        }
+        catch (FirebaseGoogleSignInException ex)
+        {
+            // Keep OAuth diagnostics actionable without persisting raw provider
+            // responses, authorization codes, ID tokens, or refresh tokens.
+            DiagnosticLogManager.WriteError(
+                ex.ErrorCode,
+                "GoogleOAuth",
+                ex.Message,
+                new InvalidOperationException(ex.ErrorCode));
+            ShowStatus($"{ex.Message} ({ex.ErrorCode})", isError: true);
+        }
+        catch (OperationCanceledException)
+        {
+            ShowStatus("Google giriş işlemi iptal edildi.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            var details = ex.ToString();
+            var accessDenied = details.Contains("access_denied", StringComparison.OrdinalIgnoreCase) ||
+                               details.Contains("test users", StringComparison.OrdinalIgnoreCase) ||
+                               details.Contains("test kullanıcı", StringComparison.OrdinalIgnoreCase) ||
+                               details.Contains("403", StringComparison.OrdinalIgnoreCase);
+            var errorCode = accessDenied ? "MYN-OAUTH-403" : "MYN-OAUTH-999";
+            var safeMessage = accessDenied
+                ? "Google OAuth erişimi 403 access_denied ile reddedildi. Google Cloud Console → Google Auth Platform → Audience bölümünde Testing/Production ve Test users ayarlarını kontrol et. Bu değişiklik Google Cloud Console'da yapılmalıdır."
+                : "Google girişi tamamlanamadı. OAuth yapılandırmasını ve Firebase Authentication Google sağlayıcısını kontrol et.";
+            DiagnosticLogManager.WriteError(
+                errorCode,
+                "GoogleOAuth",
+                safeMessage,
+                new InvalidOperationException(ex.GetType().Name));
+            ShowStatus($"{safeMessage} ({errorCode})", isError: true);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+
+        if (AuthenticatedSession is not null)
+            DialogResult = true;
+    }
+
     private void PhoneApproval_Click(object sender, RoutedEventArgs e)
     {
         if (_busy) return;
@@ -147,6 +201,7 @@ public partial class AccountLoginWindow : Window
         LoginModeButton.IsEnabled = !busy;
         ForgotPasswordButton.IsEnabled = !busy;
         PhoneApprovalButton.IsEnabled = !busy;
+        GoogleSignInButton.IsEnabled = !busy;
         EmailTextBox.IsEnabled = !busy;
         PasswordBox.IsEnabled = !busy;
         ConfirmPasswordBox.IsEnabled = !busy;
