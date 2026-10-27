@@ -677,6 +677,9 @@ def execute_list_files(path_value: str = "") -> str:
                     warnings.append("Bazı öğelere erişilemedi ve listeden çıkarıldı.")
                 if len(entries) > FILE_LIST_MAX_ENTRIES:
                     truncated = True
+                    warnings.append(
+                        f"Klasör {FILE_LIST_MAX_ENTRIES} öğe sınırını aştı; bazı öğeler gösterilmiyor."
+                    )
                     break
     except PermissionError as exc:
         raise ValueError("Windows bu klasörün içeriğini okumaya izin vermedi.") from exc
