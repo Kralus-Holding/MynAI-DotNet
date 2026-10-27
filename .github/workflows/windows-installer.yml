@@ -94,11 +94,25 @@ jobs:
           foreach ($forbidden in @("Telefon-PC hesabı", "FirebaseEmailTextBox", "FirebasePasswordBox", "FirebaseSessionStatusText", "FirebaseSignInButton", "FirebaseSignOutButton")) {
             if ($account.Contains($forbidden)) { throw "Firebase credential UI remains in Account settings: $forbidden" }
           }
-          foreach ($required in @("AccountDesktopBridgeStatusText", "AccountDesktopBridgeStatusDot", "AccountDesktopBridgeMessageText", "AccountBridgeRefreshButton", "GooglePhoto", "GoogleConnectButton", "GoogleContactsConnectButton", "DesktopLoginStatusText", "GoogleContactsCheckBox")) {
+          foreach ($required in @("AccountDesktopBridgeStatusText", "AccountDesktopBridgeStatusDot", "AccountDesktopBridgeMessageText", "AccountBridgeRefreshButton", "GooglePhoto", "DesktopLoginButton", "GoogleContactsConnectButton", "DesktopLoginStatusText", "GoogleContactsCheckBox")) {
             if (-not $account.Contains($required)) { throw "Account section is missing preserved UI: $required" }
           }
-          if (-not $account.Contains('Content="Giriş yap"') -or -not $account.Contains('Click="LoginDesktopAccount_Click"')) { throw "Account sign-in must start the Firebase phone-approved login flow." }
+          if (-not $account.Contains('Content="Giriş yap"') -or -not $account.Contains('Click="LoginDesktopAccount_Click"')) { throw "Account sign-in must open the standalone login window." }
           if (-not $account.Contains('Content="Kişileri bağla"') -or -not $account.Contains('Click="GoogleConnectButton_Click"')) { throw "Optional Google Contacts connection must remain available separately from app login." }
+
+          $loginXamlPath = "src/MynAI.Windows/AccountLoginWindow.xaml"
+          $loginCodePath = "src/MynAI.Windows/AccountLoginWindow.xaml.cs"
+          if (-not (Test-Path $loginXamlPath) -or -not (Test-Path $loginCodePath)) { throw "Standalone Firebase account login UI is missing." }
+          $loginXaml = Get-Content -LiteralPath $loginXamlPath -Raw -Encoding UTF8
+          $loginCode = Get-Content -LiteralPath $loginCodePath -Raw -Encoding UTF8
+          $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
+          if (-not $settingsCode.Contains("new AccountLoginWindow")) { throw "The account entry point must open the standalone login window." }
+          foreach ($requiredLoginText in @('Content="Google ile giriş yap (Android''de onayla)"', 'x:Name="EmailTextBox"', 'x:Name="PasswordBox"', 'Şifremi unuttum', 'Yeni hesap oluştur')) {
+            if (-not $loginXaml.Contains($requiredLoginText)) { throw "Login window is missing required account UI: $requiredLoginText" }
+          }
+          foreach ($requiredLoginCode in @("RegisterAsync(", "SignInAsync(", "SendPasswordResetAsync(", "SendEmailVerificationAsync(", "FirebaseDesktopSessionStore.Save(session)", "MYN-AUTH-004")) {
+            if (-not $loginCode.Contains($requiredLoginCode) -and -not $settingsCode.Contains($requiredLoginCode)) { throw "Login flow is missing required auth behavior: $requiredLoginCode" }
+          }
 
           [xml]$settingsXml = $settingsText
           $xamlNames = @($settingsXml.SelectNodes('//@*[local-name()="Name" and namespace-uri()="http://schemas.microsoft.com/winfx/2006/xaml"]') | ForEach-Object { $_.Value })
