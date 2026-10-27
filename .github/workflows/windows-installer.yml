@@ -161,6 +161,28 @@ jobs:
             throw "Profile photo must accept HTTPS only and retain the current app-logo fallback."
           }
 
+          $brandingCode = Get-Content -LiteralPath "src/MynAI.Windows/MynAssistantBranding.cs" -Raw -Encoding UTF8
+          $settingsModel = Get-Content -LiteralPath "src/MynAI.Windows/MynAISettings.cs" -Raw -Encoding UTF8
+          foreach ($requiredLogoText in @('x:Name="UserLogosGalleryPanel"', 'HorizontalScrollBarVisibility="Auto"', 'Text="Logo ekle"')) {
+            if (-not $settingsText.Contains($requiredLogoText)) { throw "User-logo gallery UI is missing: $requiredLogoText" }
+          }
+          foreach ($requiredLogoModel in @("List<string> UserLogoPaths", "CustomLogoPath")) {
+            if (-not $settingsModel.Contains($requiredLogoModel)) { throw "User-logo persistence is missing: $requiredLogoModel" }
+          }
+          foreach ($requiredLogoCode in @("UpdateUserLogoGallery(", "SelectUserLogo(", "DeleteUserLogo(", "IsOwnedUserLogoPath(", 'Header = "Logo olarak seç"', 'Header = "Sil"', "MessageBoxButton.YesNo", "UserLogoDirectory", "Guid.NewGuid():N")) {
+            if (-not $settingsCode.Contains($requiredLogoCode) -and -not $brandingCode.Contains($requiredLogoCode)) {
+              throw "User-logo gallery is missing required safety or menu behavior: $requiredLogoCode"
+            }
+          }
+          if (-not $settingsCode.Contains("Path.GetFullPath(MynAssistantBranding.UserLogoDirectory)") -or
+              -not $settingsCode.Contains("File.Delete(safePath)") -or
+              -not $settingsCode.Contains("settings.LogoPreset = settings.CustomLogoPath is null ? \"kr\" : \"custom\"")) {
+            throw "Logo deletion must stay inside the user-logo directory and preserve a valid fallback selection."
+          }
+          if (-not $brandingCode.Contains("Guid.NewGuid():N")) {
+            throw "User-uploaded logo names must be collision-resistant."
+          }
+
           [xml]$settingsXml = $settingsText
           $xamlNames = @($settingsXml.SelectNodes('//@*[local-name()="Name" and namespace-uri()="http://schemas.microsoft.com/winfx/2006/xaml"]') | ForEach-Object { $_.Value })
           $duplicates = @($xamlNames | Group-Object | Where-Object { $_.Count -gt 1 })
