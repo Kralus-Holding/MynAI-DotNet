@@ -834,7 +834,7 @@
 
                                 </StackPanel>
 
-                                <Button x:Name="GoogleConnectButton"
+                                <Button x:Name="DesktopLoginButton"
                                         Grid.Column="2"
                                         Content="Giriş yap"
                                         Style="{StaticResource PrimaryButton}"
