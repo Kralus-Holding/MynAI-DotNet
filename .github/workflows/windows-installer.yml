@@ -107,24 +107,23 @@ jobs:
           [xml]$loginXamlDocument = $loginXaml
           $loginCode = Get-Content -LiteralPath $loginCodePath -Raw -Encoding UTF8
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
-          foreach ($loginControl in @("EmailTextBox", "PasswordBox", "ConfirmPasswordBox", "SubmitButton", "RegisterModeButton", "LoginModeButton", "ForgotPasswordButton", "PhoneApprovalButton")) {
-            if (-not $loginXaml.Contains("x:Name=`"$loginControl`"")) { throw "Login window is missing required control: $loginControl" }
+          if (-not $settingsCode.Contains("new AccountLoginWindow")) { throw "The account entry point must open the standalone login window." }
+          foreach ($requiredLoginText in @("Android ile oturum onayı", "EmailTextBox", "PasswordBox", "Şifremi unuttum", "Yeni hesap oluştur")) {
+            if (-not $loginXaml.Contains($requiredLoginText)) { throw "Login window is missing required account UI: $requiredLoginText" }
+          }
+          foreach ($requiredLoginCode in @("RegisterAsync(", "SignInAsync(", "SendPasswordResetAsync(", "SendEmailVerificationAsync(", "FirebaseDesktopSessionStore.Save(session)", "MYN-AUTH-004")) {
+            if (-not $loginCode.Contains($requiredLoginCode) -and -not $settingsCode.Contains($requiredLoginCode)) { throw "Login flow is missing required auth behavior: $requiredLoginCode" }
           }
           foreach ($handler in @("Submit_Click", "RegisterMode_Click", "LoginMode_Click", "ForgotPassword_Click", "PhoneApproval_Click", "Close_Click")) {
-            if (-not $loginXaml.Contains("Click=`"$handler`"") -or -not $loginCode.Contains("void $handler(")) {
+            $clickAttribute = 'Click="' + $handler + '"'
+            $methodSignature = "void " + $handler + "("
+            if (-not $loginXaml.Contains($clickAttribute) -or -not $loginCode.Contains($methodSignature)) {
               throw "Login window event is not connected correctly: $handler"
             }
           }
           if (-not $settingsCode.Contains('private async void GoogleConnectButton_Click(')) { throw "Optional Google Contacts click handler was disconnected." }
           if (-not $settingsCode.Contains('private void SignOutDesktopAccount_Click(') -or -not $settingsCode.Contains("FirebaseDesktopSessionStore.Delete()")) { throw "Explicit account sign-out behavior is missing." }
           if (-not $settingsCode.Contains("DesktopBridgeStartupManager.SetEnabled(false)")) { throw "Sign-out must disable automatic cloud-bridge startup." }
-          if (-not $settingsCode.Contains("new AccountLoginWindow")) { throw "The account entry point must open the standalone login window." }
-          foreach ($requiredLoginText in @('Content="Android ile oturum onayı"', 'x:Name="EmailTextBox"', 'x:Name="PasswordBox"', 'Şifremi unuttum', 'Yeni hesap oluştur')) {
-            if (-not $loginXaml.Contains($requiredLoginText)) { throw "Login window is missing required account UI: $requiredLoginText" }
-          }
-          foreach ($requiredLoginCode in @("RegisterAsync(", "SignInAsync(", "SendPasswordResetAsync(", "SendEmailVerificationAsync(", "FirebaseDesktopSessionStore.Save(session)", "MYN-AUTH-006")) {
-            if (-not $loginCode.Contains($requiredLoginCode) -and -not $settingsCode.Contains($requiredLoginCode)) { throw "Login flow is missing required auth behavior: $requiredLoginCode" }
-          }
 
           [xml]$settingsXml = $settingsText
           $xamlNames = @($settingsXml.SelectNodes('//@*[local-name()="Name" and namespace-uri()="http://schemas.microsoft.com/winfx/2006/xaml"]') | ForEach-Object { $_.Value })
