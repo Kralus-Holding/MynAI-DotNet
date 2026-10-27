@@ -873,8 +873,10 @@
                                         BorderThickness="1"
                                         Background="#101720">
 
-                                    <Image Source="Resources/myn.jpg"
+                                    <Image x:Name="DesktopProfilePhoto"
+                                           Source="Resources/myn.jpg"
                                            Stretch="Uniform"
+                                           ImageFailed="DesktopProfilePhoto_ImageFailed"
                                            Margin="5"/>
 
                                 </Border>
