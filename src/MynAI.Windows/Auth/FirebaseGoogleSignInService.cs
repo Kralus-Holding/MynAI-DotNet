@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -37,7 +38,7 @@ public sealed class FirebaseGoogleSignInService
                 "Google ile giriş henüz bu kurulum için yapılandırılmamış (MYN-OAUTH-001). MynAssistant dağıtım sorumlusu, Google Cloud Console'da uygun Desktop app OAuth istemcisi ve Firebase Google sağlayıcısını yapılandırıp istemci JSON'unu bu bilgisayarda ProgramData / MynAssistant / Auth / google-signin-desktop.json konumuna kurmalıdır. Bu kurulum kullanıcının Google Kişiler bağlantısını kullanmaz ve her kullanıcıdan OAuth JSON dosyası istemez.");
         }
 
-        Google.Apis.Auth.OAuth2.UserCredential credential;
+        global::Google.Apis.Auth.OAuth2.UserCredential credential;
         try
         {
             using var stream = new FileStream(configPath, FileMode.Open, FileAccess.Read, FileShare.Read);
