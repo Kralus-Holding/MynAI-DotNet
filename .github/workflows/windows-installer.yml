@@ -107,7 +107,7 @@ jobs:
           $loginCode = Get-Content -LiteralPath $loginCodePath -Raw -Encoding UTF8
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
           if (-not $settingsCode.Contains("new AccountLoginWindow")) { throw "The account entry point must open the standalone login window." }
-          foreach ($requiredLoginText in @('Content="Google ile giriş yap (Android''de onayla)"', 'x:Name="EmailTextBox"', 'x:Name="PasswordBox"', 'Şifremi unuttum', 'Hesap oluştur')) {
+          foreach ($requiredLoginText in @('Content="Google ile giriş yap (Android''de onayla)"', 'x:Name="EmailTextBox"', 'x:Name="PasswordBox"', 'Şifremi unuttum', 'Yeni hesap oluştur')) {
             if (-not $loginXaml.Contains($requiredLoginText)) { throw "Login window is missing required account UI: $requiredLoginText" }
           }
           foreach ($requiredLoginCode in @("RegisterAsync(", "SignInAsync(", "SendPasswordResetAsync(", "SendEmailVerificationAsync(", "FirebaseDesktopSessionStore.Save(session)", "MYN-AUTH-004")) {
