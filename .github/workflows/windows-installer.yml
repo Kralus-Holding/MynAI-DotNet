@@ -332,28 +332,25 @@ jobs:
             "",
             "Not: Kuruluşunuz Windows Application Control politikasını kullanıyorsa imzasız dosyalar engellenebilir. Güvenlik politikasını kapatmayın; yayıncı imzası/Code Integrity günlükleri yöneticiniz tarafından doğrulanmalıdır."
           ) | Set-Content -Path "$distributionDir/README-Kurulum.txt" -Encoding UTF8
-          $zipPath = "build/distribution/MynAssistant-Windows-Installer.zip"
-          Compress-Archive -Path "$distributionDir/*" -DestinationPath $zipPath -Force
-          $zipInfo = Get-Item $zipPath
-          if ($zipInfo.Length -lt 50MB) {
-            throw "Distribution ZIP is unexpectedly small; installer may be missing."
+          if (-not (Test-Path "$distributionDir/MynAssistant-Setup.exe") -or -not (Test-Path "$distributionDir/README-Kurulum.txt")) {
+            throw "Direct installer package is missing the EXE or installation notes."
           }
-          Write-Host "Distribution ZIP: $((Resolve-Path $zipPath).Path)"
-          Write-Host "Distribution ZIP size bytes: $($zipInfo.Length)"
-          Write-Host "Distribution ZIP SHA-256: $((Get-FileHash $zipPath -Algorithm SHA256).Hash)"
+          Write-Host "Distribution contains direct EXE and README only; no nested ZIP will be delivered."
 
-      - name: Upload Windows installer as Actions artifact
+      - name: Upload direct Windows installer files as Actions artifact
         id: upload_installer
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: MynAssistant-Windows-Installer
-          path: build/distribution/MynAssistant-Windows-Installer.zip
+          path: |
+            build/distribution/MynAssistant-Windows-Installer/MynAssistant-Setup.exe
+            build/distribution/MynAssistant-Windows-Installer/README-Kurulum.txt
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publish installer to GitHub Releases if Actions storage is unavailable
-        if: github.event_name != 'pull_request' && steps.upload_installer.outcome == 'failure'
+      - name: Publish direct installer EXE to GitHub Releases
+        if: github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_name == 'feat/windows-account-login-window')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -397,18 +394,30 @@ jobs:
           } else {
             $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
             foreach ($asset in $assets) {
-              if ($asset.name -eq "MynAssistant-Windows-Installer.zip") {
+              if ($asset.name -in @("MynAssistant-Windows-Installer.zip", "MynAssistant-Setup.exe", "README-Kurulum.txt")) {
                 Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
               }
             }
           }
 
-          $installerPath = (Resolve-Path "build/distribution/MynAssistant-Windows-Installer.zip").Path
-          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Windows-Installer.zip"
+          $installerPath = (Resolve-Path "build/installer/MynAssistant-Setup.exe").Path
+          $installerInfo = Get-Item -LiteralPath $installerPath
+          $installerSha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash
+          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Setup.exe"
           $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
-          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
-            throw "Distribution ZIP upload could not be verified."
+          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded" -or $uploadedAsset.size -ne $installerInfo.Length) {
+            throw "Direct installer EXE upload could not be verified."
           }
 
-          Write-Host "Installer fallback release published: $($release.html_url)"
-          Write-Host "Verified customer ZIP URL: $($uploadedAsset.browser_download_url)"
+          $readmePath = (Resolve-Path "build/distribution/MynAssistant-Windows-Installer/README-Kurulum.txt").Path
+          $readmeUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=README-Kurulum.txt"
+          $readmeAsset = Invoke-RestMethod -Method Post -Uri $readmeUri -Headers $headers -ContentType "text/plain; charset=utf-8" -InFile $readmePath
+          if (-not $readmeAsset.browser_download_url -or $readmeAsset.state -ne "uploaded") {
+            throw "Installation notes upload could not be verified."
+          }
+
+          Write-Host "Installer preview release published: $($release.html_url)"
+          Write-Host "Verified direct EXE URL: $($uploadedAsset.browser_download_url)"
+          Write-Host "Installer size bytes: $($installerInfo.Length)"
+          Write-Host "Installer SHA-256: $installerSha256"
+          Write-Host "Installation notes URL: $($readmeAsset.browser_download_url)"
