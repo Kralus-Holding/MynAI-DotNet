@@ -1325,7 +1325,7 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private async void DesktopLoginButton_Click(
+    private async void GoogleConnectButton_Click(
         object sender,
         RoutedEventArgs e)
     {
