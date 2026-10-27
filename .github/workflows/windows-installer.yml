@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "fix/windows-pcfiles-list-files"]
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
@@ -343,8 +343,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publish installer to GitHub Releases if Actions storage is unavailable
-        if: github.event_name != 'pull_request' && steps.upload_installer.outcome == 'failure'
+      - name: Publish direct Windows installer EXE release
+        if: github.event_name != 'pull_request'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -380,7 +380,7 @@ jobs:
               tag_name = $tag
               target_commitish = $env:GH_SHA
               name = "MynAssistant Windows Installer Preview (build $env:GH_RUN_NUMBER)"
-              body = "Automated preview installer for commit $env:GH_SHA. The installer was built and validated by GitHub Actions. This prerelease is published as a fallback because Actions artifact storage was unavailable."
+              body = "Direct MynAssistant-Setup.exe installer build from commit $env:GH_SHA. GitHub Actions completed the Windows build and installer validation. This is an automated preview build, not an Authenticode-signed production release."
               draft = $false
               prerelease = $true
             } | ConvertTo-Json -Depth 5
@@ -403,7 +403,7 @@ jobs:
             throw "Direct installer EXE upload could not be verified."
           }
 
-          Write-Host "Installer fallback release published: $($release.html_url)"
+          Write-Host "Direct installer release published: $($release.html_url)"
           Write-Host "Verified customer EXE URL: $($uploadedAsset.browser_download_url)"
           Write-Host "Installer size bytes: $($localInstaller.Length)"
           Write-Host "Installer SHA-256: $localSha256"
