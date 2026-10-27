@@ -257,6 +257,14 @@ class RemoteControlPermissionTests(unittest.TestCase):
             with mock.patch.dict(agent.os.environ, {"LOCALAPPDATA": directory}):
                 self.assertFalse(agent.remote_control_enabled())
 
+    def test_queue_read_failure_does_not_raise_or_stop_permission_guard(self) -> None:
+        with mock.patch.object(
+            agent, "fetch_owner_commands", side_effect=RuntimeError("temporary network error")
+        ):
+            agent.fail_pending_commands_when_remote_control_disabled(
+                FakeSession(), "win-test"
+            )
+
     def test_disabled_remote_control_fails_queued_commands(self) -> None:
         session = FakeSession()
         document = firestore_doc({
