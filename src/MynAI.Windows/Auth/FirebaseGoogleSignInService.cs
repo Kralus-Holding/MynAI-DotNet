@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -19,10 +20,6 @@ public sealed class FirebaseGoogleSignInService
     private static readonly string[] Scopes = ["openid", "email", "profile"];
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
 
-    private static string TokenDirectory => Path.Combine(
-        GoogleOAuthConfigStore.CurrentDirectory,
-        "FirebaseSignInTokens");
-
     public async Task<FirebaseGoogleSignInResult> SignInAsync(
         bool allowAccountCreation,
         CancellationToken cancellationToken = default)
@@ -38,14 +35,15 @@ public sealed class FirebaseGoogleSignInService
         Google.Apis.Auth.OAuth2.UserCredential credential;
         try
         {
-            Directory.CreateDirectory(TokenDirectory);
             using var stream = new FileStream(configPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            // Use a fresh in-memory store for each explicit sign-in. Google OAuth
+            // refresh/access tokens are never persisted to disk by this flow.
             credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
                 GoogleClientSecrets.FromStream(stream).Secrets,
                 Scopes,
                 "mynassistant-firebase-signin",
                 cancellationToken,
-                new FileDataStore(TokenDirectory, fullPath: true));
+                new InMemoryOAuthDataStore());
         }
         catch (OperationCanceledException)
         {
@@ -175,6 +173,36 @@ public sealed class FirebaseGoogleSignInService
                 "MYN-OAUTH-999",
                 $"Firebase Google girişi tamamlanamadı (HTTP {(int)response.StatusCode}). Firebase Authentication ve Google sağlayıcı ayarlarını kontrol et.")
         };
+    }
+
+    private sealed class InMemoryOAuthDataStore : IDataStore
+    {
+        private readonly ConcurrentDictionary<string, object> _values = new(StringComparer.Ordinal);
+
+        public Task StoreAsync<T>(string key, T value)
+        {
+            _values[key] = value!;
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteAsync<T>(string key)
+        {
+            _values.TryRemove(key, out _);
+            return Task.CompletedTask;
+        }
+
+        public Task<T> GetAsync<T>(string key)
+        {
+            if (_values.TryGetValue(key, out var value) && value is T typed)
+                return Task.FromResult(typed);
+            return Task.FromResult(default(T)!);
+        }
+
+        public Task ClearAsync()
+        {
+            _values.Clear();
+            return Task.CompletedTask;
+        }
     }
 
     private sealed record FirebaseIdpRequest(
