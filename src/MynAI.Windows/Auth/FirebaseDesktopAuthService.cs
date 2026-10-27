@@ -148,10 +148,21 @@ public sealed class FirebaseDesktopAuthService
             DisplayName = string.IsNullOrWhiteSpace(result.displayName)
                 ? fallbackEmail.Split('@')[0]
                 : result.displayName,
+            PhotoUrl = GetSafePhotoUrl(result.photoUrl),
             RefreshToken = result.refreshToken,
             IdToken = result.idToken,
             ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(60, expiresIn - 60)).ToUnixTimeSeconds()
         };
+    }
+
+    private static string? GetSafePhotoUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return uri.AbsoluteUri;
     }
 
     private static async Task<string?> ReadErrorCodeAsync(
@@ -206,6 +217,7 @@ public sealed class FirebaseDesktopAuthService
         public string localId { get; set; } = "";
         public string email { get; set; } = "";
         public string displayName { get; set; } = "";
+        public string photoUrl { get; set; } = "";
         public string idToken { get; set; } = "";
         public string refreshToken { get; set; } = "";
         public string expiresIn { get; set; } = "3600";
