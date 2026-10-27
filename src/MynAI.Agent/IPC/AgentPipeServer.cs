@@ -34,7 +34,7 @@ public sealed class AgentPipeServer
                 PipeDirection.InOut,
                 MaxPipeInstances,
                 PipeTransmissionMode.Byte,
-                PipeOptions.Asynchronous);
+                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
             try
             {
