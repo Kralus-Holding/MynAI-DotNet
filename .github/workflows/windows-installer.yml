@@ -15,7 +15,7 @@ on:
       - ".github/scripts/**"
       - ".github/workflows/windows-installer.yml"
   pull_request:
-    branches: ["main"]
+    branches: ["main", "fix/windows-pcfiles-list-files"]
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
