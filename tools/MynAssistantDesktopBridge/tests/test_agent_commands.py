@@ -274,7 +274,7 @@ class RemoteControlPermissionTests(unittest.TestCase):
         self.assertEqual(args[0], session)
         self.assertEqual(args[1], document)
         self.assertEqual(args[2], "failed")
-        self.assertIn("izin", args[3].lower())
+        self.assertIn("permission", args[3].lower())
         self.assertEqual(kwargs["expected_update_time"], document.get("updateTime"))
 
 
