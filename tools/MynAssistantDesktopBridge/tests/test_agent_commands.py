@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 import tempfile
 import unittest
 from pathlib import Path
@@ -454,3 +455,41 @@ class SafeFileDownloadCommandTests(unittest.TestCase):
             agent.execute_command("download_file", {"path": ""})
         with self.assertRaisesRegex(ValueError, "geçersiz"):
             agent.execute_command("download_file", {"path": "x" * (agent.FILE_LIST_MAX_PATH_LENGTH + 1)})
+
+
+class CommandExpirationAndQueueScopeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.session = FakeSession()
+        self.now = datetime(2026, 10, 27, 21, 0, 0, tzinfo=timezone.utc)
+
+    def test_recent_command_is_still_valid(self) -> None:
+        fields = {"createdAt": (self.now - timedelta(seconds=30)).isoformat()}
+        self.assertIsNone(agent.command_expiration_reason(fields, self.now))
+
+    def test_old_pending_command_expires(self) -> None:
+        fields = {"createdAt": (self.now - timedelta(seconds=61)).isoformat()}
+        self.assertIn("süresi doldu", agent.command_expiration_reason(fields, self.now).lower())
+
+    def test_expired_offline_queued_command_cannot_run_late(self) -> None:
+        fields = {"createdAt": self.now.isoformat(), "expiresAt": (self.now - timedelta(seconds=1)).isoformat()}
+        self.assertIn("süresi doldu", agent.command_expiration_reason(fields, self.now).lower())
+
+    def test_missing_timestamp_fails_closed(self) -> None:
+        self.assertIn("zamanı", agent.command_expiration_reason({}, self.now).lower())
+
+    def test_unreasonable_future_expiry_fails_closed(self) -> None:
+        fields = {"expiresAt": (self.now + timedelta(minutes=10)).isoformat()}
+        self.assertIn("sınırı", agent.command_expiration_reason(fields, self.now).lower())
+
+    def test_query_scopes_pending_commands_to_current_device(self) -> None:
+        with mock.patch.object(agent.requests, "post", return_value=FakeResponse(200, [{"noDocument": True}])) as post:
+            self.assertEqual(agent.fetch_owner_commands(self.session, "win-test"), [])
+        query = post.call_args.kwargs["json"]["structuredQuery"]
+        filters = query["where"]["compositeFilter"]["filters"]
+        filtered_fields = {
+            item["fieldFilter"]["field"]["fieldPath"]: item["fieldFilter"]["value"]
+            for item in filters
+        }
+        self.assertEqual(filtered_fields["ownerId"]["stringValue"], "test-user")
+        self.assertEqual(filtered_fields["status"]["stringValue"], "pending")
+        self.assertEqual(filtered_fields["deviceId"]["stringValue"], "win-test")

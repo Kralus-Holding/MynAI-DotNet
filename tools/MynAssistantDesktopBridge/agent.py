@@ -12,7 +12,7 @@ import sys
 import unicodedata
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -33,6 +33,8 @@ SCREEN_CHECK_SECONDS = 8.0
 SCREEN_FRAME_SECONDS = 1.5
 SCREEN_REQUEST_MAX_AGE_SECONDS = 25.0
 HEARTBEAT_SECONDS = 25.0
+COMMAND_MAX_AGE_SECONDS = 60.0
+COMMAND_FUTURE_SKEW_SECONDS = 60.0
 DPAPI_ENTROPY = b"MynAssistantDesktopAgent-v1"
 APP_DATA = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MynAssistant" / "DesktopAgent"
 SESSION_FILE = APP_DATA / "session.bin"
@@ -323,7 +325,30 @@ def upload_screen_frame(session: FirebaseSession, device_id: str) -> None:
     )
 
 
-def fetch_owner_commands(session: FirebaseSession) -> list[dict]:
+def fetch_owner_commands(session: FirebaseSession, device_id: str) -> list[dict]:
+    filters = [
+        {
+            "fieldFilter": {
+                "field": {"fieldPath": "ownerId"},
+                "op": "EQUAL",
+                "value": {"stringValue": session.uid},
+            }
+        },
+        {
+            "fieldFilter": {
+                "field": {"fieldPath": "status"},
+                "op": "EQUAL",
+                "value": {"stringValue": "pending"},
+            }
+        },
+        {
+            "fieldFilter": {
+                "field": {"fieldPath": "deviceId"},
+                "op": "EQUAL",
+                "value": {"stringValue": device_id},
+            }
+        },
+    ]
     response = requests.post(
         f"{FIRESTORE}:runQuery",
         headers=session.headers(),
@@ -333,22 +358,7 @@ def fetch_owner_commands(session: FirebaseSession) -> list[dict]:
                 "where": {
                     "compositeFilter": {
                         "op": "AND",
-                        "filters": [
-                            {
-                                "fieldFilter": {
-                                    "field": {"fieldPath": "ownerId"},
-                                    "op": "EQUAL",
-                                    "value": {"stringValue": session.uid},
-                                }
-                            },
-                            {
-                                "fieldFilter": {
-                                    "field": {"fieldPath": "status"},
-                                    "op": "EQUAL",
-                                    "value": {"stringValue": "pending"},
-                                }
-                            },
-                        ],
+                        "filters": filters,
                     }
                 },
                 "limit": 100,
@@ -365,6 +375,48 @@ def fetch_owner_commands(session: FirebaseSession) -> list[dict]:
             documents.append(document)
     return documents
 
+
+def _parse_command_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def command_expiration_reason(fields: dict, now: datetime | None = None) -> str | None:
+    """Fail closed for stale, missing, or implausibly future-dated commands."""
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    else:
+        current = current.astimezone(timezone.utc)
+
+    expires_at_value = fields.get("expiresAt")
+    if expires_at_value is not None:
+        expires_at = _parse_command_timestamp(expires_at_value)
+        if expires_at is None:
+            return "Komutun sona erme zamanı geçersiz; güvenlik için çalıştırılmadı."
+        seconds_until_expiry = (expires_at - current).total_seconds()
+        if seconds_until_expiry <= 0:
+            return "Komutun süresi doldu; lütfen yeniden gönder."
+        if seconds_until_expiry > COMMAND_MAX_AGE_SECONDS + COMMAND_FUTURE_SKEW_SECONDS:
+            return "Komutun sona erme zamanı beklenen sınırı aşıyor; güvenlik için çalıştırılmadı."
+        return None
+
+    created_at = _parse_command_timestamp(fields.get("createdAt"))
+    if created_at is None:
+        return "Komutun oluşturulma zamanı eksik veya geçersiz; güvenlik için çalıştırılmadı."
+    age_seconds = (current - created_at).total_seconds()
+    if age_seconds > COMMAND_MAX_AGE_SECONDS:
+        return "Komutun süresi doldu; lütfen yeniden gönder."
+    if age_seconds < -COMMAND_FUTURE_SKEW_SECONDS:
+        return "Komutun oluşturulma zamanı gelecekte; güvenlik için çalıştırılmadı."
+    return None
 
 def update_command(
     session: FirebaseSession,
@@ -1007,9 +1059,22 @@ def run_agent() -> int:
                     last_screen_frame = now
 
             if now - last_command_poll >= COMMAND_POLL_SECONDS:
-                for document in fetch_owner_commands(session):
+                for document in fetch_owner_commands(session, device_id):
                     fields = decode_document(document)
                     if fields.get("deviceId") != device_id or fields.get("status") != "pending":
+                        continue
+                    expiration_reason = command_expiration_reason(fields)
+                    if expiration_reason is not None:
+                        try:
+                            update_command(
+                                session,
+                                document,
+                                "failed",
+                                expiration_reason,
+                                expected_update_time=document.get("updateTime"),
+                            )
+                        except Exception as expiry_error:
+                            print(f"[Komut] Süresi dolmuş komutun durumu güncellenemedi; çalıştırılmadı: {expiry_error}")
                         continue
                     command = str(fields.get("command") or "")
                     if not command_is_supported(command):
