@@ -313,7 +313,13 @@ def fail_pending_commands_when_remote_control_disabled(
     device_id: str,
 ) -> None:
     """Expire queued work while permission is off so it cannot run after re-enabling."""
-    for document in fetch_owner_commands(session, device_id):
+    try:
+        documents = fetch_owner_commands(session, device_id)
+    except Exception as exc:
+        print(f"[Permissions] Bekleyen komutlar okunamadı; Agent çalışmaya devam ediyor: {exc}")
+        return
+
+    for document in documents:
         fields = decode_document(document)
         if fields.get("deviceId") != device_id or fields.get("status") != "pending":
             continue
