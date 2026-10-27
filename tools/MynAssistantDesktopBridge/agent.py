@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import ctypes
 import io
 import json
@@ -379,7 +380,12 @@ def update_command(
         raise RuntimeError("Komut belgesinin yolu geçersiz.")
     document_path = full_name.split(marker, 1)[1]
     command_name = decode_field(document.get("fields", {}).get("command"))
-    result_limit = FILE_LIST_MAX_RESULT_LENGTH if command_name == "list_files" else 800
+    if command_name == "list_files":
+        result_limit = FILE_LIST_MAX_RESULT_LENGTH
+    elif command_name == "download_file":
+        result_limit = FILE_DOWNLOAD_MAX_RESULT_LENGTH
+    else:
+        result_limit = 800
     fields = {
         "status": encode_string(status),
         "result": encode_string(result[:result_limit]),
@@ -543,6 +549,8 @@ def normalize_text_command(text: str) -> str:
 FILE_LIST_MAX_ENTRIES = 200
 FILE_LIST_MAX_PATH_LENGTH = 1024
 FILE_LIST_MAX_RESULT_LENGTH = 350_000
+FILE_DOWNLOAD_MAX_BYTES = 500_000
+FILE_DOWNLOAD_MAX_RESULT_LENGTH = 700_000
 FILE_LIST_ROOTS = (
     ("Masaüstü", ("Desktop", "Masaüstü")),
     ("Belgeler", ("Documents", "Belgeler")),
@@ -694,6 +702,69 @@ def execute_list_files(path_value: str = "") -> str:
     return _serialize_file_listing(str(current), parent_path, entries, truncated, warnings)
 
 
+
+def execute_download_file(path_value: str = "") -> str:
+    """Return one bounded file payload only when it resolves inside an allowlisted profile folder."""
+    if not isinstance(path_value, str) or not path_value.strip() or len(path_value) > FILE_LIST_MAX_PATH_LENGTH:
+        raise ValueError("Dosya yolu geçersiz veya çok uzun.")
+
+    try:
+        requested = Path(path_value).expanduser()
+        target = requested.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("İndirilecek dosya bulunamadı veya yolu geçersiz.") from exc
+
+    if requested.is_symlink() or getattr(requested, "is_junction", lambda: False)():
+        raise ValueError("Sembolik bağlantı veya junction üzerinden dosya indirme engellendi.")
+    if not target.is_file():
+        raise ValueError("Seçilen öğe bir dosya değil.")
+
+    roots = _allowed_file_roots()
+    allowed_root = next(
+        (root for _label, root in roots if target == root or root in target.parents),
+        None,
+    )
+    if allowed_root is None:
+        raise ValueError(
+            "Bu dosyaya erişim izni yok. Yalnızca izin verilen kullanıcı klasörlerindeki dosyalar indirilebilir."
+        )
+
+    try:
+        before = target.stat()
+        if before.st_size > FILE_DOWNLOAD_MAX_BYTES:
+            raise ValueError(
+                f"Dosya {before.st_size} bayt; bu sürüm tek yanıtla en fazla {FILE_DOWNLOAD_MAX_BYTES} bayt indirir. "
+                "Büyük dosyalar için parçalı aktarım henüz etkin değil."
+            )
+        with target.open("rb") as stream:
+            content = stream.read(FILE_DOWNLOAD_MAX_BYTES + 1)
+        after = target.stat()
+    except PermissionError as exc:
+        raise ValueError("Windows bu dosyayı okumaya izin vermedi.") from exc
+    except OSError as exc:
+        raise ValueError("Dosya okunamadı; erişim iznini ve diskin durumunu kontrol et.") from exc
+
+    if len(content) > FILE_DOWNLOAD_MAX_BYTES:
+        raise ValueError(
+            f"Dosya {FILE_DOWNLOAD_MAX_BYTES} bayt sınırını aştı. Büyük dosyalar için parçalı aktarım henüz etkin değil."
+        )
+    if before.st_size != after.st_size or len(content) != after.st_size:
+        raise ValueError("Dosya indirme sırasında değişti; bütünlük için işlem iptal edildi.")
+
+    payload = {
+        "schemaVersion": 1,
+        "name": target.name,
+        "path": str(target),
+        "size": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "contentBase64": base64.b64encode(content).decode("ascii"),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > FILE_DOWNLOAD_MAX_RESULT_LENGTH:
+        raise ValueError("Dosya yanıtı güvenli aktarım boyutunu aştı.")
+    return encoded
+
+
 def execute_text_command(text: str) -> str:
     command = normalize_text_command(text)
     if not command:
@@ -785,6 +856,8 @@ def execute_command(command: str, fields: dict) -> str:
         return execute_text_command(str(fields.get("text") or ""))
     if command == "list_files":
         return execute_list_files(str(fields.get("path") or ""))
+    if command == "download_file":
+        return execute_download_file(str(fields.get("path") or ""))
     if command == "type_text":
         text = str(fields.get("text") or "")
         if not text.strip():
@@ -833,7 +906,7 @@ def command_is_supported(command: str) -> bool:
     return command in {
         "mute", "volume_up", "volume_down", "home",
         "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command",
-        "type_text", "key_backspace", "key_enter", "list_files"
+        "type_text", "key_backspace", "key_enter", "list_files", "download_file"
     }
 
 
