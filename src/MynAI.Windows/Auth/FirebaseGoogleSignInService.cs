@@ -22,7 +22,12 @@ public sealed class FirebaseGoogleSignInService
 
     // This is application/operator-provisioned OAuth configuration, not the
     // optional Google Contacts configuration and not a file each user must import.
+    // The installer places this shared Desktop OAuth config beside the app under
+    // {app}\Auth. Keep the legacy ProgramData path as a backward-compatible fallback.
     public static string ApplicationOAuthConfigPath => Path.Combine(
+        AppContext.BaseDirectory, "Auth", "google-signin-desktop.json");
+
+    private static string LegacyApplicationOAuthConfigPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "MynAssistant", "Auth", "google-signin-desktop.json");
 
@@ -30,12 +35,14 @@ public sealed class FirebaseGoogleSignInService
         bool allowAccountCreation,
         CancellationToken cancellationToken = default)
     {
-        var configPath = ApplicationOAuthConfigPath;
+        var configPath = File.Exists(ApplicationOAuthConfigPath)
+            ? ApplicationOAuthConfigPath
+            : LegacyApplicationOAuthConfigPath;
         if (!File.Exists(configPath))
         {
             throw new FirebaseGoogleSignInException(
                 "MYN-OAUTH-001",
-                "Google ile giriş henüz bu kurulum için yapılandırılmamış (MYN-OAUTH-001). MynAssistant dağıtım sorumlusu, Google Cloud Console'da uygun Desktop app OAuth istemcisi ve Firebase Google sağlayıcısını yapılandırıp istemci JSON'unu bu bilgisayarda ProgramData / MynAssistant / Auth / google-signin-desktop.json konumuna kurmalıdır. Bu kurulum kullanıcının Google Kişiler bağlantısını kullanmaz ve her kullanıcıdan OAuth JSON dosyası istemez.");
+                "Bu kurulum Google masaüstü giriş yapılandırmasını içermiyor (MYN-OAUTH-001). Dağıtım ekibi GitHub Actions MYNASSISTANT_GOOGLE_DESKTOP_OAUTH_JSON_B64 secret'ını tanımlayıp yeni installer yayımlamalı. Son kullanıcıdan JSON indirmesi istenmemelidir.");
         }
 
         global::Google.Apis.Auth.OAuth2.UserCredential credential;

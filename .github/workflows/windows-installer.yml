@@ -35,6 +35,51 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
+      - name: Prepare packaged Google Desktop OAuth configuration
+        shell: pwsh
+        env:
+          MYNASSISTANT_GOOGLE_DESKTOP_OAUTH_JSON_B64: ${{ secrets.MYNASSISTANT_GOOGLE_DESKTOP_OAUTH_JSON_B64 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $configPath = "build/google-oauth/google-signin-desktop.json"
+          $encoded = $env:MYNASSISTANT_GOOGLE_DESKTOP_OAUTH_JSON_B64
+          if ([string]::IsNullOrWhiteSpace($encoded)) {
+            Write-Host "::notice::Google Desktop OAuth config is not configured. Installer CI will still run, but no public preview release will be published."
+            "Google Desktop OAuth config: not configured; public release will be skipped." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+
+          try {
+            $jsonBytes = [Convert]::FromBase64String($encoded.Trim())
+            $jsonText = [System.Text.Encoding]::UTF8.GetString($jsonBytes)
+            $config = $jsonText | ConvertFrom-Json -ErrorAction Stop
+          } catch {
+            throw "The MYNASSISTANT_GOOGLE_DESKTOP_OAUTH_JSON_B64 secret is not valid base64-encoded JSON."
+          }
+
+          $desktop = $config.installed
+          if ($null -eq $desktop -or
+              [string]::IsNullOrWhiteSpace([string]$desktop.client_id) -or
+              [string]::IsNullOrWhiteSpace([string]$desktop.client_secret) -or
+              [string]::IsNullOrWhiteSpace([string]$desktop.auth_uri) -or
+              [string]::IsNullOrWhiteSpace([string]$desktop.token_uri)) {
+            throw "The OAuth secret must contain a Google Desktop app JSON with an 'installed' object, client_id, client_secret, auth_uri and token_uri."
+          }
+          if ([string]$desktop.client_id -notmatch '^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$') {
+            throw "The configured OAuth client is not a valid Google Desktop client ID."
+          }
+          foreach ($tokenName in @("access_token", "refresh_token", "id_token")) {
+            if ($desktop.PSObject.Properties.Name -contains $tokenName -or
+                $config.PSObject.Properties.Name -contains $tokenName) {
+              throw "The OAuth config must contain application client configuration only, never a user's OAuth/session tokens."
+            }
+          }
+
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $configPath) | Out-Null
+          [System.IO.File]::WriteAllText($configPath, $jsonText, [System.Text.UTF8Encoding]::new($false))
+          "Google Desktop OAuth config: validated and scheduled for inclusion in the installer." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Host "Google Desktop OAuth config validated. Sensitive values were not written to the log."
+
       - name: Verify preinstalled .NET 10 SDK
         shell: pwsh
         run: |
@@ -140,8 +185,8 @@ jobs:
           if (-not $googleSignInServiceText.Contains("InMemoryOAuthDataStore") -or $googleSignInServiceText.Contains("FileDataStore(")) {
             throw "Google OAuth refresh tokens must not be persisted to disk by the sign-in-only flow."
           }
-          if (-not $googleSignInServiceText.Contains("ApplicationOAuthConfigPath") -or -not $googleSignInServiceText.Contains("CommonApplicationData") -or $googleSignInServiceText.Contains("GoogleOAuthConfigStore.GetPath()")) {
-            throw "Google sign-in must use application-provisioned configuration, not optional Google Contacts settings."
+          if (-not $googleSignInServiceText.Contains("ApplicationOAuthConfigPath") -or -not $googleSignInServiceText.Contains("AppContext.BaseDirectory") -or $googleSignInServiceText.Contains("GoogleOAuthConfigStore.GetPath()")) {
+            throw "Google sign-in must load the app-bundled configuration, with legacy ProgramData fallback, and not optional Google Contacts settings."
           }
           if ($settingsText.Contains("GoogleOAuthConfigButton") -or $settingsText.Contains("ImportGoogleOAuthConfig_Click") -or $settingsText.Contains("OAuth istemci JSON'u seç")) {
             throw "End users must not be asked to import the application's shared Google OAuth client JSON."
@@ -293,6 +338,22 @@ jobs:
               throw "Required installer asset is missing: $path"
             }
           }
+          $installerScriptText = Get-Content -LiteralPath "installer/MynAI.iss" -Raw -Encoding UTF8
+          if (-not $installerScriptText.Contains('#ifexist "..\build\google-oauth\google-signin-desktop.json"')) {
+            throw "Installer must conditionally package the shared Google Desktop OAuth configuration."
+          }
+          $googleOAuthConfigPath = "build/google-oauth/google-signin-desktop.json"
+          if (Test-Path -LiteralPath $googleOAuthConfigPath) {
+            $googleOAuthConfig = Get-Content -LiteralPath $googleOAuthConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $googleOAuthConfig.installed -or
+                [string]::IsNullOrWhiteSpace([string]$googleOAuthConfig.installed.client_id) -or
+                [string]::IsNullOrWhiteSpace([string]$googleOAuthConfig.installed.client_secret)) {
+              throw "Packaged Google OAuth configuration failed validation."
+            }
+            Write-Host "Google OAuth Desktop client config is present and will be included under {app}\Auth."
+          } else {
+            Write-Host "Google OAuth Desktop client config is not present; this build can be used only as a CI artifact, not as a configured public Google-login release."
+          }
           if (-not (Select-String -Path "src/MynAI.Windows/MynAI.Windows.csproj" -Pattern '<Version>0.1.7</Version>' -Quiet)) {
             throw "Windows app version is not 0.1.7."
           }
@@ -385,7 +446,7 @@ jobs:
             "3. MynAgent uygulama açılışında arka planda otomatik başlatılır; kurulum ekranında ayrı başlatma seçeneği yoktur.",
             "4. İlk telefon-PC bağlantısı için Windows Ayarlar → Hesap → Telefon-PC bağlantısı → Telefonla eşleştir seçeneğini açın. Windows'ta gösterilen 10 karakterli kodu Android MynAssistant → Ayarlar → Windows bilgisayarını eşleştir alanına yazıp onaylayın. Kod 5 dakika geçerlidir.",
             "5. Canlı sunucuda /api/v1/info yapılandırma kontrolü ve pairing/start HTTP 200 smoke testi geçti. Bu, başlangıç uç noktasının çalıştığını doğrular; telefon onayı sonrası Windows oturumunun tamamı gerçek Android ve Windows cihazlarında ayrıca test edilmelidir. Önceden kaydedilmiş geçerli oturum varsa köprü onu kullanır.",
-            "6. Müşteriden client_secret.json veya ayrı logo dosyası istenmez.",
+            (if (Test-Path -LiteralPath "build/google-oauth/google-signin-desktop.json") { "6. Google masaüstü giriş yapılandırması installer'ın içine dahil edildi; son kullanıcı ayrıca JSON indirmez." } else { "6. Bu CI artefaktında Google masaüstü giriş yapılandırması bulunmuyor. Genel dağıtımdan önce GitHub Actions MYNASSISTANT_GOOGLE_DESKTOP_OAUTH_JSON_B64 secret'ı tanımlanmalıdır." }),
             "7. Google Kişiler bağlantısı isteğe bağlıdır. Google OAuth 403 access_denied verirse, OAuth projesi Google Auth Platform → Audience → Test users bölümünde bu Google hesabına yetki verilmelidir. Bu ayar Google Cloud Console'dadır ve telefon-PC eşleştirmesi için gerekmez.",
             "",
             "Not: Kuruluşunuz Windows Application Control politikasını kullanıyorsa imzasız dosyalar engellenebilir. Güvenlik politikasını kapatmayın; yayıncı imzası/Code Integrity günlükleri yöneticiniz tarafından doğrulanmalıdır."
@@ -422,6 +483,10 @@ jobs:
           GH_RUN_NUMBER: ${{ github.run_number }}
         run: |
           $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath "build/google-oauth/google-signin-desktop.json")) {
+            Write-Host "::notice::Skipping public EXE release because the shared Google Desktop OAuth config is not configured. The CI artifact remains available for internal verification."
+            exit 0
+          }
           $api = "https://api.github.com/repos/$env:GH_REPOSITORY"
           $headers = @{
             Authorization = "Bearer $env:GH_TOKEN"

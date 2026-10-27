@@ -6,15 +6,32 @@ MynAssistant account sign-in and optional Google Contacts are separate features.
 
 The desktop sign-in client configuration is app/operator-provisioned. End users are not asked to choose an OAuth JSON file, and no OAuth client JSON or user credential belongs in Git.
 
-## Application configuration location
+## Application configuration and installer packaging
 
-The Windows sign-in service checks this machine-wide path:
+The installer bundles the shared Desktop OAuth client configuration, when configured, under:
 
-`%ProgramData%\MynAssistant\Auth\google-signin-desktop.json`
+`{app}\Auth\google-signin-desktop.json`
 
-The JSON is expected to be the OAuth client configuration for an installed/desktop app and contain an `installed` object with `client_id`, `client_secret`, `auth_uri`, and `token_uri`. Provision it only through the application's release/deployment process or a machine administrator. Do not copy a developer's personal OAuth file into the repository or ship one without the project owner's approval.
+The app reads the file beside its installed executable. For compatibility, it falls back to the older machine-wide path `%ProgramData%\MynAssistant\Auth\google-signin-desktop.json` if that file exists.
 
-Google OAuth tokens obtained by the sign-in-only flow are held in memory; the flow does not save Google access/refresh tokens to the user's Google Contacts token directory. The resulting Firebase session is saved through the existing Windows DPAPI-protected session store.
+### Configure it once for releases
+
+1. In the private GitHub repository, open **Settings → Secrets and variables → Actions → New repository secret**.
+2. Set the name to `MYNASSISTANT_GOOGLE_DESKTOP_OAUTH_JSON_B64`.
+3. On the build computer, base64-encode the downloaded Google Desktop OAuth JSON and save the one-line result as that secret. Do not commit the JSON to Git.
+4. The Windows Actions workflow validates that the value contains an `installed` object with `client_id`, `client_secret`, `auth_uri` and `token_uri`, then adds it to the installer payload. The JSON is not printed in build logs.
+5. If the secret is missing, CI may still produce a test artifact, but the workflow will not publish a public preview EXE release.
+
+For example, in PowerShell on the computer where the JSON was downloaded:
+
+```powershell
+$path = "$env:USERPROFILE\Downloads\client_secret_....apps.googleusercontent.com.json"
+[Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) | Set-Clipboard
+```
+
+Replace the example file name with the actual downloaded filename. Paste the copied one-line value into the GitHub Actions secret, not into source code or a public message.
+
+Google Desktop OAuth apps are public clients: anything shipped in the installer can be extracted, so the desktop `client_secret` must not be treated as a confidential server credential. The packaged file must contain only application client configuration—never a user's access token, refresh token, ID token or Firebase session. Google OAuth tokens obtained by the sign-in-only flow are held in memory; the resulting Firebase session is stored separately through the existing Windows DPAPI-protected session store.
 
 ## Google Cloud and Firebase prerequisites
 
