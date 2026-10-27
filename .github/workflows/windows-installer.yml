@@ -140,6 +140,12 @@ jobs:
           if (-not $googleSignInServiceText.Contains("InMemoryOAuthDataStore") -or $googleSignInServiceText.Contains("FileDataStore(")) {
             throw "Google OAuth refresh tokens must not be persisted to disk by the sign-in-only flow."
           }
+          if (-not $googleSignInServiceText.Contains("ApplicationOAuthConfigPath") -or -not $googleSignInServiceText.Contains("CommonApplicationData") -or $googleSignInServiceText.Contains("GoogleOAuthConfigStore.GetPath()")) {
+            throw "Google sign-in must use application-provisioned configuration, not optional Google Contacts settings."
+          }
+          if ($settingsText.Contains("GoogleOAuthConfigButton") -or $settingsText.Contains("ImportGoogleOAuthConfig_Click") -or $settingsText.Contains("OAuth istemci JSON'u seç")) {
+            throw "End users must not be asked to import the application's shared Google OAuth client JSON."
+          }
           if (-not $loginCode.Contains('Google ile kayıt ol') -or -not $loginCode.Contains('Google ile giriş yap')) {
             throw "Google login and registration modes must have distinct action labels."
           }
