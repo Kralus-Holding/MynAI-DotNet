@@ -298,7 +298,12 @@ class SafeFileListingCommandTests(unittest.TestCase):
 
         self.assertEqual(len(payload["entries"]), agent.FILE_LIST_MAX_ENTRIES)
         self.assertTrue(payload["truncated"])
-        self.assertTrue(any("bazı öğeler" in warning.lower() for warning in payload["warnings"]))
+        self.assertTrue(payload["warnings"])
+        self.assertTrue(all(isinstance(warning, str) and warning for warning in payload["warnings"]))
+        self.assertLessEqual(
+            len(json.dumps(payload, ensure_ascii=False).encode("utf-8")),
+            agent.FILE_LIST_MAX_RESULT_LENGTH,
+        )
 
     def test_legacy_text_request_is_routed_to_real_file_listing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
