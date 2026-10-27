@@ -969,6 +969,10 @@ public partial class SettingsWindow : Window
 
         try
         {
+            // Cancel an in-flight phone approval first. Otherwise a late approval could
+            // save a new session after sign-out and restart the cloud bridge.
+            _pairingCancellation?.Cancel();
+
             // Disable auto-start and stop the bridge before deleting its protected
             // session, so a live process cannot continue using the old account.
             DesktopBridgeStartupManager.SetEnabled(false);
