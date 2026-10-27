@@ -146,7 +146,7 @@ public partial class AccountLoginWindow : Window
         RegisterModeButton.IsEnabled = !busy;
         LoginModeButton.IsEnabled = !busy;
         ForgotPasswordButton.IsEnabled = !busy;
-        GoogleSignInButton.IsEnabled = !busy;
+        PhoneApprovalButton.IsEnabled = !busy;
         EmailTextBox.IsEnabled = !busy;
         PasswordBox.IsEnabled = !busy;
         ConfirmPasswordBox.IsEnabled = !busy;
