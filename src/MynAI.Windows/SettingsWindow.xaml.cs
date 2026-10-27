@@ -872,6 +872,7 @@ public partial class SettingsWindow : Window
     private void UpdateDesktopLoginStatus()
     {
         var session = FirebaseDesktopSessionStore.Load();
+        UpdateDesktopProfilePhoto(session?.PhotoUrl);
         if (session is null)
         {
             DesktopLoginStatusText.Text =
@@ -886,6 +887,66 @@ public partial class SettingsWindow : Window
             : $"Oturum açık: {session.Email}";
         DesktopLoginButton.Content = "Hesabı değiştir";
         DesktopLogoutButton.Visibility = Visibility.Visible;
+    }
+
+    private void UpdateDesktopProfilePhoto(string? photoUrl)
+    {
+        DesktopProfilePhoto.Source = LoadAppFallbackPhoto();
+
+        // Only allow HTTPS URLs returned by the Firebase-authenticated profile.
+        // Google Contacts OAuth is not used for the MynAssistant account session.
+        if (!Uri.TryCreate(photoUrl, UriKind.Absolute, out var uri) ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        try
+        {
+            var profileImage = new BitmapImage();
+            profileImage.BeginInit();
+            profileImage.CacheOption = BitmapCacheOption.OnDemand;
+            profileImage.UriSource = uri;
+            profileImage.EndInit();
+            DesktopProfilePhoto.Source = profileImage;
+        }
+        catch
+        {
+            // The app logo remains visible if a profile image cannot be loaded.
+            DesktopProfilePhoto.Source = LoadAppFallbackPhoto();
+        }
+    }
+
+    private void DesktopProfilePhoto_ImageFailed(
+        object sender,
+        System.Windows.ExceptionRoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Image image)
+            return;
+
+        if (image.Source is BitmapImage remoteImage &&
+            string.Equals(remoteImage.UriSource?.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            image.Source = LoadAppFallbackPhoto();
+    }
+
+    private static BitmapImage? LoadAppFallbackPhoto()
+    {
+        var fallbackPath = Path.Combine(AppContext.BaseDirectory, "Resources", "myn.jpg");
+        if (!File.Exists(fallbackPath))
+            return null;
+
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.UriSource = new Uri(fallbackPath, UriKind.Absolute);
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async void LoginDesktopAccount_Click(object sender, RoutedEventArgs e)
