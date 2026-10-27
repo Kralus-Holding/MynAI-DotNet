@@ -131,7 +131,7 @@ jobs:
           if (-not $googleSignInServiceText.Contains('Scopes = ["openid", "email", "profile"]') -or $googleSignInServiceText.Contains("contacts.readonly") -or $googleSignInServiceText.Contains("gmail.readonly")) {
             throw "Google login must not request Google Contacts or Gmail scopes."
           }
-          if (-not $googleSignInServiceText.Contains("accounts:signInWithIdp") -or -not $googleSignInServiceText.Contains("providerId=google.com")) {
+          if (-not $googleSignInServiceText.Contains("accounts:signInWithIdp") -or -not $googleSignInServiceText.Contains("&providerId=") -or -not $googleSignInServiceText.Contains('Uri.EscapeDataString("google.com")')) {
             throw "The Google OpenID token must be exchanged for a Firebase session."
           }
           if (-not $settingsText.Contains('x:Name="DesktopProfilePhoto"') -or -not $settingsText.Contains('ImageFailed="DesktopProfilePhoto_ImageFailed"')) {
