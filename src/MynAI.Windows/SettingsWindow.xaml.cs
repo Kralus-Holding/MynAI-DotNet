@@ -851,19 +851,98 @@ public partial class SettingsWindow : Window
         {
             DesktopLoginStatusText.Text =
                 "Giriş yapılmadı. Giriş yapmak için Android uygulamasından onay ver.";
-            GoogleConnectButton.Content = "Giriş yap";
+            DesktopLoginButton.Content = "Giriş yap";
             return;
         }
 
         DesktopLoginStatusText.Text = string.IsNullOrWhiteSpace(session.Email)
             ? "Oturum açık."
             : $"Oturum açık: {session.Email}";
-        GoogleConnectButton.Content = "Hesabı değiştir";
+        DesktopLoginButton.Content = "Hesabı değiştir";
     }
 
     private async void LoginDesktopAccount_Click(object sender, RoutedEventArgs e)
     {
-        await StartDesktopPairingAsync();
+        var loginWindow = new AccountLoginWindow { Owner = this };
+        if (loginWindow.ShowDialog() != true)
+            return;
+
+        // Keep the existing phone-approved Firebase flow as an explicit alternative.
+        // It never silently replaces a stored session; StartDesktopPairingAsync asks first.
+        if (loginWindow.PhoneApprovalRequested)
+        {
+            await StartDesktopPairingAsync();
+            return;
+        }
+
+        var session = loginWindow.AuthenticatedSession;
+        if (session is null)
+            return;
+
+        var previousSession = FirebaseDesktopSessionStore.Load();
+        if (previousSession is not null &&
+            !string.Equals(previousSession.Uid, session.Uid, StringComparison.Ordinal))
+        {
+            var answer = MessageBox.Show(
+                "Farklı bir MynAssistant hesabıyla giriş yapmak üzeresin. Bu bilgisayardaki telefon-PC oturumu değiştirilecek; yerel ayarlar ve dosyalar korunacak. Devam edilsin mi?",
+                "Hesabı değiştir",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (answer != MessageBoxResult.Yes)
+                return;
+        }
+
+        try
+        {
+            // The session store uses Windows DPAPI (CurrentUser) and an atomic replace.
+            // Save only after Firebase returned a complete, authenticated session.
+            FirebaseDesktopSessionStore.Save(session);
+            UpdateDesktopLoginStatus();
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-AUTH-004",
+                "FirebaseDesktopAuth",
+                "Firebase oturumu Windows kullanıcısının korumalı depolamasına kaydedilemedi.",
+                ex);
+            SetSaveStatus("Oturum güvenli şekilde kaydedilemedi. Önceki oturum korunmaya çalışıldı. (MYN-AUTH-004)", Colors.IndianRed);
+            MessageBox.Show(
+                "Firebase oturumu bu Windows kullanıcı profiline güvenli şekilde kaydedilemedi. Önceki oturum silinmedi.",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            UpdateDesktopLoginStatus();
+            return;
+        }
+
+        try
+        {
+            if (DesktopBridgeStartupManager.IsRunning())
+                DesktopBridgeStartupManager.RestartAgent();
+            else
+                DesktopBridgeStartupManager.StartAgent();
+
+            UpdateDesktopBridgeStatus();
+            UpdateAccountDesktopBridgeStatus();
+            var statusMessage = loginWindow.StatusMessage ?? "Firebase hesabına giriş başarılı.";
+            var emailWarning = statusMessage.Contains("gönderilemedi", StringComparison.OrdinalIgnoreCase);
+            SetSaveStatus(statusMessage, emailWarning ? Colors.IndianRed : Colors.LightGreen);
+        }
+        catch (Exception bridgeError)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-DEVICE-006",
+                "DesktopBridge",
+                "Firebase oturumu kaydedildi ancak Desktop Bridge yeniden başlatılamadı.",
+                bridgeError);
+            UpdateDesktopBridgeStatus();
+            UpdateAccountDesktopBridgeStatus();
+            SetSaveStatus(
+                "Oturum açıldı ancak telefon-PC köprüsü yeniden başlatılamadı. Bağlantı durumunu yenile. (MYN-DEVICE-006)",
+                Colors.IndianRed);
+        }
     }
 
     private async void StartDesktopPairing_Click(object sender, RoutedEventArgs e)
@@ -891,7 +970,7 @@ public partial class SettingsWindow : Window
         var cancellation = new CancellationTokenSource();
         _pairingCancellation = cancellation;
         StartDesktopPairingButton.IsEnabled = false;
-        GoogleConnectButton.IsEnabled = false;
+        DesktopLoginButton.IsEnabled = false;
         CancelDesktopPairingButton.IsEnabled = true;
         DesktopLoginStatusText.Text = "Telefon onayı bekleniyor...";
         DesktopPairingCodeText.Text = "";
@@ -1027,7 +1106,7 @@ public partial class SettingsWindow : Window
                 _pairingCancellation = null;
             cancellation.Dispose();
             StartDesktopPairingButton.IsEnabled = true;
-            GoogleConnectButton.IsEnabled = true;
+            DesktopLoginButton.IsEnabled = true;
             CancelDesktopPairingButton.IsEnabled = false;
         }
     }
@@ -1246,7 +1325,7 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private async void GoogleConnectButton_Click(
+    private async void DesktopLoginButton_Click(
         object sender,
         RoutedEventArgs e)
     {
