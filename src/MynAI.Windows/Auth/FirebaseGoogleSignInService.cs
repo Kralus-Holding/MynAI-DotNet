@@ -5,7 +5,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Util.Store;
-using MynAI.Windows.Google;
 
 namespace MynAI.Windows.Auth;
 
@@ -20,16 +19,22 @@ public sealed class FirebaseGoogleSignInService
     private static readonly string[] Scopes = ["openid", "email", "profile"];
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
 
+    // This is application/operator-provisioned OAuth configuration, not the
+    // optional Google Contacts configuration and not a file each user must import.
+    public static string ApplicationOAuthConfigPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "MynAssistant", "Auth", "google-signin-desktop.json");
+
     public async Task<FirebaseGoogleSignInResult> SignInAsync(
         bool allowAccountCreation,
         CancellationToken cancellationToken = default)
     {
-        var configPath = GoogleOAuthConfigStore.GetPath();
+        var configPath = ApplicationOAuthConfigPath;
         if (!File.Exists(configPath))
         {
             throw new FirebaseGoogleSignInException(
                 "MYN-OAUTH-001",
-                "Google ile giriş için Google Cloud Console'dan bir OAuth istemcisi türü Desktop app oluşturup JSON yapılandırmasını MynAssistant'ın Google ayarlarına eklemek gerekiyor. Google Kişiler bağlantısı isteğe bağlıdır ve giriş için gerekli scope değildir.");
+                "Google ile giriş henüz bu kurulum için yapılandırılmamış (MYN-OAUTH-001). MynAssistant dağıtım sorumlusu, Google Cloud Console'da uygun Desktop app OAuth istemcisi ve Firebase Google sağlayıcısını yapılandırıp istemci JSON'unu bu bilgisayarda ProgramData\MynAssistant\Auth\google-signin-desktop.json konumuna kurmalıdır. Bu kurulum kullanıcının Google Kişiler bağlantısını kullanmaz ve her kullanıcıdan OAuth JSON dosyası istemez.");
         }
 
         Google.Apis.Auth.OAuth2.UserCredential credential;
