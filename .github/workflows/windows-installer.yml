@@ -119,7 +119,7 @@ jobs:
           if (-not $settingsCode.Contains('private void SignOutDesktopAccount_Click(') -or -not $settingsCode.Contains("FirebaseDesktopSessionStore.Delete()")) { throw "Explicit account sign-out behavior is missing." }
           if (-not $settingsCode.Contains("DesktopBridgeStartupManager.SetEnabled(false)")) { throw "Sign-out must disable automatic cloud-bridge startup." }
           if (-not $settingsCode.Contains("new AccountLoginWindow")) { throw "The account entry point must open the standalone login window." }
-          foreach ($requiredLoginText in @('Content="Android ile oturum onayı"'', 'x:Name="EmailTextBox"', 'x:Name="PasswordBox"', 'Şifremi unuttum', 'Yeni hesap oluştur')) {
+          foreach ($requiredLoginText in @('Content="Android ile oturum onayı"', 'x:Name="EmailTextBox"', 'x:Name="PasswordBox"', 'Şifremi unuttum', 'Yeni hesap oluştur')) {
             if (-not $loginXaml.Contains($requiredLoginText)) { throw "Login window is missing required account UI: $requiredLoginText" }
           }
           foreach ($requiredLoginCode in @("RegisterAsync(", "SignInAsync(", "SendPasswordResetAsync(", "SendEmailVerificationAsync(", "FirebaseDesktopSessionStore.Save(session)", "MYN-AUTH-004")) {
