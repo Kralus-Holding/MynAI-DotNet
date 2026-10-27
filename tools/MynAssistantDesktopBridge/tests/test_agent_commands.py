@@ -233,6 +233,28 @@ class SafeFileListingCommandTests(unittest.TestCase):
         self.assertIsNone(payload["parentPath"])
         self.assertTrue(agent.command_is_supported("list_files"))
 
+    def test_profile_root_reparse_points_are_not_exposed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            profile = base / "profile"
+            profile.mkdir()
+            desktop = profile / "Desktop"
+            desktop.mkdir()
+            (profile / "Documents").mkdir()
+
+            # Simulate Desktop being redirected through a symlink/junction.
+            # This does not need elevated symlink privileges on Windows CI.
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                with mock.patch.object(
+                    agent, "_is_reparse_point", side_effect=lambda path: path == desktop
+                ):
+                    payload = json.loads(agent.execute_command("list_files", {"path": ""}))
+                    names = {entry["name"] for entry in payload["entries"]}
+                    self.assertNotIn("Masaüstü", names)
+                    self.assertIn("Belgeler", names)
+                    with self.assertRaisesRegex(ValueError, "erişim izni yok"):
+                        agent.execute_command("list_files", {"path": str(desktop)})
+
     def test_directory_listing_returns_metadata_without_reading_file_contents(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             profile = Path(temp_dir)

@@ -561,6 +561,18 @@ FILE_LIST_ROOTS = (
 )
 
 
+def _is_reparse_point(path: Path) -> bool:
+    """Reject symbolic links and Windows junctions at every file-browser boundary."""
+    try:
+        if path.is_symlink():
+            return True
+        is_junction = getattr(path, "is_junction", None)
+        return bool(callable(is_junction) and is_junction())
+    except (OSError, RuntimeError):
+        # If Windows cannot determine the path type, fail closed.
+        return True
+
+
 def _allowed_file_roots() -> list[tuple[str, Path]]:
     """Return only the standard profile folders exposed to the remote file browser."""
     profile = Path(os.environ.get("USERPROFILE") or Path.home()).resolve()
@@ -570,7 +582,8 @@ def _allowed_file_roots() -> list[tuple[str, Path]]:
         for folder_name in candidates:
             candidate = profile / folder_name
             try:
-                if not candidate.is_dir():
+                # Do not let a symlink/junction replace an allowlisted profile root.
+                if _is_reparse_point(candidate) or not candidate.is_dir():
                     continue
                 resolved = candidate.resolve(strict=True)
             except (OSError, RuntimeError):
@@ -657,8 +670,7 @@ def execute_list_files(path_value: str = "") -> str:
             for item in iterator:
                 try:
                     item_path = Path(item.path)
-                    is_junction = getattr(item_path, "is_junction", lambda: False)
-                    if item.is_symlink() or is_junction():
+                    if _is_reparse_point(item_path):
                         continue
                     resolved_item = item_path.resolve(strict=True)
                     if len(str(resolved_item)) > FILE_LIST_MAX_PATH_LENGTH:
