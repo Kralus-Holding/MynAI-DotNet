@@ -316,7 +316,7 @@ def fail_pending_commands_when_remote_control_disabled(
     try:
         documents = fetch_owner_commands(session, device_id)
     except Exception as exc:
-        print(f"[Permissions] Bekleyen komutlar okunamadı; Agent çalışmaya devam ediyor: {exc}")
+        print(f"[Permissions] Could not refresh pending commands; Agent continues: {exc}")
         return
 
     for document in documents:
