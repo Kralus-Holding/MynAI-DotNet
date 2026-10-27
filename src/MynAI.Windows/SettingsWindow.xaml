@@ -559,13 +559,29 @@
                                                            FontSize="34" Foreground="#66CBEA"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Grid>
-                                            <TextBlock Text="Özel görsel" HorizontalAlignment="Center"
+                                            <TextBlock Text="Logo ekle" HorizontalAlignment="Center"
                                                        TextAlignment="Center" FontSize="11"
                                                        FontWeight="SemiBold" Margin="0,8,0,0"/>
                                         </StackPanel>
                                     </ToggleButton>
                                 </UniformGrid>
 
+                                <TextBlock Text="Yüklediğin logolar"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Margin="0,18,0,8"/>
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                              VerticalScrollBarVisibility="Disabled"
+                                              CanContentScroll="True">
+                                    <StackPanel x:Name="UserLogosGalleryPanel"
+                                                Orientation="Horizontal"
+                                                MinHeight="112"/>
+                                </ScrollViewer>
+                                <TextBlock Text="Menüden kendi yüklediğin bir logoyu seçebilir veya silebilirsin. Yerleşik KR / Kralus ve MynAssistant logoları silinemez."
+                                           Foreground="#7E8A9D"
+                                           FontSize="10"
+                                           Margin="0,8,0,0"
+                                           TextWrapping="Wrap"/>
 
                             </StackPanel>
                         </Border>
