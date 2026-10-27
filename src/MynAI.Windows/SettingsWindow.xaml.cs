@@ -874,7 +874,7 @@ public partial class SettingsWindow : Window
                 Foreground = new SolidColorBrush(Color.FromRgb(126, 138, 157)),
                 FontSize = 11,
                 Margin = new Thickness(0, 8, 0, 10),
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = System.Windows.VerticalAlignment.Center
             });
             return;
         }
@@ -887,7 +887,7 @@ public partial class SettingsWindow : Window
 
             var selected = string.Equals(settings.LogoPreset, "custom", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(settings.CustomLogoPath, path, StringComparison.OrdinalIgnoreCase);
-            var card = new Border
+            var card = new System.Windows.Controls.Border
             {
                 Width = 126,
                 Height = 116,
@@ -911,7 +911,7 @@ public partial class SettingsWindow : Window
                 Width = 66,
                 Height = 66,
                 Stretch = System.Windows.Media.Stretch.Uniform,
-                HorizontalAlignment = HorizontalAlignment.Center,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
             System.Windows.Controls.Grid.SetRow(image, 0);
@@ -937,8 +937,8 @@ public partial class SettingsWindow : Window
                 Height = 26,
                 Padding = new Thickness(0),
                 Margin = new Thickness(0, -3, -3, 0),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+                VerticalAlignment = System.Windows.VerticalAlignment.Top,
                 Background = System.Windows.Media.Brushes.Transparent,
                 Foreground = new SolidColorBrush(Color.FromRgb(225, 233, 244)),
                 BorderThickness = new Thickness(0),
