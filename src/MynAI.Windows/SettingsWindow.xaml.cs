@@ -815,6 +815,256 @@ public partial class SettingsWindow : Window
             "custom" => "Özel görsel kaydı bulunamadı; KR / Kralus logosu kullanılacak.",
             _ => "KR / Kralus logosu seçili."
         };
+
+        UpdateUserLogoGallery(settings);
+    }
+
+    private static bool IsOwnedUserLogoPath(string? path, out string fullPath)
+    {
+        fullPath = string.Empty;
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        try
+        {
+            fullPath = Path.GetFullPath(path);
+            var root = Path.GetFullPath(MynAssistantBranding.UserLogoDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var allowedPrefix = root + Path.DirectorySeparatorChar;
+            if (!fullPath.StartsWith(allowedPrefix, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            var extension = Path.GetExtension(fullPath).ToLowerInvariant();
+            if (extension is not (".png" or ".jpg" or ".jpeg" or ".bmp"))
+                return false;
+
+            return File.Exists(fullPath);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static List<string> GetUserLogoPaths(MynAISettings settings)
+    {
+        var candidates = (settings.UserLogoPaths ?? new List<string>())
+            .Concat(string.IsNullOrWhiteSpace(settings.CustomLogoPath)
+                ? Array.Empty<string>()
+                : new[] { settings.CustomLogoPath });
+
+        return candidates
+            .Select(path => IsOwnedUserLogoPath(path, out var fullPath) ? fullPath : null)
+            .Where(path => path is not null)
+            .Select(path => path!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => Path.GetFileName(path), StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    private void UpdateUserLogoGallery(MynAISettings settings)
+    {
+        UserLogosGalleryPanel.Children.Clear();
+        var paths = GetUserLogoPaths(settings);
+        if (paths.Count == 0)
+        {
+            UserLogosGalleryPanel.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = "Henüz özel logo eklenmedi. Yukarıdaki “Logo ekle” kartını kullan.",
+                Foreground = new SolidColorBrush(Color.FromRgb(126, 138, 157)),
+                FontSize = 11,
+                Margin = new Thickness(0, 8, 0, 10),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            return;
+        }
+
+        foreach (var path in paths)
+        {
+            var bitmap = MynAssistantBranding.LoadImage(path);
+            if (bitmap is null)
+                continue;
+
+            var selected = string.Equals(settings.LogoPreset, "custom", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(settings.CustomLogoPath, path, StringComparison.OrdinalIgnoreCase);
+            var card = new Border
+            {
+                Width = 126,
+                Height = 116,
+                Margin = new Thickness(0, 0, 10, 4),
+                Padding = new Thickness(6),
+                CornerRadius = new CornerRadius(10),
+                BorderThickness = new Thickness(1),
+                BorderBrush = new SolidColorBrush(selected
+                    ? Color.FromRgb(139, 156, 255)
+                    : Color.FromRgb(38, 52, 73)),
+                Background = new SolidColorBrush(Color.FromRgb(16, 23, 32)),
+                ToolTip = Path.GetFileName(path)
+            };
+            var grid = new System.Windows.Controls.Grid();
+            grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+
+            var image = new System.Windows.Controls.Image
+            {
+                Source = bitmap,
+                Width = 66,
+                Height = 66,
+                Stretch = System.Windows.Media.Stretch.Uniform,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            System.Windows.Controls.Grid.SetRow(image, 0);
+            grid.Children.Add(image);
+
+            var name = new System.Windows.Controls.TextBlock
+            {
+                Text = Path.GetFileName(path),
+                Foreground = new SolidColorBrush(Color.FromRgb(223, 232, 243)),
+                FontSize = 9,
+                TextAlignment = TextAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(1, 4, 1, 0),
+                ToolTip = Path.GetFileName(path)
+            };
+            System.Windows.Controls.Grid.SetRow(name, 1);
+            grid.Children.Add(name);
+
+            var options = new System.Windows.Controls.Button
+            {
+                Content = "⋮",
+                Width = 26,
+                Height = 26,
+                Padding = new Thickness(0),
+                Margin = new Thickness(0, -3, -3, 0),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Top,
+                Background = System.Windows.Media.Brushes.Transparent,
+                Foreground = new SolidColorBrush(Color.FromRgb(225, 233, 244)),
+                BorderThickness = new Thickness(0),
+                FontSize = 18,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                ToolTip = "Logo seçenekleri"
+            };
+            var menu = new System.Windows.Controls.ContextMenu();
+            var selectItem = new System.Windows.Controls.MenuItem { Header = "Logo olarak seç" };
+            selectItem.Click += (_, _) => SelectUserLogo(path);
+            var deleteItem = new System.Windows.Controls.MenuItem
+            {
+                Header = "Sil",
+                Foreground = new SolidColorBrush(Color.FromRgb(232, 90, 90))
+            };
+            deleteItem.Click += (_, _) => DeleteUserLogo(path);
+            menu.Items.Add(selectItem);
+            menu.Items.Add(new System.Windows.Controls.Separator());
+            menu.Items.Add(deleteItem);
+            options.Click += (_, _) =>
+            {
+                menu.PlacementTarget = options;
+                menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+                menu.IsOpen = true;
+            };
+            grid.Children.Add(options);
+
+            card.Child = grid;
+            UserLogosGalleryPanel.Children.Add(card);
+        }
+    }
+
+    private void SelectUserLogo(string path)
+    {
+        if (!IsOwnedUserLogoPath(path, out var safePath)
+            || MynAssistantBranding.LoadImage(safePath) is null)
+        {
+            MessageBox.Show(
+                "Seçilen kullanıcı logosu bulunamadı veya geçerli bir görsel değil.",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            UpdateLogoPreview(_settingsStore.Load());
+            return;
+        }
+
+        try
+        {
+            var settings = _settingsStore.Load();
+            settings.UserLogoPaths = GetUserLogoPaths(settings);
+            if (!settings.UserLogoPaths.Contains(safePath, StringComparer.OrdinalIgnoreCase))
+                settings.UserLogoPaths.Add(safePath);
+            settings.LogoPreset = "custom";
+            settings.CustomLogoPath = safePath;
+            _settingsStore.Save(settings);
+            UpdateLogoPreview(settings);
+            SetSaveStatus("Yüklediğin logo seçildi.", Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-LOGO-002",
+                "Branding",
+                "Kullanıcı logosu seçimi kaydedilemedi.",
+                ex);
+            SetSaveStatus("Logo seçimi kaydedilemedi. (MYN-LOGO-002)", Colors.IndianRed);
+        }
+    }
+
+    private void DeleteUserLogo(string path)
+    {
+        if (!IsOwnedUserLogoPath(path, out var safePath))
+        {
+            MessageBox.Show(
+                "Bu dosya kullanıcı tarafından yüklenen logo klasöründe değil. Varsayılan marka görselleri silinemez.",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        var answer = MessageBox.Show(
+            $"“{Path.GetFileName(safePath)}” logosunu silmek istediğine emin misin?",
+            "Kullanıcı logosunu sil",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (answer != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            var settings = _settingsStore.Load();
+            var remaining = GetUserLogoPaths(settings)
+                .Where(existing => !string.Equals(existing, safePath, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            // Only files below the app's user-content logo directory can be removed.
+            File.Delete(safePath);
+            settings.UserLogoPaths = remaining;
+            if (string.Equals(settings.CustomLogoPath, safePath, StringComparison.OrdinalIgnoreCase))
+            {
+                settings.CustomLogoPath = remaining.LastOrDefault();
+                if (string.Equals(settings.LogoPreset, "custom", StringComparison.OrdinalIgnoreCase))
+                    settings.LogoPreset = settings.CustomLogoPath is null ? "kr" : "custom";
+            }
+
+            _settingsStore.Save(settings);
+            UpdateLogoPreview(settings);
+            SetSaveStatus("Yüklediğin logo silindi.", Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-LOGO-003",
+                "Branding",
+                "Kullanıcı logosu silinemedi.",
+                ex);
+            UpdateLogoPreview(_settingsStore.Load());
+            SetSaveStatus("Logo silinemedi. (MYN-LOGO-003)", Colors.IndianRed);
+            MessageBox.Show(
+                "Logo silinemedi. Dosya kullanımda olabilir veya erişim izni olmayabilir.",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     private void SaveLogoPreset(string preset, string message)
@@ -852,6 +1102,9 @@ public partial class SettingsWindow : Window
         {
             var copiedPath = MynAssistantBranding.CopyCustomLogo(dialog.FileName);
             var settings = _settingsStore.Load();
+            settings.UserLogoPaths = GetUserLogoPaths(settings);
+            if (!settings.UserLogoPaths.Contains(copiedPath, StringComparer.OrdinalIgnoreCase))
+                settings.UserLogoPaths.Add(copiedPath);
             settings.LogoPreset = "custom";
             settings.CustomLogoPath = copiedPath;
             _settingsStore.Save(settings);
