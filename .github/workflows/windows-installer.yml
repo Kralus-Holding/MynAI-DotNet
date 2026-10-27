@@ -110,7 +110,7 @@ jobs:
           foreach ($requiredLoginText in @('Content="Google ile giriş yap (Android''de onayla)"', 'x:Name="EmailTextBox"', 'x:Name="PasswordBox"', 'Şifremi unuttum', 'Yeni hesap oluştur')) {
             if (-not $loginXaml.Contains($requiredLoginText)) { throw "Login window is missing required account UI: $requiredLoginText" }
           }
-          foreach ($requiredLoginCode in @("RegisterAsync(", "SignInAsync(", "SendPasswordResetAsync(", "SendEmailVerificationAsync(", "FirebaseDesktopSessionStore.Save(session)", "MYN-AUTH-004", "LogoutDesktopAccount_Click(", "FirebaseDesktopSessionStore.DeleteOrThrow()", "MYN-AUTH-005", "DesktopBridgeStartupManager.SetEnabled(false)", "DesktopBridgeStartupManager.StopAgent()")) {
+          foreach ($requiredLoginCode in @("RegisterAsync(", "SignInAsync(", "SendPasswordResetAsync(", "SendEmailVerificationAsync(", "FirebaseDesktopSessionStore.Save(session)", "MYN-AUTH-006", "LogoutDesktopAccount_Click(", "FirebaseDesktopSessionStore.DeleteOrThrow()", "MYN-AUTH-005", "DesktopBridgeStartupManager.SetEnabled(false)", "DesktopBridgeStartupManager.StopAgent()")) {
             if (-not $loginCode.Contains($requiredLoginCode) -and -not $settingsCode.Contains($requiredLoginCode)) { throw "Login/logout flow is missing required auth behavior: $requiredLoginCode" }
           }
 
