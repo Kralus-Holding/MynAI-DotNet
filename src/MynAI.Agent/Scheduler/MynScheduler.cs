@@ -37,21 +37,26 @@ public sealed class MynScheduler
             await _store.GetAllAsync(
                 cancellationToken);
 
+        // A task found in Executing state survived an Agent/process restart.
+        // Re-queuing it can repeat destructive actions (for example shutdown or
+        // restart) on every boot. Mark it failed and persist that decision instead.
+        foreach (var task in tasks.Where(
+                     x => x.Status == ScheduledTaskStatus.Executing))
+        {
+            task.Status = ScheduledTaskStatus.Failed;
+            await _store.UpdateStatusAsync(
+                task.Id,
+                ScheduledTaskStatus.Failed,
+                cancellationToken);
+            Console.WriteLine(
+                $"[Scheduler] Task {task.Id} was interrupted while executing; " +
+                "marked failed to prevent duplicate execution.");
+        }
+
         lock (_lock)
         {
             _tasks.Clear();
-
-            foreach (var task in tasks)
-            {
-                if (task.Status ==
-                    ScheduledTaskStatus.Executing)
-                {
-                    task.Status =
-                        ScheduledTaskStatus.Pending;
-                }
-
-                _tasks.Add(task);
-            }
+            _tasks.AddRange(tasks);
         }
     }
 
