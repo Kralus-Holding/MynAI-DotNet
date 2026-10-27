@@ -11,6 +11,7 @@ public sealed class FirebaseDesktopSession
     [JsonPropertyName("uid")] public string Uid { get; set; } = "";
     [JsonPropertyName("email")] public string Email { get; set; } = "";
     [JsonPropertyName("displayName")] public string DisplayName { get; set; } = "";
+    [JsonPropertyName("photoUrl")] public string? PhotoUrl { get; set; }
     [JsonPropertyName("refreshToken")] public string RefreshToken { get; set; } = "";
     [JsonPropertyName("idToken")] public string IdToken { get; set; } = "";
     [JsonPropertyName("expiresAt")] public long ExpiresAt { get; set; }
