@@ -572,6 +572,7 @@
                                            Margin="0,18,0,8"/>
                                 <ScrollViewer HorizontalScrollBarVisibility="Auto"
                                               VerticalScrollBarVisibility="Disabled"
+                                              PanningMode="HorizontalOnly"
                                               CanContentScroll="True">
                                     <StackPanel x:Name="UserLogosGalleryPanel"
                                                 Orientation="Horizontal"
