@@ -158,11 +158,23 @@
                             CornerRadius="12"
                             Padding="12"
                             Margin="0,0,0,10">
-                        <TextBlock Text="E-posta/şifre girişi doğrudan bu pencereden yapılır. Android onayı ise telefonda zaten açık olan MynAssistant hesabını bu bilgisayarla eşleştirir; burada ayrı bir Google OAuth JSON dosyası istenmez."
+                        <TextBlock Text="E-posta/şifre ve Google ile giriş ayrı yöntemlerdir. Google girişi masaüstü OAuth istemci JSON'u gerektirir; yalnızca Google OpenID/e-posta/profil kapsamları istenir, Google Kişiler erişimi istenmez. Android onayı, telefonda açık olan MynAssistant hesabını bu bilgisayarla eşleştirir."
                                    FontSize="11"
                                    Foreground="#A9B7CA"
                                    TextWrapping="Wrap"/>
                     </Border>
+
+                    <Button x:Name="GoogleSignInButton"
+                            Content="Google ile giriş yap"
+                            Height="42"
+                            FontSize="13"
+                            FontWeight="SemiBold"
+                            Background="#F3F6FC"
+                            Foreground="#1C2737"
+                            BorderBrush="#D9E1EC"
+                            Cursor="Hand"
+                            Margin="0,0,0,8"
+                            Click="GoogleSignIn_Click"/>
 
                     <Button x:Name="PhoneApprovalButton"
                             Content="Android ile oturum onayı"
