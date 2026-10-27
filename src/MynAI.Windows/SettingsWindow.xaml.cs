@@ -187,8 +187,33 @@ public partial class SettingsWindow : Window
         ErrorLogsNavButton.Tag = "Normal";
         ShortcutNavButton.Tag = "Normal";
 
+        TopGeneralNavButton.Tag = ReferenceEquals(page, GeneralPanel) ? "Active" : "Normal";
+        TopAgentNavButton.Tag = ReferenceEquals(page, AgentPanel) ? "Active" : "Normal";
+        TopAccountNavButton.Tag = ReferenceEquals(page, AccountPanel) ? "Active" : "Normal";
+        TopPrivacyNavButton.Tag = ReferenceEquals(page, PrivacyPanel) ? "Active" : "Normal";
+        TopPluginsNavButton.Tag = ReferenceEquals(page, PluginsPanel) ? "Active" : "Normal";
+        TopStartupNavButton.Tag = ReferenceEquals(page, StartupPanel) ? "Active" : "Normal";
+        TopErrorLogsNavButton.Tag = ReferenceEquals(page, ErrorLogsPanel) ? "Active" : "Normal";
+        TopShortcutNavButton.Tag = ReferenceEquals(page, ShortcutPanel) ? "Active" : "Normal";
+
         selectedButton.Tag = "Active";
         page.Visibility = Visibility.Visible;
+    }
+
+    private void TopNavigationScrollViewer_PreviewMouseWheel(
+        object sender,
+        MouseWheelEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ScrollViewer viewer ||
+            viewer.ScrollableWidth <= 0)
+            return;
+
+        var nextOffset = Math.Clamp(
+            viewer.HorizontalOffset - e.Delta,
+            0,
+            viewer.ScrollableWidth);
+        viewer.ScrollToHorizontalOffset(nextOffset);
+        e.Handled = true;
     }
 
     private void GeneralNav_Click(
