@@ -909,7 +909,7 @@ public partial class SettingsWindow : Window
                 "FirebaseDesktopAuth",
                 "Firebase oturumu Windows kullanıcısının korumalı depolamasına kaydedilemedi.",
                 ex);
-            SetSaveStatus("Oturum güvenli şekilde kaydedilemedi. Önceki oturum korunmaya çalışıldı. (MYN-AUTH-004)", Colors.IndianRed);
+            SetSaveStatus("Oturum güvenli şekilde kaydedilemedi. Önceki oturum korunmaya çalışıldı. (MYN-AUTH-006)", Colors.IndianRed);
             MessageBox.Show(
                 "Firebase oturumu bu Windows kullanıcı profiline güvenli şekilde kaydedilemedi. Önceki oturum silinmedi.",
                 "MynAssistant",
