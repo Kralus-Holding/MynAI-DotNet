@@ -1017,7 +1017,7 @@
                                    FontWeight="SemiBold"
                                    Margin="0,0,0,5"/>
 
-                        <TextBlock Text="Mikrofon ve kamera özelliklerini yönet."
+                        <TextBlock Text="Mikrofon, kamera ve uzaktan PC kontrolü izinlerini yönet."
                                    Foreground="#718096"
                                    FontSize="12"
                                    Margin="0,0,0,18"/>
@@ -1062,6 +1062,23 @@
 
                             </StackPanel>
 
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Uzaktan PC kontrolü"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+
+                                <CheckBox x:Name="RemoteControlCheckBox"
+                                          Content="Telefon ve web panelinden PC kontrolüne izin ver"
+                                          Margin="0,12,0,8"/>
+
+                                <TextBlock Text="Kapalı olduğunda uzaktan komutlar, dosya işlemleri ve ekran önizlemesi çalıştırılmaz. PC bağlantısı çevrimiçi kalabilir."
+                                           Foreground="#718096"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
                         </Border>
 
                     </StackPanel>
