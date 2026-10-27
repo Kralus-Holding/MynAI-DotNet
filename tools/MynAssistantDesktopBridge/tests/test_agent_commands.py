@@ -269,6 +269,37 @@ class SafeFileListingCommandTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "erişim izni yok"):
                     agent.execute_command("list_files", {"path": str(outside)})
 
+    def test_empty_directory_returns_valid_empty_listing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            documents = profile / "Documents"
+            documents.mkdir()
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                payload = json.loads(
+                    agent.execute_command("list_files", {"path": str(documents)})
+                )
+
+        self.assertEqual(payload["entries"], [])
+        self.assertFalse(payload["truncated"])
+        self.assertEqual(payload["currentPath"], str(documents.resolve()))
+
+    def test_large_directory_is_bounded_and_marked_truncated(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            documents = profile / "Documents"
+            documents.mkdir()
+            for index in range(agent.FILE_LIST_MAX_ENTRIES + 40):
+                (documents / f"file-{index:03}.txt").write_text("metadata-only test", encoding="utf-8")
+
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                payload = json.loads(
+                    agent.execute_command("list_files", {"path": str(documents)})
+                )
+
+        self.assertEqual(len(payload["entries"]), agent.FILE_LIST_MAX_ENTRIES)
+        self.assertTrue(payload["truncated"])
+        self.assertTrue(any("bazı öğeler" in warning.lower() for warning in payload["warnings"]))
+
     def test_legacy_text_request_is_routed_to_real_file_listing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             profile = Path(temp_dir)
