@@ -142,6 +142,7 @@ public partial class AccountLoginWindow : Window
     {
         _busy = busy;
         SubmitButton.IsEnabled = !busy;
+        SubmitButton.Content = busy ? "İşleniyor…" : (_registerMode ? "Hesap oluştur" : "Giriş yap");
         RegisterModeButton.IsEnabled = !busy;
         LoginModeButton.IsEnabled = !busy;
         ForgotPasswordButton.IsEnabled = !busy;
