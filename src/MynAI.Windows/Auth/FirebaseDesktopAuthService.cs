@@ -163,11 +163,7 @@ public sealed class FirebaseDesktopAuthService
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
             return document.RootElement.GetProperty("error").GetProperty("message").GetString();
         }
-        catch (JsonException)
-        {
-            return null;
-        }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or KeyNotFoundException)
         {
             return null;
         }
