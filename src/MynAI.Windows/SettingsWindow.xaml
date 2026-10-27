@@ -918,6 +918,33 @@
                         </Border>
 
                         <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Google ile giriş yapılandırması"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="Google ile giriş için Google Cloud Console'dan Desktop app OAuth istemci JSON'u gerekir. Bu dosya yalnızca bu Windows kullanıcısının uygulama verilerine kopyalanır; kaynak koda eklenmez. Google Kişiler izni giriş için istenmez."
+                                           Foreground="#718096"
+                                           FontSize="11"
+                                           Margin="0,6,0,10"
+                                           TextWrapping="Wrap"/>
+                                <WrapPanel VerticalAlignment="Center">
+                                    <Button x:Name="GoogleOAuthConfigButton"
+                                            Content="OAuth istemci JSON'u seç"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="ImportGoogleOAuthConfig_Click"
+                                            Margin="0,0,10,6"/>
+                                    <TextBlock x:Name="GoogleOAuthConfigStatusText"
+                                               Text="Google OAuth yapılandırması kontrol ediliyor..."
+                                               Foreground="#9BA9BB"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,0,6"
+                                               TextWrapping="Wrap"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
 
                             <StackPanel>
 
