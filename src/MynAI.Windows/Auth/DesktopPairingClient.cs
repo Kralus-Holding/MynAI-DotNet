@@ -150,6 +150,7 @@ public sealed class DesktopPairingClient
             string.IsNullOrWhiteSpace(result.PairingId) ||
             string.IsNullOrWhiteSpace(result.PollSecret) ||
             string.IsNullOrWhiteSpace(result.Code) ||
+            string.IsNullOrWhiteSpace(result.QrSignature) ||
             result.ExpiresAtUtc <= DateTimeOffset.UtcNow)
         {
             throw new InvalidDataException(
@@ -281,6 +282,7 @@ public sealed class DesktopPairingStartResponse
     public string Code { get; set; } = "";
     public string MachineName { get; set; } = "";
     public DateTimeOffset ExpiresAtUtc { get; set; }
+    public string QrSignature { get; set; } = "";
 }
 
 public sealed class DesktopPairingPollResponse
