@@ -249,6 +249,7 @@ jobs:
           if (-not $mainCode.Contains('_refreshTasksInProgress') -or -not $mainCode.Contains('"MYN-AGENT-001"')) { throw "Overlapping dashboard refreshes must be prevented and IPC failures logged." }
           $pairingClient = Get-Content -LiteralPath "src/MynAI.Windows/Auth/DesktopPairingClient.cs" -Raw -Encoding UTF8
           if (-not $pairingClient.Contains("HttpStatusCode.NotFound") -or -not $pairingClient.Contains("MYN-SERVER-404")) { throw "A missing live pairing endpoint must have a specific diagnosis." }
+          $settingsText = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml" -Raw -Encoding UTF8
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
           $oauthService = Get-Content -LiteralPath "src/MynAI.Windows/Google/GoogleOAuthService.cs" -Raw -Encoding UTF8
           if (-not $settingsCode.Contains("Google Auth Platform") -or -not $settingsCode.Contains("DesktopPairingClientException")) { throw "OAuth and pairing deployment errors must have actionable diagnostics." }
