@@ -930,7 +930,7 @@ public partial class SettingsWindow : Window
                 "Telefon onay verene kadar bu pencere açık kalmalı.";
             try
             {
-                ShowDesktopPairingQr(pairing.Code, pairing.ExpiresAtUtc);
+                ShowDesktopPairingQr(pairing.Code, pairing.ExpiresAtUtc, pairing.QrSignature);
             }
             catch (Exception qrError)
             {
@@ -1071,17 +1071,22 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private void ShowDesktopPairingQr(string pairingCode, DateTimeOffset expiresAtUtc)
+    private void ShowDesktopPairingQr(
+        string pairingCode,
+        DateTimeOffset expiresAtUtc,
+        string qrSignature)
     {
         var normalizedCode = new string(pairingCode
             .Where(char.IsLetterOrDigit)
             .ToArray())
             .ToUpperInvariant();
-        if (normalizedCode.Length != 10)
-            throw new InvalidDataException("Sunucu 10 karakterli bir eşleştirme kodu döndürmedi.");
+        if (normalizedCode.Length != 10 ||
+            string.IsNullOrWhiteSpace(qrSignature) ||
+            qrSignature.Length != 43)
+            throw new InvalidDataException("Sunucu geçerli bir imzalı eşleştirme QR bilgisi döndürmedi.");
 
-        // QR carries only the short-lived code and expiry hint—never a session token or poll secret.
-        var payload = $"MYNASSISTANT-PAIR:{normalizedCode}:{expiresAtUtc.ToUnixTimeSeconds()}";
+        // QR carries a server-signed short-lived code and expiry only—never a session token or poll secret.
+        var payload = $"MYNASSISTANT-PAIR:{normalizedCode}:{expiresAtUtc.ToUnixTimeSeconds()}:{qrSignature}";
         using var qrData = QRCodeGenerator.GenerateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
         using var pngRenderer = new PngByteQRCode(qrData);
         var pngBytes = pngRenderer.GetGraphic(8);
