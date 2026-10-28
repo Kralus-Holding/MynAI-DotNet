@@ -397,6 +397,30 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (action is ScheduledAction.Shutdown or ScheduledAction.Restart)
+        {
+            var actionText = action == ScheduledAction.Shutdown
+                ? "kapatma"
+                : "yeniden başlatma";
+            var timingText = executeAt <= DateTimeOffset.Now.AddSeconds(2)
+                ? "hemen"
+                : $"{executeAt:dd.MM.yyyy HH:mm} tarihinde";
+
+            var confirmation = MessageBox.Show(
+                $"Bilgisayar için {timingText} {actionText} işlemi planlanacak. " +
+                "Açık çalışmalarınızı kaydettiğinizden emin olun.\n\nDevam edilsin mi?",
+                "MynAssistant — İşlem onayı",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+
+            if (confirmation != MessageBoxResult.Yes)
+            {
+                SetStatus("İşlem kullanıcı tarafından iptal edildi.");
+                return;
+            }
+        }
+
         try
         {
             await _agentClient.CreateScheduledTaskAsync(
