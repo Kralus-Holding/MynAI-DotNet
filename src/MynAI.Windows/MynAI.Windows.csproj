@@ -40,6 +40,7 @@
 
   <ItemGroup>
     <PackageReference Include="Google.Apis.Auth" Version="1.77.0" />
+    <PackageReference Include="QRCoder" Version="1.8.1" />
     <PackageReference Include="Google.Apis.PeopleService.v1" Version="1.74.0.3973" />
   </ItemGroup>
   <ItemGroup>
