@@ -376,7 +376,12 @@ jobs:
           }
           Write-Host "Distribution ZIP: $((Resolve-Path $zipPath).Path)"
           Write-Host "Distribution ZIP size bytes: $($zipInfo.Length)"
-          Write-Host "Distribution ZIP SHA-256: $((Get-FileHash $zipPath -Algorithm SHA256).Hash)"
+          $zipSha256 = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "Distribution ZIP SHA-256: $zipSha256"
+          "$zipSha256  MynAssistant-Windows-Installer.zip" | Set-Content -Path "$zipPath.sha256" -Encoding ascii
+          if (-not (Test-Path "$zipPath.sha256") -or (Get-Item "$zipPath.sha256").Length -lt 80) {
+            throw "Installer checksum sidecar was not generated."
+          }
 
       - name: Upload Windows installer as Actions artifact
         id: upload_installer
@@ -384,7 +389,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: MynAssistant-Windows-Installer
-          path: build/distribution/MynAssistant-Windows-Installer.zip
+          path: |
+            build/distribution/MynAssistant-Windows-Installer.zip
+            build/distribution/MynAssistant-Windows-Installer.zip.sha256
           if-no-files-found: error
           retention-days: 7
 
@@ -433,18 +440,25 @@ jobs:
           } else {
             $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
             foreach ($asset in $assets) {
-              if ($asset.name -eq "MynAssistant-Windows-Installer.zip") {
+              if ($asset.name -in @("MynAssistant-Windows-Installer.zip", "MynAssistant-Windows-Installer.zip.sha256")) {
                 Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
               }
             }
           }
 
           $installerPath = (Resolve-Path "build/distribution/MynAssistant-Windows-Installer.zip").Path
-          $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=MynAssistant-Windows-Installer.zip"
-          $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType "application/octet-stream" -InFile $installerPath
-          if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded") {
-            throw "Distribution ZIP upload could not be verified."
+          $checksumPath = (Resolve-Path "build/distribution/MynAssistant-Windows-Installer.zip.sha256").Path
+          $uploadItems = @(
+            @{ Path = $installerPath; Name = "MynAssistant-Windows-Installer.zip"; ContentType = "application/zip" },
+            @{ Path = $checksumPath; Name = "MynAssistant-Windows-Installer.zip.sha256"; ContentType = "text/plain" }
+          )
+          foreach ($item in $uploadItems) {
+            $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=$($item.Name)"
+            $uploadedAsset = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType $item.ContentType -InFile $item.Path
+            if (-not $uploadedAsset.browser_download_url -or $uploadedAsset.state -ne "uploaded" -or $uploadedAsset.size -le 0) {
+              throw "Release asset upload could not be verified: $($item.Name)"
+            }
+            Write-Host "Verified release asset: $($uploadedAsset.browser_download_url) size=$($uploadedAsset.size)"
           }
 
-          Write-Host "Installer fallback release published: $($release.html_url)"
-          Write-Host "Verified customer ZIP URL: $($uploadedAsset.browser_download_url)"
+          Write-Host "Installer preview release published: $($release.html_url)"
