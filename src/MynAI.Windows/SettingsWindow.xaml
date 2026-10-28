@@ -771,6 +771,25 @@
                                            Foreground="#9DD9D2"
                                            Margin="0,8,0,8"
                                            TextWrapping="Wrap"/>
+                                 <Border x:Name="DesktopPairingQrPanel"
+                                         Visibility="Collapsed"
+                                         Background="#FFFFFF"
+                                         Padding="10"
+                                         CornerRadius="8"
+                                         HorizontalAlignment="Left"
+                                         Margin="0,4,0,8">
+                                     <StackPanel>
+                                         <Image x:Name="DesktopPairingQrImage"
+                                                Width="190"
+                                                Height="190"
+                                                Stretch="Uniform"/>
+                                         <TextBlock Text="Android MynAssistant içinde QR kodunu tara."
+                                                    Foreground="#243244"
+                                                    FontSize="10"
+                                                    TextWrapping="Wrap"
+                                                    Margin="0,6,0,0"/>
+                                     </StackPanel>
+                                 </Border>
                                 <TextBlock x:Name="DesktopPairingStatusText"
                                            Text="Henüz eşleştirme başlatılmadı."
                                            Foreground="#9BA9BB"
