@@ -222,6 +222,39 @@ class RemoteKeyboardCommandTests(unittest.TestCase):
 
 
 class RemoteControlPermissionTests(unittest.TestCase):
+    def test_reenable_timestamp_is_loaded_from_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings_dir = Path(directory) / "MynAI"
+            settings_dir.mkdir()
+            (settings_dir / "settings.json").write_text(
+                json.dumps({
+                    "RemoteControlEnabled": True,
+                    "RemoteControlEnabledAt": "2026-10-27T12:00:00+00:00",
+                }),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(agent.os.environ, {"LOCALAPPDATA": directory}):
+                cutoff = agent.remote_control_reenable_cutoff()
+
+        self.assertEqual(cutoff, datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc))
+
+    def test_commands_queued_before_reenable_are_rejected(self) -> None:
+        cutoff = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
+        self.assertTrue(agent.command_predates_remote_control_reenable(
+            {"createdAt": "2026-10-27T11:59:59Z"}, cutoff
+        ))
+        self.assertFalse(agent.command_predates_remote_control_reenable(
+            {"createdAt": "2026-10-27T12:00:01Z"}, cutoff
+        ))
+
+    def test_missing_command_timestamp_fails_closed_after_reenable(self) -> None:
+        cutoff = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
+        self.assertTrue(agent.command_predates_remote_control_reenable({}, cutoff))
+
+    def test_missing_reenable_cutoff_preserves_legacy_behavior(self) -> None:
+        old_command = {"createdAt": "2020-01-01T00:00:00Z"}
+        self.assertFalse(agent.command_predates_remote_control_reenable(old_command, None))
+
     def test_missing_settings_file_preserves_legacy_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch.dict(agent.os.environ, {"LOCALAPPDATA": directory}):
