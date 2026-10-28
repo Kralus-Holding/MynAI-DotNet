@@ -360,7 +360,7 @@ def fail_pending_commands_when_remote_control_disabled(
 ) -> None:
     """Mark queued work failed while permission is off; never execute it later."""
     try:
-        documents = fetch_owner_commands(session, device_id)
+        documents = fetch_owner_commands(session)
     except Exception as exc:
         print(f"[Permissions] Could not refresh pending commands; Agent continues: {exc}")
         return
@@ -426,33 +426,7 @@ def upload_screen_frame(session: FirebaseSession, device_id: str) -> None:
     )
 
 
-def fetch_owner_commands(session: FirebaseSession, device_id: str | None = None) -> list[dict]:
-    filters = [
-        {
-            "fieldFilter": {
-                "field": {"fieldPath": "ownerId"},
-                "op": "EQUAL",
-                "value": {"stringValue": session.uid},
-            }
-        },
-        {
-            "fieldFilter": {
-                "field": {"fieldPath": "status"},
-                "op": "EQUAL",
-                "value": {"stringValue": "pending"},
-            }
-        },
-    ]
-    # Query by device as well as re-checking the fields before any mutation.
-    # Keeping this optional preserves the helper's compatibility with diagnostics.
-    if device_id:
-        filters.append({
-            "fieldFilter": {
-                "field": {"fieldPath": "deviceId"},
-                "op": "EQUAL",
-                "value": {"stringValue": device_id},
-            }
-        })
+def fetch_owner_commands(session: FirebaseSession) -> list[dict]:
     response = requests.post(
         f"{FIRESTORE}:runQuery",
         headers=session.headers(),
@@ -462,7 +436,22 @@ def fetch_owner_commands(session: FirebaseSession, device_id: str | None = None)
                 "where": {
                     "compositeFilter": {
                         "op": "AND",
-                        "filters": filters,
+                        "filters": [
+                            {
+                                "fieldFilter": {
+                                    "field": {"fieldPath": "ownerId"},
+                                    "op": "EQUAL",
+                                    "value": {"stringValue": session.uid},
+                                }
+                            },
+                            {
+                                "fieldFilter": {
+                                    "field": {"fieldPath": "status"},
+                                    "op": "EQUAL",
+                                    "value": {"stringValue": "pending"},
+                                }
+                            },
+                        ],
                     }
                 },
                 "limit": 100,
@@ -928,7 +917,7 @@ def run_agent() -> int:
 
             if now - last_command_poll >= COMMAND_POLL_SECONDS:
                 permission_reenable_cutoff = remote_control_reenable_cutoff()
-                for document in fetch_owner_commands(session, device_id):
+                for document in fetch_owner_commands(session):
                     fields = decode_document(document)
                     # Defense in depth: query is owner/device-scoped and fields are verified
                     # again before any update or command execution.
