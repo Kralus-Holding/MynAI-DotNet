@@ -250,7 +250,9 @@ jobs:
           $pairingClient = Get-Content -LiteralPath "src/MynAI.Windows/Auth/DesktopPairingClient.cs" -Raw -Encoding UTF8
           if (-not $pairingClient.Contains("HttpStatusCode.NotFound") -or -not $pairingClient.Contains("MYN-SERVER-404")) { throw "A missing live pairing endpoint must have a specific diagnosis." }
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
+          $oauthService = Get-Content -LiteralPath "src/MynAI.Windows/Google/GoogleOAuthService.cs" -Raw -Encoding UTF8
           if (-not $settingsCode.Contains("Google Auth Platform") -or -not $settingsCode.Contains("DesktopPairingClientException")) { throw "OAuth and pairing deployment errors must have actionable diagnostics." }
+          if (-not $oauthService.Contains("new LocalServerCodeReceiver(OAuthCallbackClosePage)") -or -not $oauthService.Contains("Google yanıtı alındı") -or -not $oauthService.Contains("bağlantı sonucunu kontrol ediyor")) { throw "The Google localhost callback page must be localized and must not display raw OAuth response data." }
           if (-not $pairingClient.Contains("currentSessionIdToken") -or -not $pairingClient.Contains('AuthenticationHeaderValue("Bearer", currentSessionIdToken)')) { throw "Normal desktop re-pairing must authenticate the existing Firebase session." }
           if (-not $pairingClient.Contains("GetFreshIdTokenAsync") -or -not $pairingClient.Contains("FirebaseAccountsLookupUrl") -or -not $pairingClient.Contains("resolvedUid, session.Uid")) { throw "Normal re-pairing must refresh the token and verify the UID before sending it." }
           if (-not $pairingClient.Contains("QrSignature") -or -not $settingsCode.Contains("pairing.QrSignature")) { throw "The Windows client must require and display the server-signed QR payload." }
