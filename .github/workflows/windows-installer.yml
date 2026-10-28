@@ -18,7 +18,7 @@ on:
       - ".github/scripts/**"
       - ".github/workflows/windows-installer.yml"
   pull_request:
-    branches: ["main"]
+    branches: ["main", "fix/windows-pcfiles-list-files", "fix/stage1-account-bound-pairing"]
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
@@ -128,6 +128,44 @@ jobs:
           foreach ($processStop in @("StopProcessByName('{#MyAppExeName}')", "StopProcessByName('MynAssistantDesktopBridge.exe')", "StopProcessByName('{#MyAgentExeName}')", "StopProcessByName('MynAI.Agent.exe')")) {
             if (-not $prepareCode.Contains($processStop)) { throw "Installer pre-install process shutdown is missing: $processStop" }
           }
+
+          # Stage 5 regression checks: permissions and one-shot scheduled actions.
+          $schedulerText = Get-Content -LiteralPath "src/MynAI.Agent/Scheduler/MynScheduler.cs" -Raw -Encoding UTF8
+          $pipeText = Get-Content -LiteralPath "src/MynAI.Agent/IPC/AgentPipeServer.cs" -Raw -Encoding UTF8
+          $mainCode = Get-Content -LiteralPath "src/MynAI.Windows/MainWindow.xaml.cs" -Raw -Encoding UTF8
+          $settingsModelText = Get-Content -LiteralPath "src/MynAI.Windows/MynAISettings.cs" -Raw -Encoding UTF8
+          $settingsCodeText = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
+          $bridgeText = Get-Content -LiteralPath "tools/MynAssistantDesktopBridge/agent.py" -Raw -Encoding UTF8
+          $bridgeTests = Get-Content -LiteralPath "tools/MynAssistantDesktopBridge/tests/test_agent_commands.py" -Raw -Encoding UTF8
+
+          if (-not $schedulerText.Contains("marked failed to prevent duplicate execution") -or
+              -not $schedulerText.Contains("ScheduledTaskStatus.Failed")) {
+            throw "Interrupted scheduled actions must be marked failed instead of replayed after Agent restart."
+          }
+          if ($schedulerText -match 'if\s*\(\s*task\.Status\s*==\s*ScheduledTaskStatus\.Executing\s*\)\s*\{\s*task\.Status\s*=\s*ScheduledTaskStatus\.Pending') {
+            throw "Interrupted scheduled actions must not be returned to Pending."
+          }
+          if (-not $pipeText.Contains("PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly")) {
+            throw "Agent IPC must be restricted to the current Windows user."
+          }
+          if (-not $mainCode.Contains("MessageBoxButton.YesNo") -or
+              -not $mainCode.Contains("ScheduledAction.Shutdown or ScheduledAction.Restart")) {
+            throw "Shutdown and restart requests must require explicit user confirmation."
+          }
+          if (-not $settingsModelText.Contains("RemoteControlEnabled") -or
+              -not $settingsModelText.Contains("RemoteControlEnabledAt") -or
+              -not $settingsText.Contains('x:Name="RemoteControlCheckBox"') -or
+              -not $settingsCodeText.Contains("updatedSettings.RemoteControlEnabled = requestedRemoteControlEnabled;") -or
+              -not $settingsCodeText.Contains("updatedSettings.RemoteControlEnabledAt = DateTimeOffset.UtcNow;")) {
+            throw "Remote-control permission and the re-enable cutoff must be visible and persisted from Settings."
+          }
+          foreach ($requiredPermissionGuard in @("def remote_control_enabled()", "def remote_control_reenable_cutoff()", "command_predates_remote_control_reenable", "fail_pending_commands_when_remote_control_disabled", "RemoteControlEnabled", "RemoteControlEnabledAt", "Could not refresh pending commands")) {
+            if (-not $bridgeText.Contains($requiredPermissionGuard)) { throw "Desktop Bridge remote-control guard is missing: $requiredPermissionGuard" }
+          }
+          foreach ($requiredPermissionTest in @("class RemoteControlPermissionTests", "test_explicitly_disabled_remote_control_is_respected", "test_malformed_settings_fail_closed", "test_queue_read_failure_does_not_raise_or_stop_permission_guard", "test_reenable_timestamp_is_loaded_from_settings", "test_commands_queued_before_reenable_are_rejected", "test_missing_command_timestamp_fails_closed_after_reenable")) {
+            if (-not $bridgeTests.Contains($requiredPermissionTest)) { throw "Desktop Bridge permission regression coverage is missing: $requiredPermissionTest" }
+          }
+
 
       - name: Verify WPF window icon loading remains non-fatal
         shell: pwsh
