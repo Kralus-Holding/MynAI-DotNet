@@ -863,29 +863,44 @@ public partial class SettingsWindow : Window
 
     private async void LoginDesktopAccount_Click(object sender, RoutedEventArgs e)
     {
-        await StartDesktopPairingAsync();
+        // This is the explicit account-switch path. The user must confirm before the
+        // existing session is excluded from the new pairing request.
+        await StartDesktopPairingAsync(allowAccountChange: true);
     }
 
     private async void StartDesktopPairing_Click(object sender, RoutedEventArgs e)
     {
-        await StartDesktopPairingAsync();
+        // A normal re-pair must stay bound to the current desktop Firebase UID.
+        await StartDesktopPairingAsync(allowAccountChange: false);
     }
 
-    private async Task StartDesktopPairingAsync()
+    private async Task StartDesktopPairingAsync(bool allowAccountChange)
     {
         if (_pairingCancellation is { IsCancellationRequested: false })
             return;
 
-        if (FirebaseDesktopSessionStore.HasValidStoredSession())
+        var existingSession = FirebaseDesktopSessionStore.Load();
+        if (allowAccountChange && existingSession is not null)
         {
             var answer = MessageBox.Show(
-                "Bu bilgisayarda zaten kayıtlı bir telefon-PC oturumu var. Yeni eşleştirme onaylanırsa bu oturum yeni telefon hesabıyla değiştirilecek. Devam edilsin mi?",
-                "Telefon-PC eşleştirmesini değiştir",
+                $"Bu bilgisayarda zaten {existingSession.Email} hesabına ait bir oturum var. Yeni eşleştirme onaylanırsa bu oturum yeni telefon hesabıyla değiştirilecek. Yalnızca gerçekten hesap değiştirmek istiyorsan devam et.",
+                "Telefon-PC hesabını değiştir",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning,
                 MessageBoxResult.No);
             if (answer != MessageBoxResult.Yes)
                 return;
+        }
+
+        var currentSessionIdToken = allowAccountChange ? null : existingSession?.IdToken;
+        if (!allowAccountChange && existingSession is not null &&
+            string.IsNullOrWhiteSpace(currentSessionIdToken))
+        {
+            DesktopLoginStatusText.Text = "Kayıtlı Windows oturumunun kimlik belirteci eksik.";
+            DesktopPairingStatusText.Text =
+                "Mevcut oturum doğrulanamıyor. Oturumu değiştirmek istiyorsan 'Hesabı değiştir' seçeneğini kullanıp işlemi açıkça onayla.";
+            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            return;
         }
 
         var cancellation = new CancellationTokenSource();
@@ -903,6 +918,7 @@ public partial class SettingsWindow : Window
         {
             var pairing = await _desktopPairingClient.StartAsync(
                 Environment.MachineName,
+                currentSessionIdToken,
                 cancellation.Token);
 
             DesktopPairingCodeText.Text = pairing.Code;
@@ -938,8 +954,10 @@ public partial class SettingsWindow : Window
 
                         UpdateDesktopBridgeStatus();
                         UpdateAccountDesktopBridgeStatus();
+                        var machineName = status.MachineName ?? Environment.MachineName;
+                        var accountLabel = string.IsNullOrWhiteSpace(session.Email) ? "" : $", {session.Email}";
                         DesktopPairingStatusText.Text =
-                            $"Eşleştirme tamamlandı. {status.MachineName ?? Environment.MachineName} telefon hesabına bağlandı.";
+                            $"Eşleştirme tamamlandı. {machineName} bilgisayarı{accountLabel} hesabına bağlandı.";
                         DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightGreen);
                         DesktopPairingCodeText.Visibility = Visibility.Collapsed;
                         SetSaveStatus("Telefon-PC bağlantısı eşleştirildi.", Colors.LightGreen);
@@ -990,7 +1008,9 @@ public partial class SettingsWindow : Window
                 "DesktopBridge",
                 "Telefon-PC eşleştirme API'si hata yanıtı verdi.",
                 ex);
-            DesktopLoginStatusText.Text = $"Giriş yapılamadı: {ex.Message}";
+            DesktopLoginStatusText.Text = FirebaseDesktopSessionStore.HasValidStoredSession()
+                ? "Kayıtlı oturum değişmedi; eşleştirme tamamlanmadı."
+                : $"Giriş yapılamadı: {ex.Message}";
             DesktopPairingStatusText.Text = $"{ex.Message} ({ex.ErrorCode})";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
         }
@@ -998,7 +1018,9 @@ public partial class SettingsWindow : Window
         {
             DiagnosticLogManager.WriteError(
                 "MYN-SERVER-001", "DesktopBridge", "Eşleştirme sunucusuna ulaşılamadı.", ex);
-            DesktopLoginStatusText.Text = "Giriş yapılamadı; sunucuya ulaşılamadı.";
+            DesktopLoginStatusText.Text = FirebaseDesktopSessionStore.HasValidStoredSession()
+                ? "Kayıtlı oturum değişmedi; eşleştirme tamamlanmadı."
+                : "Giriş yapılamadı; sunucuya ulaşılamadı.";
             DesktopPairingStatusText.Text =
                 "Eşleştirme sunucusuna ulaşılamadı. İnternet bağlantısını veya sunucu durumunu kontrol et. (MYN-SERVER-001)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
@@ -1007,7 +1029,9 @@ public partial class SettingsWindow : Window
         {
             DiagnosticLogManager.WriteError(
                 "MYN-SERVER-002", "DesktopBridge", "Eşleştirme isteği zaman aşımına uğradı.", ex);
-            DesktopLoginStatusText.Text = "Giriş yapılamadı; sunucu yanıt vermedi.";
+            DesktopLoginStatusText.Text = FirebaseDesktopSessionStore.HasValidStoredSession()
+                ? "Kayıtlı oturum değişmedi; eşleştirme tamamlanmadı."
+                : "Giriş yapılamadı; sunucu yanıt vermedi.";
             DesktopPairingStatusText.Text =
                 "Sunucu yanıtı zaman aşımına uğradı. Biraz sonra yeniden dene. (MYN-SERVER-002)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
