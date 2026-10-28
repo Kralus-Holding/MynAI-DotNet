@@ -302,6 +302,19 @@ def remote_control_enabled() -> bool:
     return settings.get("RemoteControlEnabled", True) is True
 
 
+def _parse_command_timestamp(value: object) -> datetime | None:
+    """Parse an aware ISO-8601 timestamp and normalize it to UTC."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
 def remote_control_reenable_cutoff() -> datetime | None:
     """Return the latest opt-in timestamp used to reject commands queued before re-enabling."""
     settings_path = (
