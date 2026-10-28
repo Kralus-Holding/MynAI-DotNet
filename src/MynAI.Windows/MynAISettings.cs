@@ -14,6 +14,12 @@ public sealed class MynAISettings
 
     public bool CameraEnabled { get; set; }
 
+    // Preserve existing installations while allowing users to revoke remote-control access.
+    public bool RemoteControlEnabled { get; set; } = true;
+
+    // Commands queued before a fresh opt-in must not execute after permission is re-enabled.
+    public DateTimeOffset? RemoteControlEnabledAt { get; set; }
+
     // "kr" is the first-install default; "app" means the MynAssistant app mark,
     // and "custom" means a private copy stored under LocalAppData.
     public string LogoPreset { get; set; } = "kr";
