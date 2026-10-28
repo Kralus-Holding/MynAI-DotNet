@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using QRCoder;
 using System.Text.RegularExpressions;
 using MynAI.Windows.Google;
 using MynAI.Windows.Auth;
@@ -923,10 +924,24 @@ public partial class SettingsWindow : Window
 
             DesktopPairingCodeText.Text = pairing.Code;
             DesktopPairingCodeText.Visibility = Visibility.Visible;
+            HideDesktopPairingQr();
             DesktopPairingStatusText.Text =
-                $"Android MynAssistant → Ayarlar bölümüne bu kodu gir. " +
+                $"Android MynAssistant → Ayarlar bölümüne bu kodu gir veya QR kodunu tara. " +
                 $"Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}. " +
                 "Telefon onay verene kadar bu pencere açık kalmalı.";
+            try
+            {
+                ShowDesktopPairingQr(pairing.Code, pairing.ExpiresAtUtc);
+            }
+            catch (Exception qrError)
+            {
+                DiagnosticLogManager.WriteError(
+                    "MYN-DEVICE-007",
+                    "DesktopBridge",
+                    "QR kodu oluşturulamadı; tek kullanımlık kodla eşleştirme kullanılabilir.",
+                    qrError);
+                DesktopPairingStatusText.Text += " QR görüntülenemedi; kodu Android'e elle girebilirsin.";
+            }
 
             while (DateTimeOffset.UtcNow < pairing.ExpiresAtUtc)
             {
@@ -1047,6 +1062,7 @@ public partial class SettingsWindow : Window
         }
         finally
         {
+            HideDesktopPairingQr();
             if (ReferenceEquals(_pairingCancellation, cancellation))
                 _pairingCancellation = null;
             cancellation.Dispose();
@@ -1054,6 +1070,39 @@ public partial class SettingsWindow : Window
             GoogleConnectButton.IsEnabled = true;
             CancelDesktopPairingButton.IsEnabled = false;
         }
+    }
+
+    private void ShowDesktopPairingQr(string pairingCode, DateTimeOffset expiresAtUtc)
+    {
+        var normalizedCode = new string(pairingCode
+            .Where(char.IsLetterOrDigit)
+            .ToArray())
+            .ToUpperInvariant();
+        if (normalizedCode.Length != 10)
+            throw new InvalidDataException("Sunucu 10 karakterli bir eşleştirme kodu döndürmedi.");
+
+        // QR carries only the short-lived code and expiry hint—never a session token or poll secret.
+        var payload = $"MYNASSISTANT-PAIR:{normalizedCode}:{expiresAtUtc.ToUnixTimeSeconds()}";
+        using var qrData = QRCodeGenerator.GenerateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
+        using var pngRenderer = new PngByteQRCode(qrData);
+        var pngBytes = pngRenderer.GetGraphic(8);
+
+        using var stream = new MemoryStream(pngBytes);
+        var bitmap = new BitmapImage();
+        bitmap.BeginInit();
+        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+        bitmap.StreamSource = stream;
+        bitmap.EndInit();
+        bitmap.Freeze();
+
+        DesktopPairingQrImage.Source = bitmap;
+        DesktopPairingQrPanel.Visibility = Visibility.Visible;
+    }
+
+    private void HideDesktopPairingQr()
+    {
+        DesktopPairingQrImage.Source = null;
+        DesktopPairingQrPanel.Visibility = Visibility.Collapsed;
     }
 
     private void CancelDesktopPairing_Click(object sender, RoutedEventArgs e)
