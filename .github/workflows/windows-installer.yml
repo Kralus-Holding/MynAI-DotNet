@@ -277,14 +277,16 @@ jobs:
             throw "Shutdown and restart requests must require explicit user confirmation."
           }
           if (-not $settingsModelText.Contains("RemoteControlEnabled") -or
+              -not $settingsModelText.Contains("RemoteControlEnabledAt") -or
               -not $settingsText.Contains('x:Name="RemoteControlCheckBox"') -or
-              -not $settingsCodeText.Contains("updatedSettings.RemoteControlEnabled = RemoteControlCheckBox.IsChecked == true;")) {
-            throw "Remote-control permission must be visible and persisted from Settings."
+              -not $settingsCodeText.Contains("updatedSettings.RemoteControlEnabled = requestedRemoteControlEnabled;") -or
+              -not $settingsCodeText.Contains("updatedSettings.RemoteControlEnabledAt = DateTimeOffset.UtcNow;")) {
+            throw "Remote-control permission and the re-enable cutoff must be visible and persisted from Settings."
           }
-          foreach ($requiredPermissionGuard in @("def remote_control_enabled()", "fail_pending_commands_when_remote_control_disabled", "RemoteControlEnabled", "Could not refresh pending commands")) {
+          foreach ($requiredPermissionGuard in @("def remote_control_enabled()", "def remote_control_reenable_cutoff()", "command_predates_remote_control_reenable", "fail_pending_commands_when_remote_control_disabled", "RemoteControlEnabled", "RemoteControlEnabledAt", "Could not refresh pending commands")) {
             if (-not $bridgeText.Contains($requiredPermissionGuard)) { throw "Desktop Bridge remote-control guard is missing: $requiredPermissionGuard" }
           }
-          foreach ($requiredPermissionTest in @("class RemoteControlPermissionTests", "test_explicitly_disabled_remote_control_is_respected", "test_malformed_settings_fail_closed", "test_queue_read_failure_does_not_raise_or_stop_permission_guard")) {
+          foreach ($requiredPermissionTest in @("class RemoteControlPermissionTests", "test_explicitly_disabled_remote_control_is_respected", "test_malformed_settings_fail_closed", "test_queue_read_failure_does_not_raise_or_stop_permission_guard", "test_reenable_timestamp_is_loaded_from_settings", "test_commands_queued_before_reenable_are_rejected", "test_missing_command_timestamp_fails_closed_after_reenable")) {
             if (-not $bridgeTests.Contains($requiredPermissionTest)) { throw "Desktop Bridge permission regression coverage is missing: $requiredPermissionTest" }
           }
 
