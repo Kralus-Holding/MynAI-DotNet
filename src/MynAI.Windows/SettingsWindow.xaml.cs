@@ -893,23 +893,16 @@ public partial class SettingsWindow : Window
                 return;
         }
 
-        var currentSessionIdToken = allowAccountChange ? null : existingSession?.IdToken;
-        if (!allowAccountChange && existingSession is not null &&
-            string.IsNullOrWhiteSpace(currentSessionIdToken))
-        {
-            DesktopLoginStatusText.Text = "Kayıtlı Windows oturumunun kimlik belirteci eksik.";
-            DesktopPairingStatusText.Text =
-                "Mevcut oturum doğrulanamıyor. Oturumu değiştirmek istiyorsan 'Hesabı değiştir' seçeneğini kullanıp işlemi açıkça onayla.";
-            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
-            return;
-        }
-
         var cancellation = new CancellationTokenSource();
         _pairingCancellation = cancellation;
         StartDesktopPairingButton.IsEnabled = false;
         GoogleConnectButton.IsEnabled = false;
         CancelDesktopPairingButton.IsEnabled = true;
-        DesktopLoginStatusText.Text = "Telefon onayı bekleniyor...";
+        DesktopLoginStatusText.Text = allowAccountChange
+            ? "Telefon onayı bekleniyor..."
+            : existingSession is not null
+                ? "Mevcut Windows oturumu doğrulanıyor..."
+                : "Telefon onayı bekleniyor...";
         DesktopPairingCodeText.Text = "";
         DesktopPairingCodeText.Visibility = Visibility.Collapsed;
         DesktopPairingStatusText.Text = "Sunucudan güvenli eşleştirme kodu alınıyor...";
@@ -917,6 +910,12 @@ public partial class SettingsWindow : Window
 
         try
         {
+            // Refresh locally because Firebase ID tokens expire quickly and the bridge may
+            // persist only the DPAPI-protected refresh token. Bind the new pairing to the
+            // UID resolved from that refreshed token, never to the submitted code itself.
+            var currentSessionIdToken = !allowAccountChange && existingSession is not null
+                ? await _desktopPairingClient.GetFreshIdTokenAsync(existingSession, cancellation.Token)
+                : null;
             var pairing = await _desktopPairingClient.StartAsync(
                 Environment.MachineName,
                 currentSessionIdToken,
