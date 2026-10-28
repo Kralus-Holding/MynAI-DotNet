@@ -1,6 +1,7 @@
 using System.Net;
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 
@@ -20,16 +21,22 @@ public sealed class DesktopPairingClient
 
     public async Task<DesktopPairingStartResponse> StartAsync(
         string machineName,
+        string? currentSessionIdToken,
         CancellationToken cancellationToken = default)
     {
-        var request = new DesktopPairingStartRequest(
+        var payload = new DesktopPairingStartRequest(
             string.IsNullOrWhiteSpace(machineName) ? "Windows bilgisayarı" : machineName.Trim());
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{ServerBaseUrl}/api/v1/desktop/pairing/start")
+        {
+            Content = JsonContent.Create(payload, options: JsonOptions)
+        };
 
-        using var response = await Http.PostAsJsonAsync(
-            $"{ServerBaseUrl}/api/v1/desktop/pairing/start",
-            request,
-            JsonOptions,
-            cancellationToken);
+        if (!string.IsNullOrWhiteSpace(currentSessionIdToken))
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", currentSessionIdToken);
+
+        using var response = await Http.SendAsync(request, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
             throw await CreateSafeExceptionAsync(response, cancellationToken);
