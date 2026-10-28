@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "fix/stage1-account-bound-pairing"]
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
@@ -337,8 +337,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publish installer to GitHub Releases if Actions storage is unavailable
-        if: github.event_name != 'pull_request' && steps.upload_installer.outcome == 'failure'
+      - name: Publish installer preview to GitHub Releases
+        if: github.event_name != 'pull_request' && (steps.upload_installer.outcome == 'failure' || github.ref == 'refs/heads/fix/stage1-account-bound-pairing')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -374,7 +374,7 @@ jobs:
               tag_name = $tag
               target_commitish = $env:GH_SHA
               name = "MynAssistant Windows Installer Preview (build $env:GH_RUN_NUMBER)"
-              body = "Automated preview installer for commit $env:GH_SHA. The installer was built and validated by GitHub Actions. This prerelease is published as a fallback because Actions artifact storage was unavailable."
+              body = "Automated Stage 1 preview installer for commit $env:GH_SHA. The Windows .NET build, installer compilation, and validation completed in GitHub Actions. This prerelease is provided for direct testing without merging the feature branch into main; it is not a production release."
               draft = $false
               prerelease = $true
             } | ConvertTo-Json -Depth 5
