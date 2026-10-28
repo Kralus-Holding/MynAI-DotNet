@@ -8,7 +8,7 @@ concurrency:
 
 on:
   push:
-    branches: ["main", "fix/stage1-account-bound-pairing", "feature/stage5-remote-control-safety-integrated"]
+    branches: ["main", "fix/stage1-account-bound-pairing"]
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
