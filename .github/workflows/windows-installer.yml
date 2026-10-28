@@ -251,6 +251,9 @@ jobs:
           if (-not $pairingClient.Contains("HttpStatusCode.NotFound") -or -not $pairingClient.Contains("MYN-SERVER-404")) { throw "A missing live pairing endpoint must have a specific diagnosis." }
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
           if (-not $settingsCode.Contains("Google Auth Platform") -or -not $settingsCode.Contains("DesktopPairingClientException")) { throw "OAuth and pairing deployment errors must have actionable diagnostics." }
+          if (-not $pairingClient.Contains("currentSessionIdToken") -or -not $pairingClient.Contains('AuthenticationHeaderValue("Bearer", currentSessionIdToken)')) { throw "Normal desktop re-pairing must authenticate the existing Firebase session." }
+          if (-not $settingsCode.Contains("allowAccountChange: true") -or -not $settingsCode.Contains("allowAccountChange: false") -or -not $settingsCode.Contains("allowAccountChange ? null : existingSession?.IdToken")) { throw "Account switching must be explicit and normal pairing must stay bound to the current account." }
+          if (-not $settingsCode.Contains("currentSessionIdToken,") -or -not $settingsCode.Contains("Kayıtlı oturum değişmedi; eşleştirme tamamlanmadı.")) { throw "Failed pairing must preserve and correctly describe the existing desktop session." }
           if (-not $settingsCode.Contains('if (!hotkeyApplied)') -or -not $settingsCode.Contains('_settingsStore.Save(originalSettings)') -or -not $settingsCode.Contains('"MYN-SETTINGS-001"')) { throw "Settings save must validate hotkeys, attempt rollback, and record save failures." }
           if (-not $settingsCode.Contains('UpdateAccountDesktopBridgeStatus') -or -not $settingsCode.Contains('HTTP 404 görülürse Render')) { throw "Account status must explain how to begin pairing and recover from an undeployed server API." }
           $compilerCandidates = @(
