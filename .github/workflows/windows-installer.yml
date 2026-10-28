@@ -135,6 +135,7 @@ jobs:
           $mainCode = Get-Content -LiteralPath "src/MynAI.Windows/MainWindow.xaml.cs" -Raw -Encoding UTF8
           $settingsModelText = Get-Content -LiteralPath "src/MynAI.Windows/MynAISettings.cs" -Raw -Encoding UTF8
           $settingsCodeText = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
+          $settingsText = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml" -Raw -Encoding UTF8
           $bridgeText = Get-Content -LiteralPath "tools/MynAssistantDesktopBridge/agent.py" -Raw -Encoding UTF8
           $bridgeTests = Get-Content -LiteralPath "tools/MynAssistantDesktopBridge/tests/test_agent_commands.py" -Raw -Encoding UTF8
 
