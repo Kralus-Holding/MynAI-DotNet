@@ -368,12 +368,35 @@ jobs:
             "",
             "Not: Kuruluşunuz Windows Application Control politikasını kullanıyorsa imzasız dosyalar engellenebilir. Güvenlik politikasını kapatmayın; yayıncı imzası/Code Integrity günlükleri yöneticiniz tarafından doğrulanmalıdır."
           ) | Set-Content -Path "$distributionDir/README-Kurulum.txt" -Encoding UTF8
+          $setupPath = "$distributionDir/MynAssistant-Setup.exe"
+          $setupChecksumPath = "$distributionDir/MynAssistant-Setup.exe.sha256"
+          "$($installerSha256.ToLowerInvariant())  MynAssistant-Setup.exe" | Set-Content -Path $setupChecksumPath -Encoding ascii
+          if (-not (Test-Path $setupPath) -or (Get-FileHash $setupPath -Algorithm SHA256).Hash -ne $installerSha256) {
+            throw "Direct installer copy is missing or differs from the compiled Setup.exe."
+          }
+          
           $zipPath = "build/distribution/MynAssistant-Windows-Installer.zip"
           Compress-Archive -Path "$distributionDir/*" -DestinationPath $zipPath -Force
           $zipInfo = Get-Item $zipPath
           if ($zipInfo.Length -lt 50MB) {
             throw "Distribution ZIP is unexpectedly small; installer may be missing."
           }
+          
+          # Verify the exact customer ZIP by extracting it and checking the embedded executable.
+          $verifyDir = "build/distribution/extraction-smoke"
+          if (Test-Path $verifyDir) { Remove-Item -LiteralPath $verifyDir -Recurse -Force }
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $verifyDir -Force
+          $extractedSetup = Join-Path $verifyDir "MynAssistant-Setup.exe"
+          $extractedReadme = Join-Path $verifyDir "README-Kurulum.txt"
+          if (-not (Test-Path $extractedSetup) -or -not (Test-Path $extractedReadme)) {
+            throw "Installer ZIP extraction did not produce both Setup.exe and README-Kurulum.txt."
+          }
+          $extractedSha256 = (Get-FileHash $extractedSetup -Algorithm SHA256).Hash
+          if ($extractedSha256 -ne $installerSha256) {
+            throw "Extracted Setup.exe hash does not match the compiled installer."
+          }
+          Write-Host "ZIP extraction smoke test: passed; Setup.exe SHA-256 matches."
+          
           Write-Host "Distribution ZIP: $((Resolve-Path $zipPath).Path)"
           Write-Host "Distribution ZIP size bytes: $($zipInfo.Length)"
           $zipSha256 = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -382,7 +405,6 @@ jobs:
           if (-not (Test-Path "$zipPath.sha256") -or (Get-Item "$zipPath.sha256").Length -lt 80) {
             throw "Installer checksum sidecar was not generated."
           }
-
       - name: Upload Windows installer as Actions artifact
         id: upload_installer
         continue-on-error: true
@@ -392,6 +414,8 @@ jobs:
           path: |
             build/distribution/MynAssistant-Windows-Installer.zip
             build/distribution/MynAssistant-Windows-Installer.zip.sha256
+            build/distribution/MynAssistant-Windows-Installer/MynAssistant-Setup.exe
+            build/distribution/MynAssistant-Windows-Installer/MynAssistant-Setup.exe.sha256
           if-no-files-found: error
           retention-days: 7
 
@@ -440,7 +464,7 @@ jobs:
           } else {
             $assets = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)/assets?per_page=100" -Headers $headers
             foreach ($asset in $assets) {
-              if ($asset.name -in @("MynAssistant-Windows-Installer.zip", "MynAssistant-Windows-Installer.zip.sha256")) {
+              if ($asset.name -in @("MynAssistant-Windows-Installer.zip", "MynAssistant-Windows-Installer.zip.sha256", "MynAssistant-Setup.exe", "MynAssistant-Setup.exe.sha256")) {
                 Invoke-RestMethod -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers | Out-Null
               }
             }
@@ -448,9 +472,13 @@ jobs:
 
           $installerPath = (Resolve-Path "build/distribution/MynAssistant-Windows-Installer.zip").Path
           $checksumPath = (Resolve-Path "build/distribution/MynAssistant-Windows-Installer.zip.sha256").Path
+          $setupPath = (Resolve-Path "build/distribution/MynAssistant-Windows-Installer/MynAssistant-Setup.exe").Path
+          $setupChecksumPath = (Resolve-Path "build/distribution/MynAssistant-Windows-Installer/MynAssistant-Setup.exe.sha256").Path
           $uploadItems = @(
             @{ Path = $installerPath; Name = "MynAssistant-Windows-Installer.zip"; ContentType = "application/zip" },
-            @{ Path = $checksumPath; Name = "MynAssistant-Windows-Installer.zip.sha256"; ContentType = "text/plain" }
+            @{ Path = $checksumPath; Name = "MynAssistant-Windows-Installer.zip.sha256"; ContentType = "text/plain" },
+            @{ Path = $setupPath; Name = "MynAssistant-Setup.exe"; ContentType = "application/vnd.microsoft.portable-executable" },
+            @{ Path = $setupChecksumPath; Name = "MynAssistant-Setup.exe.sha256"; ContentType = "text/plain" }
           )
           foreach ($item in $uploadItems) {
             $uploadUri = "https://uploads.github.com/repos/$env:GH_REPOSITORY/releases/$($release.id)/assets?name=$($item.Name)"
