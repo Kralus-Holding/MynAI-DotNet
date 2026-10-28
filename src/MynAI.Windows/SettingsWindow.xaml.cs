@@ -1360,22 +1360,29 @@ public partial class SettingsWindow : Window
             GoogleContactsConnectButton.Content = "Kişileri bağla";
 
             var details = ex.ToString();
-            var accessDenied = details.Contains("access_denied", StringComparison.OrdinalIgnoreCase)
-                || details.Contains("403", StringComparison.OrdinalIgnoreCase)
-                || details.Contains("test users", StringComparison.OrdinalIgnoreCase)
+            var testUserPolicy = details.Contains("test users", StringComparison.OrdinalIgnoreCase)
+                || details.Contains("test user", StringComparison.OrdinalIgnoreCase)
                 || details.Contains("test kullanıcı", StringComparison.OrdinalIgnoreCase);
+            var accessDenied = testUserPolicy
+                || details.Contains("access_denied", StringComparison.OrdinalIgnoreCase)
+                || details.Contains("403", StringComparison.OrdinalIgnoreCase);
             var errorCode = accessDenied ? "MYN-OAUTH-403" : "MYN-OAUTH-001";
             DiagnosticLogManager.WriteError(
                 errorCode,
                 "GoogleOAuth",
-                accessDenied
-                    ? "Google OAuth erişimi reddedildi; OAuth test kullanıcısı ayarı kontrol edilmeli."
-                    : "Google Kişiler için OAuth bağlantısı başarısız.",
+                testUserPolicy
+                    ? "Google OAuth yanıtı test kullanıcısı kısıtlamasına işaret ediyor."
+                    : accessDenied
+                        ? "Google OAuth erişimi reddedildi; kaynak ayar kesinleşmedi."
+                        : "Google Kişiler için OAuth bağlantısı başarısız.",
                 ex);
 
-            var explanation = accessDenied
-                ? "Google OAuth erişimi 403 access_denied ile reddedildi. Google Cloud Console → Google Auth Platform → Audience → Test users bölümüne bu Google hesabını ekleyin; alternatif olarak OAuth uygulamasını uygun şekilde yayımlayıp gerekiyorsa doğrulayın. Bu izin Google Console ayarıdır ve uygulamayı yeniden derlemek tek başına sorunu çözmez. Telefon-PC eşleştirmesi için Google Kişiler bağlantısı gerekli değildir."
-                : ex.Message;
+            var explanation = testUserPolicy
+                ? "Google OAuth yanıtı test kullanıcısı kısıtlamasına işaret ediyor. Google Cloud Console → Google Auth Platform → Audience bölümünde yayın durumunu ve Test users listesini kontrol et. Bu adımı yalnızca uygulama Testing durumundaysa uygula. Uygulamayı yeniden derlemek tek başına Console izinlerini değiştirmez."
+                : accessDenied
+                    ? "Google, isteğe bağlı Google Kişiler bağlantısını reddetti (403/access_denied). Bu hata tek başına hangi Console ayarının sorumlu olduğunu kanıtlamaz. Google Cloud Console'da OAuth Audience/yayın durumu, uygulama Testing durumundaysa Test users listesi, People API etkinliği ve istenen kapsamları kontrol et."
+                    : "Google Kişiler bağlantısı tamamlanamadı. Google hesabı izinlerini ve internet bağlantısını kontrol edip tekrar dene.";
+            explanation += " Telefon-PC eşleştirmesi için Google Kişiler bağlantısı gerekli değildir.";
 
             MessageBox.Show(
                 $"Google Kişiler bağlantısı başarısız:\n\n{explanation}",
