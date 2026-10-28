@@ -1076,17 +1076,12 @@ public partial class SettingsWindow : Window
         DateTimeOffset expiresAtUtc,
         string qrSignature)
     {
-        var normalizedCode = new string(pairingCode
-            .Where(char.IsLetterOrDigit)
-            .ToArray())
-            .ToUpperInvariant();
-        if (normalizedCode.Length != 10 ||
-            string.IsNullOrWhiteSpace(qrSignature) ||
-            qrSignature.Length != 43)
-            throw new InvalidDataException("Sunucu geçerli bir imzalı eşleştirme QR bilgisi döndürmedi.");
-
-        // QR carries a server-signed short-lived code and expiry only—never a session token or poll secret.
-        var payload = $"MYNASSISTANT-PAIR:{normalizedCode}:{expiresAtUtc.ToUnixTimeSeconds()}:{qrSignature}";
+        // The payload shape is shared with Android's QR parser. The server alone
+        // verifies the HMAC and expiry when the user confirms pairing.
+        var payload = DesktopPairingQrPayload.Build(
+            pairingCode,
+            expiresAtUtc.ToUnixTimeSeconds(),
+            qrSignature);
         using var qrData = QRCodeGenerator.GenerateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
         using var pngRenderer = new PngByteQRCode(qrData);
         var pngBytes = pngRenderer.GetGraphic(8);
