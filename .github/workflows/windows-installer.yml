@@ -12,6 +12,7 @@ on:
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
+      - "tools/DesktopPairingContractSmoke/**"
       - "installer/**"
       - "assets/branding/**"
       - ".github/scripts/**"
@@ -21,6 +22,7 @@ on:
     paths:
       - "src/**"
       - "tools/MynAssistantDesktopBridge/**"
+      - "tools/DesktopPairingContractSmoke/**"
       - "installer/**"
       - "assets/branding/**"
       - ".github/scripts/**"
@@ -167,6 +169,10 @@ jobs:
           dotnet restore MynAI.slnx
           dotnet build MynAI.slnx --configuration Release --no-restore
 
+      - name: Test Windows/Android pairing QR contract
+        shell: pwsh
+        run: dotnet run --project tools/DesktopPairingContractSmoke/DesktopPairingContractSmoke.csproj --configuration Release
+
       - name: Publish MynAssistant Windows application
         shell: pwsh
         run: |
@@ -262,7 +268,11 @@ jobs:
           if (-not $settingsCode.Contains("allowAccountChange: true") -or -not $settingsCode.Contains("allowAccountChange: false") -or -not $settingsCode.Contains("GetFreshIdTokenAsync(existingSession")) { throw "Account switching must be explicit and normal pairing must refresh the current session." }
           if (-not $settingsCode.Contains("currentSessionIdToken,") -or -not $settingsCode.Contains("Kayıtlı oturum değişmedi; eşleştirme tamamlanmadı.")) { throw "Failed pairing must preserve and correctly describe the existing desktop session." }
           if (-not $settingsText.Contains("DesktopPairingQrPanel") -or -not $settingsText.Contains("DesktopPairingQrImage") -or -not (Select-String -Path "src/MynAI.Windows/MynAI.Windows.csproj" -Pattern '<PackageReference Include="QRCoder" Version="1.8.1"' -Quiet)) { throw "Windows must display the short-lived pairing QR as well as the manual code." }
-          if (-not (Select-String -Path "src/MynAI.Windows/SettingsWindow.xaml.cs" -Pattern 'MYNASSISTANT-PAIR:' -Quiet)) { throw "QR payload must use the expected MynAssistant pairing marker." }
+          $qrPayloadCode = Get-Content -LiteralPath "src/MynAI.Windows/Auth/DesktopPairingQrPayload.cs" -Raw -Encoding UTF8
+          if (-not $settingsCode.Contains("DesktopPairingQrPayload.Build(")) { throw "Windows QR generation must use the validated payload builder." }
+          foreach ($requiredQrContract in @('private const string Marker = "MYNASSISTANT-PAIR";', 'private const string CodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";', 'normalizedCode.Length != 10', 'expiresAtUnix <= 0', 'signature.Length != 43')) {
+            if (-not $qrPayloadCode.Contains($requiredQrContract)) { throw "Windows QR payload contract guard is missing: $requiredQrContract" }
+          }
           if (-not $settingsCode.Contains('if (!hotkeyApplied)') -or -not $settingsCode.Contains('_settingsStore.Save(originalSettings)') -or -not $settingsCode.Contains('"MYN-SETTINGS-001"')) { throw "Settings save must validate hotkeys, attempt rollback, and record save failures." }
           if (-not $settingsCode.Contains('UpdateAccountDesktopBridgeStatus') -or -not $settingsCode.Contains('HTTP 404 görülürse Render')) { throw "Account status must explain how to begin pairing and recover from an undeployed server API." }
           $compilerCandidates = @(
