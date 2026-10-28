@@ -308,6 +308,47 @@ def remote_control_enabled() -> bool:
     return settings.get("RemoteControlEnabled", True) is True
 
 
+def remote_control_reenable_cutoff() -> datetime | None:
+    """Return the latest opt-in timestamp used to reject commands queued before re-enabling."""
+    settings_path = (
+        Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+        / "MynAI"
+        / "settings.json"
+    )
+    if not settings_path.exists():
+        return None
+
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        return None
+    except Exception as exc:
+        print(f"[Permissions] Could not read permission timestamp; stale commands will be blocked: {exc}")
+        return datetime.max.replace(tzinfo=timezone.utc)
+
+    if not isinstance(settings, dict):
+        return datetime.max.replace(tzinfo=timezone.utc)
+
+    value = settings.get("RemoteControlEnabledAt")
+    if value is None:
+        return None
+
+    cutoff = _parse_command_timestamp(value)
+    # A present but invalid timestamp must fail closed rather than replay old work.
+    return cutoff or datetime.max.replace(tzinfo=timezone.utc)
+
+
+def command_predates_remote_control_reenable(
+    fields: dict,
+    cutoff: datetime | None,
+) -> bool:
+    if cutoff is None:
+        return False
+
+    created_at = _parse_command_timestamp(fields.get("createdAt"))
+    return created_at is None or created_at < cutoff
+
+
 def fail_pending_commands_when_remote_control_disabled(
     session: FirebaseSession,
     device_id: str,
@@ -1341,6 +1382,7 @@ def run_agent() -> int:
                     last_screen_frame = now
 
             if now - last_command_poll >= COMMAND_POLL_SECONDS:
+                permission_reenable_cutoff = remote_control_reenable_cutoff()
                 for document in fetch_owner_commands(session, device_id):
                     fields = decode_document(document)
                     if fields.get("deviceId") != device_id or fields.get("status") != "pending":
@@ -1357,6 +1399,18 @@ def run_agent() -> int:
                             )
                         except Exception as expiry_error:
                             print(f"[Komut] Süresi dolmuş komutun durumu güncellenemedi; çalıştırılmadı: {expiry_error}")
+                        continue
+                    if command_predates_remote_control_reenable(fields, permission_reenable_cutoff):
+                        try:
+                            update_command(
+                                session,
+                                document,
+                                "failed",
+                                "Command was queued before remote-control permission was re-enabled; it was not executed.",
+                                expected_update_time=document.get("updateTime"),
+                            )
+                        except Exception as permission_error:
+                            print(f"[Permissions] Could not fail pre-reenable command: {permission_error}")
                         continue
                     command = str(fields.get("command") or "")
                     if not command_is_supported(command):
