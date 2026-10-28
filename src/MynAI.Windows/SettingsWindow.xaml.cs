@@ -110,6 +110,9 @@ public partial class SettingsWindow : Window
         CameraCheckBox.IsChecked =
             settings.CameraEnabled;
 
+        RemoteControlCheckBox.IsChecked =
+            settings.RemoteControlEnabled;
+
         HotkeyTextBox.Text =
             settings.BringToFrontHotkey;
 
@@ -1915,6 +1918,12 @@ public partial class SettingsWindow : Window
         updatedSettings.WindowsNotifications = NotificationsCheckBox.IsChecked == true;
         updatedSettings.MicrophoneEnabled = MicrophoneCheckBox.IsChecked == true;
         updatedSettings.CameraEnabled = CameraCheckBox.IsChecked == true;
+        var requestedRemoteControlEnabled = RemoteControlCheckBox.IsChecked == true;
+        if (!originalSettings.RemoteControlEnabled && requestedRemoteControlEnabled)
+        {
+            updatedSettings.RemoteControlEnabledAt = DateTimeOffset.UtcNow;
+        }
+        updatedSettings.RemoteControlEnabled = requestedRemoteControlEnabled;
         updatedSettings.BringToFrontHotkey = HotkeyTextBox.Text.Trim();
 
         // Validate/apply the new hotkey before writing settings. Apply unregisters
