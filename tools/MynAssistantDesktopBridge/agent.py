@@ -365,6 +365,19 @@ def fetch_owner_commands(session: FirebaseSession) -> list[dict]:
     return documents
 
 
+def command_targets_device(fields: dict, owner_uid: str, device_id: str) -> bool:
+    """Require an exact owner, exact target device, and pending state before any command mutation."""
+    return (
+        isinstance(owner_uid, str)
+        and bool(owner_uid)
+        and isinstance(device_id, str)
+        and bool(device_id)
+        and fields.get("ownerId") == owner_uid
+        and fields.get("deviceId") == device_id
+        and fields.get("status") == "pending"
+    )
+
+
 def update_command(
     session: FirebaseSession,
     document: dict,
@@ -758,7 +771,9 @@ def run_agent() -> int:
             if now - last_command_poll >= COMMAND_POLL_SECONDS:
                 for document in fetch_owner_commands(session):
                     fields = decode_document(document)
-                    if fields.get("deviceId") != device_id or fields.get("status") != "pending":
+                    # Defense in depth: the query is owner-scoped, and we independently
+                    # verify owner + exact device + pending state before any mutation.
+                    if not command_targets_device(fields, session.uid, device_id):
                         continue
                     command = str(fields.get("command") or "")
                     if not command_is_supported(command):
