@@ -291,9 +291,9 @@ class RemoteKeyboardCommandTests(unittest.TestCase):
 
 
 class RemoteControlPermissionTests(unittest.TestCase):
-    def test_command_query_is_scoped_to_owner_status_and_target_device(self) -> None:
+    def test_command_query_remains_scoped_to_owner_and_pending_status(self) -> None:
         with mock.patch.object(agent.requests, "post", return_value=FakeResponse(200, [])) as post:
-            self.assertEqual(agent.fetch_owner_commands(FakeSession(), "win-test"), [])
+            self.assertEqual(agent.fetch_owner_commands(FakeSession()), [])
         query = post.call_args.kwargs["json"]["structuredQuery"]
         filters = query["where"]["compositeFilter"]["filters"]
         actual = {
@@ -303,7 +303,6 @@ class RemoteControlPermissionTests(unittest.TestCase):
         self.assertEqual(actual, {
             "ownerId": "test-user",
             "status": "pending",
-            "deviceId": "win-test",
         })
 
     def test_reenable_timestamp_is_loaded_from_settings(self) -> None:
