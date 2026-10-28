@@ -17,6 +17,9 @@ public sealed class MynAISettings
     // Defaults to enabled to preserve existing paired-PC behavior; users can revoke it in Settings.
     public bool RemoteControlEnabled { get; set; } = true;
 
+    // Timestamp of the most recent opt-in transition; commands queued before it stay stale.
+    public DateTimeOffset? RemoteControlEnabledAt { get; set; }
+
     // "kr" is the first-install default; "app" means the MynAssistant app mark,
     // and "custom" means a private copy stored under LocalAppData.
     public string LogoPreset { get; set; } = "kr";
