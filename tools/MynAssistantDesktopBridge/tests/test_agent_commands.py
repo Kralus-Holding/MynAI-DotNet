@@ -62,6 +62,76 @@ class FakeScreenshotImage:
         output.write(b"x" * self.sizes_by_quality[quality])
 
 
+
+class CommandTargetRoutingTests(unittest.TestCase):
+    def test_accepts_only_pending_command_for_same_owner_and_device(self) -> None:
+        fields = {
+            "ownerId": "test-user",
+            "deviceId": "win-test",
+            "status": "pending",
+        }
+        self.assertTrue(agent.command_targets_device(fields, "test-user", "win-test"))
+
+    def test_rejects_command_for_another_windows_device(self) -> None:
+        fields = {
+            "ownerId": "test-user",
+            "deviceId": "win-other",
+            "status": "pending",
+        }
+        self.assertFalse(agent.command_targets_device(fields, "test-user", "win-test"))
+
+    def test_rejects_command_owned_by_another_user_even_if_device_id_matches(self) -> None:
+        fields = {
+            "ownerId": "other-user",
+            "deviceId": "win-test",
+            "status": "pending",
+        }
+        self.assertFalse(agent.command_targets_device(fields, "test-user", "win-test"))
+
+    def test_rejects_cancelled_running_completed_or_missing_status(self) -> None:
+        for status in ("cancelled", "running", "completed", "failed", ""):
+            with self.subTest(status=status):
+                fields = {"ownerId": "test-user", "deviceId": "win-test", "status": status}
+                self.assertFalse(agent.command_targets_device(fields, "test-user", "win-test"))
+
+    def test_rejects_missing_owner_or_target_fields(self) -> None:
+        self.assertFalse(agent.command_targets_device({"deviceId": "win-test", "status": "pending"}, "test-user", "win-test"))
+        self.assertFalse(agent.command_targets_device({"ownerId": "test-user", "status": "pending"}, "test-user", "win-test"))
+
+
+class DeviceRegistrationContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.session = FakeSession()
+
+    def test_initial_registration_uses_shared_android_device_schema(self) -> None:
+        with mock.patch.object(agent.platform, "node", return_value="CI-Windows"), mock.patch.object(
+            agent.requests, "patch", return_value=FakeResponse(200, {})
+        ) as patch:
+            agent.register_or_heartbeat(self.session, "win-test-device", initial=True)
+
+        self.assertIn("/devices/win-test-device", patch.call_args.args[0])
+        body = patch.call_args.kwargs["json"]["fields"]
+        self.assertEqual(body["ownerId"]["stringValue"], "test-user")
+        self.assertEqual(body["platform"]["stringValue"], "Windows")
+        self.assertEqual(body["type"]["stringValue"], "Windows")
+        self.assertEqual(body["connectionMode"]["stringValue"], "firebase-agent")
+        self.assertEqual(body["status"]["stringValue"], "online")
+        self.assertEqual(body["name"]["stringValue"], "CI-Windows")
+        self.assertEqual(body["screenRequested"]["booleanValue"], False)
+        self.assertTrue(body["lastSeenAt"]["timestampValue"])
+
+    def test_heartbeat_only_updates_presence_and_preserves_registration_identity(self) -> None:
+        with mock.patch.object(agent, "firestore_patch") as patch:
+            agent.register_or_heartbeat(self.session, "win-test-device", initial=False)
+
+        patch.assert_called_once()
+        self.assertEqual(patch.call_args.args[1], "devices/win-test-device")
+        fields = patch.call_args.args[2]
+        self.assertEqual(set(fields), {"status", "lastSeenAt"})
+        self.assertEqual(fields["status"]["stringValue"], "online")
+        self.assertEqual(patch.call_args.kwargs["update_mask"], ["status", "lastSeenAt"])
+
+
 class AtomicCommandClaimTests(unittest.TestCase):
     def setUp(self) -> None:
         self.session = FakeSession()
