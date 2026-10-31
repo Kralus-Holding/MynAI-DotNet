@@ -189,6 +189,7 @@ jobs:
           $loginXaml = Get-Content -LiteralPath $loginXamlPath -Raw -Encoding UTF8
           $loginCode = Get-Content -LiteralPath $loginCodePath -Raw -Encoding UTF8
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
+          $loginCode = Get-Content -LiteralPath "src/MynAI.Windows/AccountLoginWindow.xaml.cs" -Raw -Encoding UTF8
           if (-not $settingsCode.Contains("new AccountLoginWindow")) { throw "The account entry point must open the standalone login window." }
           if ($settingsText.Contains("TopNavigationScrollViewer") -or $settingsText.Contains("TopGeneralNavButton") -or $settingsText.Contains("TopAgentNavButton")) {
             throw "Settings must use the left sidebar as its only navigation; the top horizontal tabs must be removed."
