@@ -30,8 +30,8 @@ IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1"
 SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token"
 FIRESTORE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents"
 AGENT_VERSION = "0.2.2"
-POLL_SECONDS = 2.0
-COMMAND_POLL_SECONDS = 2.0
+POLL_SECONDS = 0.5
+COMMAND_POLL_SECONDS = 1.0
 SCREEN_CHECK_SECONDS = 8.0
 SCREEN_FRAME_SECONDS = 1.5
 SCREEN_REQUEST_MAX_AGE_SECONDS = 25.0
@@ -47,6 +47,8 @@ STATUS_FILE = APP_DATA / "status.json"
 VK_VOLUME_MUTE = 0xAD
 VK_VOLUME_DOWN = 0xAE
 VK_VOLUME_UP = 0xAF
+WM_CLOSE = 0x0010
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 KEYEVENTF_KEYUP = 0x0002
 
 
@@ -835,10 +837,73 @@ def execute_download_file(path_value: str = "") -> str:
     return encoded
 
 
+def lock_workstation() -> str:
+    """Lock the interactive Windows session without logging the user out."""
+    try:
+        if not ctypes.windll.user32.LockWorkStation():
+            raise OSError(ctypes.get_last_error(), "LockWorkStation failed")
+    except Exception as exc:
+        raise RuntimeError("Windows oturumu kilitlenemedi.") from exc
+    return "Windows oturumu kilitlendi."
+
+
+def close_active_app() -> str:
+    """Request a graceful WM_CLOSE for the foreground app; never force-kill a process."""
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return "Kapatılacak etkin uygulama penceresi bulunamadı."
+
+    process_id = ctypes.c_ulong(0)
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(process_id))
+    if not process_id.value:
+        return "Etkin pencerenin işlemi belirlenemedi."
+
+    process = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, process_id.value)
+    if not process:
+        return "Etkin uygulama güvenli biçimde doğrulanamadı; kapatma isteği gönderilmedi."
+
+    try:
+        image_buffer = ctypes.create_unicode_buffer(32768)
+        image_size = ctypes.c_ulong(len(image_buffer))
+        if not kernel32.QueryFullProcessImageNameW(process, 0, image_buffer, ctypes.byref(image_size)):
+            return "Etkin uygulamanın adı doğrulanamadı; kapatma isteği gönderilmedi."
+        process_name = Path(image_buffer.value).name.casefold()
+    finally:
+        kernel32.CloseHandle(process)
+
+    protected_processes = {
+        "mynassistant.exe",
+        "mynagent.exe",
+        "mynai.agent.exe",
+        "mynassistantdesktopbridge.exe",
+        "explorer.exe",
+        "winlogon.exe",
+        "csrss.exe",
+        "dwm.exe",
+        "services.exe",
+        "lsass.exe",
+        "smss.exe",
+        "system",
+    }
+    if process_name in protected_processes:
+        return "MynAssistant, Agent veya Windows sistem pencereleri uzaktan kapatılamaz."
+
+    if not user32.PostMessageW(hwnd, WM_CLOSE, 0, 0):
+        raise RuntimeError("Uygulamaya güvenli kapatma mesajı gönderilemedi.")
+    return f"{process_name} uygulamasına güvenli kapatma isteği gönderildi."
+
+
 def execute_text_command(text: str) -> str:
     command = normalize_text_command(text)
     if not command:
         return "Önce bir komut yaz."
+    if command in {"bilgisayari kilitle", "bilgisayarı kilitle", "ekrani kilitle", "oturumu kilitle", "kilitle", "lock pc"}:
+        return lock_workstation()
+    if command in {"uygulamayi kapat", "uygulamayı kapat", "aktif uygulamayi kapat", "aktif pencereyi kapat", "pencereyi kapat", "close app"}:
+        return close_active_app()
+
     if command in {
         "bilgisayar dosyalarini listele",
         "bilgisayardaki dosyalari listele",
@@ -1125,6 +1190,10 @@ def execute_command(command: str, fields: dict) -> str:
     if command == "key_enter":
         pyautogui.press("enter")
         return "Enter tuşu gönderildi."
+    if command == "lock_pc":
+        return lock_workstation()
+    if command in {"close_app", "close_active_app"}:
+        return close_active_app()
     if command == "mute":
         press_virtual_key(VK_VOLUME_MUTE)
         return "Bilgisayarın sesi aç/kapat tuşuyla değiştirildi."
@@ -1148,15 +1217,13 @@ def execute_command(command: str, fields: dict) -> str:
     if command == "mouse_right_click":
         pyautogui.click(button="right")
         return "Sağ tıklama uygulandı."
-    if command == "power":
-        return "Güç kapatma bu sürümde etkin değil; yanlışlıkla kapanmayı önlemek için işlem uygulanmadı."
     return f"Desteklenmeyen komut: {command}"
 
 
 def command_is_supported(command: str) -> bool:
     return command in {
         "mute", "volume_up", "volume_down", "home",
-        "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command",
+        "mouse_move", "mouse_click", "mouse_right_click", "lock_pc", "close_app", "text_command",
         "type_text", "key_backspace", "key_enter", "list_files", "download_file", "upload_file", "zip_folder"
     }
 
