@@ -35,6 +35,9 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<string> _recentCommands = [];
     private readonly ObservableCollection<ScheduledTask> _scheduledTasks = [];
     private readonly DispatcherTimer _refreshTimer;
+    private readonly DispatcherTimer _activationTimer;
+    private EventWaitHandle? _activationEvent;
+    private const string ActivationEventName = @"Local\\MynAssistant.Ui.Activate";
     private bool _refreshTasksInProgress;
 
     private bool _expanded;
@@ -44,6 +47,36 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        try
+        {
+            _activationEvent = new EventWaitHandle(
+                initialState: false,
+                mode: EventResetMode.AutoReset,
+                name: ActivationEventName);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"MynAssistant activation event could not be created: {ex.Message}");
+        }
+
+        _activationTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(150)
+        };
+        _activationTimer.Tick += (_, _) =>
+        {
+            try
+            {
+                if (_activationEvent?.WaitOne(0) == true)
+                    RestoreFromTray();
+            }
+            catch (ObjectDisposedException)
+            {
+                _activationTimer.Stop();
+            }
+        };
+        _activationTimer.Start();
 
         InitializeTrayIcon();
 
@@ -322,6 +355,10 @@ public partial class MainWindow : Window
 
         _trayIconStream?.Dispose();
         _trayIconStream = null;
+
+        _activationTimer.Stop();
+        _activationEvent?.Dispose();
+        _activationEvent = null;
 
         base.OnClosed(e);
     }
