@@ -14,6 +14,15 @@ namespace MynAI.Windows.Google;
 
 public sealed class GoogleOAuthService
 {
+    // This page is shown by the local loopback callback before token exchange finishes.
+    // It intentionally reports receipt of the OAuth response rather than claiming that
+    // the final API authorization succeeded. The app displays the final result separately.
+    private const string OAuthCallbackClosePage =
+        "<!doctype html><html lang='tr'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>MynAssistant</title></head>" +
+        "<body style='margin:0;background:#101827;color:#f4f7ff;font-family:Segoe UI,Arial,sans-serif;display:grid;min-height:100vh;place-items:center'>" +
+        "<main style='max-width:520px;padding:36px;text-align:center'><h2>Google yanıtı alındı</h2>" +
+        "<p>Bu pencereyi kapatabilirsiniz. MynAssistant bağlantı sonucunu kontrol ediyor.</p></main></body></html>";
+
     private static readonly string[] Scopes =
     [
         "openid",
@@ -66,7 +75,8 @@ public sealed class GoogleOAuthService
                 cancellationToken,
                 new FileDataStore(
                     _tokenDirectory,
-                    true));
+                    true),
+                new LocalServerCodeReceiver(OAuthCallbackClosePage));
 
         _peopleService =
             new PeopleServiceService(

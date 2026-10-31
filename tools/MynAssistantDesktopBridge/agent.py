@@ -277,6 +277,114 @@ def read_device_state(session: FirebaseSession, device_id: str) -> dict:
     return decode_document(response.json())
 
 
+def _parse_command_timestamp(value: object) -> datetime | None:
+    """Parse local settings and Firestore timestamps into an aware UTC datetime."""
+    if isinstance(value, dict):
+        value = value.get("timestampValue")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def remote_control_enabled() -> bool:
+    """Read the user's local permission; legacy settings keep existing behavior."""
+    settings_path = (
+        Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+        / "MynAI"
+        / "settings.json"
+    )
+    if not settings_path.exists():
+        return True
+
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        # The settings file may be replaced while the app is saving it.
+        return True
+    except Exception as exc:
+        print(f"[Permissions] Could not read remote-control settings; disabled for safety: {exc}")
+        return False
+
+    if not isinstance(settings, dict):
+        return False
+    # Settings written before this option existed remain enabled for compatibility.
+    return settings.get("RemoteControlEnabled", True) is True
+
+
+def remote_control_reenable_cutoff() -> datetime | None:
+    """Return the latest opt-in timestamp used to reject commands queued before re-enabling."""
+    settings_path = (
+        Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+        / "MynAI"
+        / "settings.json"
+    )
+    if not settings_path.exists():
+        return None
+
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        return None
+    except Exception as exc:
+        print(f"[Permissions] Could not read permission timestamp; stale commands will be blocked: {exc}")
+        return datetime.max.replace(tzinfo=timezone.utc)
+
+    if not isinstance(settings, dict):
+        return datetime.max.replace(tzinfo=timezone.utc)
+
+    value = settings.get("RemoteControlEnabledAt")
+    if value is None:
+        return None
+
+    cutoff = _parse_command_timestamp(value)
+    # A present but invalid timestamp must fail closed rather than replay old work.
+    return cutoff or datetime.max.replace(tzinfo=timezone.utc)
+
+
+def command_predates_remote_control_reenable(
+    fields: dict,
+    cutoff: datetime | None,
+) -> bool:
+    if cutoff is None:
+        return False
+
+    created_at = _parse_command_timestamp(fields.get("createdAt"))
+    return created_at is None or created_at < cutoff
+
+
+def fail_pending_commands_when_remote_control_disabled(
+    session: FirebaseSession,
+    device_id: str,
+) -> None:
+    """Expire queued work while permission is off so it cannot run after re-enabling."""
+    try:
+        documents = fetch_owner_commands(session)
+    except Exception as exc:
+        print(f"[Permissions] Could not refresh pending commands; Agent continues: {exc}")
+        return
+
+    for document in documents:
+        fields = decode_document(document)
+        if not command_targets_device(fields, session.uid, device_id):
+            continue
+        try:
+            update_command(
+                session,
+                document,
+                "failed",
+                "Remote-control permission is disabled; command was not executed.",
+                expected_update_time=document.get("updateTime"),
+            )
+        except Exception as exc:
+            print(f"[Permissions] Could not fail queued command while permission is disabled: {exc}")
+
+
 def screen_request_is_active(fields: dict) -> bool:
     if not fields.get("screenRequested"):
         return False
@@ -363,6 +471,19 @@ def fetch_owner_commands(session: FirebaseSession) -> list[dict]:
         if document:
             documents.append(document)
     return documents
+
+
+def command_targets_device(fields: dict, owner_uid: str, device_id: str) -> bool:
+    """Require an exact owner, exact target device, and pending state before any command mutation."""
+    return (
+        isinstance(owner_uid, str)
+        and bool(owner_uid)
+        and isinstance(device_id, str)
+        and bool(device_id)
+        and fields.get("ownerId") == owner_uid
+        and fields.get("deviceId") == device_id
+        and fields.get("status") == "pending"
+    )
 
 
 def update_command(
@@ -714,6 +835,7 @@ def run_agent() -> int:
     last_screen_frame = 0.0
     last_command_poll = 0.0
     screen_active = False
+    remote_control_was_enabled: bool | None = None
     pyautogui.FAILSAFE = False
     try:
         while True:
@@ -729,6 +851,48 @@ def run_agent() -> int:
                     device_id=device_id,
                 )
                 last_heartbeat = now
+
+            remote_allowed = remote_control_enabled()
+            if not remote_allowed:
+                if remote_control_was_enabled is not False:
+                    write_bridge_status(
+                        "online",
+                        "Uzaktan kontrol İzinler bölümünde kapalı; uzaktan komutlar ve ekran önizlemesi duraklatıldı.",
+                        email=session.email,
+                        device_id=device_id,
+                    )
+                    try:
+                        firestore_patch(
+                            session,
+                            f"devices/{device_id}",
+                            {
+                                "screenRequested": {"booleanValue": False},
+                                "screenJpegBase64": encode_string(""),
+                                "screenFrameAt": encode_timestamp(),
+                            },
+                            update_mask=["screenRequested", "screenJpegBase64", "screenFrameAt"],
+                        )
+                    except Exception as exc:
+                        print(f"[Permissions] Could not stop screen preview: {exc}")
+
+                remote_control_was_enabled = False
+                screen_active = False
+                last_screen_check = now
+                last_screen_frame = now
+                if now - last_command_poll >= COMMAND_POLL_SECONDS:
+                    fail_pending_commands_when_remote_control_disabled(session, device_id)
+                    last_command_poll = now
+                time.sleep(POLL_SECONDS)
+                continue
+
+            if remote_control_was_enabled is False:
+                write_bridge_status(
+                    "online",
+                    "Uzaktan kontrol izni açık; PC telefon ve web paneli için hazır.",
+                    email=session.email,
+                    device_id=device_id,
+                )
+            remote_control_was_enabled = True
 
             screen_check_interval = 3.0 if screen_active else SCREEN_CHECK_SECONDS
             if now - last_screen_check >= screen_check_interval:
@@ -756,9 +920,24 @@ def run_agent() -> int:
                     last_screen_frame = now
 
             if now - last_command_poll >= COMMAND_POLL_SECONDS:
+                permission_reenable_cutoff = remote_control_reenable_cutoff()
                 for document in fetch_owner_commands(session):
                     fields = decode_document(document)
-                    if fields.get("deviceId") != device_id or fields.get("status") != "pending":
+                    # Defense in depth: the query is owner-scoped, and we independently
+                    # verify owner + exact device + pending state before any mutation.
+                    if not command_targets_device(fields, session.uid, device_id):
+                        continue
+                    if command_predates_remote_control_reenable(fields, permission_reenable_cutoff):
+                        try:
+                            update_command(
+                                session,
+                                document,
+                                "failed",
+                                "Command was queued before remote-control permission was re-enabled; it was not executed.",
+                                expected_update_time=document.get("updateTime"),
+                            )
+                        except Exception as permission_error:
+                            print(f"[Permissions] Could not fail pre-reenable command: {permission_error}")
                         continue
                     command = str(fields.get("command") or "")
                     if not command_is_supported(command):

@@ -4,6 +4,7 @@ import importlib.util
 import json
 import sys
 import tempfile
+from datetime import datetime, timezone
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -60,6 +61,76 @@ class FakeScreenshotImage:
     def save(self, output, format: str, quality: int, optimize: bool) -> None:
         self.qualities_used.append(quality)
         output.write(b"x" * self.sizes_by_quality[quality])
+
+
+
+class CommandTargetRoutingTests(unittest.TestCase):
+    def test_accepts_only_pending_command_for_same_owner_and_device(self) -> None:
+        fields = {
+            "ownerId": "test-user",
+            "deviceId": "win-test",
+            "status": "pending",
+        }
+        self.assertTrue(agent.command_targets_device(fields, "test-user", "win-test"))
+
+    def test_rejects_command_for_another_windows_device(self) -> None:
+        fields = {
+            "ownerId": "test-user",
+            "deviceId": "win-other",
+            "status": "pending",
+        }
+        self.assertFalse(agent.command_targets_device(fields, "test-user", "win-test"))
+
+    def test_rejects_command_owned_by_another_user_even_if_device_id_matches(self) -> None:
+        fields = {
+            "ownerId": "other-user",
+            "deviceId": "win-test",
+            "status": "pending",
+        }
+        self.assertFalse(agent.command_targets_device(fields, "test-user", "win-test"))
+
+    def test_rejects_cancelled_running_completed_or_missing_status(self) -> None:
+        for status in ("cancelled", "running", "completed", "failed", ""):
+            with self.subTest(status=status):
+                fields = {"ownerId": "test-user", "deviceId": "win-test", "status": status}
+                self.assertFalse(agent.command_targets_device(fields, "test-user", "win-test"))
+
+    def test_rejects_missing_owner_or_target_fields(self) -> None:
+        self.assertFalse(agent.command_targets_device({"deviceId": "win-test", "status": "pending"}, "test-user", "win-test"))
+        self.assertFalse(agent.command_targets_device({"ownerId": "test-user", "status": "pending"}, "test-user", "win-test"))
+
+
+class DeviceRegistrationContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.session = FakeSession()
+
+    def test_initial_registration_uses_shared_android_device_schema(self) -> None:
+        with mock.patch.object(agent.platform, "node", return_value="CI-Windows"), mock.patch.object(
+            agent.requests, "patch", return_value=FakeResponse(200, {})
+        ) as patch:
+            agent.register_or_heartbeat(self.session, "win-test-device", initial=True)
+
+        self.assertIn("/devices/win-test-device", patch.call_args.args[0])
+        body = patch.call_args.kwargs["json"]["fields"]
+        self.assertEqual(body["ownerId"]["stringValue"], "test-user")
+        self.assertEqual(body["platform"]["stringValue"], "Windows")
+        self.assertEqual(body["type"]["stringValue"], "Windows")
+        self.assertEqual(body["connectionMode"]["stringValue"], "firebase-agent")
+        self.assertEqual(body["status"]["stringValue"], "online")
+        self.assertEqual(body["name"]["stringValue"], "CI-Windows")
+        self.assertEqual(body["screenRequested"]["booleanValue"], False)
+        self.assertTrue(body["lastSeenAt"]["timestampValue"])
+
+    def test_heartbeat_only_updates_presence_and_preserves_registration_identity(self) -> None:
+        with mock.patch.object(agent, "firestore_patch") as patch:
+            agent.register_or_heartbeat(self.session, "win-test-device", initial=False)
+
+        patch.assert_called_once()
+        self.assertEqual(patch.call_args.args[1], "devices/win-test-device")
+        fields = patch.call_args.args[2]
+        self.assertEqual(set(fields), {"status", "lastSeenAt"})
+        self.assertEqual(fields["status"]["stringValue"], "online")
+        self.assertEqual(patch.call_args.kwargs["update_mask"], ["status", "lastSeenAt"])
 
 
 class AtomicCommandClaimTests(unittest.TestCase):
@@ -217,6 +288,106 @@ class RemoteKeyboardCommandTests(unittest.TestCase):
         self.assertIn("Enter", enter_result)
         for command in ("type_text", "key_backspace", "key_enter"):
             self.assertTrue(agent.command_is_supported(command))
+
+
+class RemoteControlPermissionTests(unittest.TestCase):
+    def test_reenable_timestamp_is_loaded_from_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings_dir = Path(directory) / "MynAI"
+            settings_dir.mkdir()
+            (settings_dir / "settings.json").write_text(
+                json.dumps({
+                    "RemoteControlEnabled": True,
+                    "RemoteControlEnabledAt": "2026-10-27T12:00:00+00:00",
+                }),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(agent.os.environ, {"LOCALAPPDATA": directory}):
+                cutoff = agent.remote_control_reenable_cutoff()
+
+        self.assertEqual(cutoff, datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc))
+
+    def test_commands_queued_before_reenable_are_rejected(self) -> None:
+        cutoff = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
+        self.assertTrue(agent.command_predates_remote_control_reenable(
+            {"createdAt": "2026-10-27T11:59:59Z"}, cutoff
+        ))
+        self.assertFalse(agent.command_predates_remote_control_reenable(
+            {"createdAt": "2026-10-27T12:00:01Z"}, cutoff
+        ))
+
+    def test_missing_command_timestamp_fails_closed_after_reenable(self) -> None:
+        cutoff = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
+        self.assertTrue(agent.command_predates_remote_control_reenable({}, cutoff))
+
+    def test_missing_reenable_cutoff_preserves_legacy_behavior(self) -> None:
+        old_command = {"createdAt": "2020-01-01T00:00:00Z"}
+        self.assertFalse(agent.command_predates_remote_control_reenable(old_command, None))
+
+    def test_missing_settings_file_preserves_legacy_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.dict(agent.os.environ, {"LOCALAPPDATA": directory}):
+                self.assertTrue(agent.remote_control_enabled())
+
+    def test_explicitly_disabled_remote_control_is_respected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings_dir = Path(directory) / "MynAI"
+            settings_dir.mkdir()
+            (settings_dir / "settings.json").write_text(
+                json.dumps({"RemoteControlEnabled": False}),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(agent.os.environ, {"LOCALAPPDATA": directory}):
+                self.assertFalse(agent.remote_control_enabled())
+
+    def test_legacy_settings_without_permission_key_remain_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings_dir = Path(directory) / "MynAI"
+            settings_dir.mkdir()
+            (settings_dir / "settings.json").write_text(
+                json.dumps({"WindowsNotifications": True}),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(agent.os.environ, {"LOCALAPPDATA": directory}):
+                self.assertTrue(agent.remote_control_enabled())
+
+    def test_malformed_settings_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings_dir = Path(directory) / "MynAI"
+            settings_dir.mkdir()
+            (settings_dir / "settings.json").write_text("{bad json", encoding="utf-8")
+            with mock.patch.dict(agent.os.environ, {"LOCALAPPDATA": directory}):
+                self.assertFalse(agent.remote_control_enabled())
+
+    def test_queue_read_failure_does_not_raise_or_stop_permission_guard(self) -> None:
+        with mock.patch.object(
+            agent, "fetch_owner_commands", side_effect=RuntimeError("temporary network error")
+        ):
+            agent.fail_pending_commands_when_remote_control_disabled(
+                FakeSession(), "win-test"
+            )
+
+    def test_disabled_remote_control_fails_queued_commands(self) -> None:
+        session = FakeSession()
+        document = firestore_doc({
+            "ownerId": "test-user",
+            "deviceId": "win-test",
+            "command": "volume_up",
+            "status": "pending",
+        })
+        with mock.patch.object(agent, "fetch_owner_commands", return_value=[document]), \
+             mock.patch.object(agent, "update_command") as update:
+            agent.fail_pending_commands_when_remote_control_disabled(session, "win-test")
+
+        update.assert_called_once()
+        args, kwargs = update.call_args
+        self.assertEqual(args[0], session)
+        self.assertEqual(args[1], document)
+        self.assertEqual(args[2], "failed")
+        self.assertIn("permission", args[3].lower())
+        self.assertEqual(kwargs["expected_update_time"], document.get("updateTime"))
+
+
 
 
 class FirebaseLoginRequiredTests(unittest.TestCase):

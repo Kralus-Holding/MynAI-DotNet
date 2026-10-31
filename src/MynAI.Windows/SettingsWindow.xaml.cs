@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using QRCoder;
 using System.Text.RegularExpressions;
 using MynAI.Windows.Google;
 using MynAI.Windows.Auth;
@@ -109,6 +110,9 @@ public partial class SettingsWindow : Window
 
         CameraCheckBox.IsChecked =
             settings.CameraEnabled;
+
+        RemoteControlCheckBox.IsChecked =
+            settings.RemoteControlEnabled;
 
         HotkeyTextBox.Text =
             settings.BringToFrontHotkey;
@@ -863,24 +867,28 @@ public partial class SettingsWindow : Window
 
     private async void LoginDesktopAccount_Click(object sender, RoutedEventArgs e)
     {
-        await StartDesktopPairingAsync();
+        // This is the explicit account-switch path. The user must confirm before the
+        // existing session is excluded from the new pairing request.
+        await StartDesktopPairingAsync(allowAccountChange: true);
     }
 
     private async void StartDesktopPairing_Click(object sender, RoutedEventArgs e)
     {
-        await StartDesktopPairingAsync();
+        // A normal re-pair must stay bound to the current desktop Firebase UID.
+        await StartDesktopPairingAsync(allowAccountChange: false);
     }
 
-    private async Task StartDesktopPairingAsync()
+    private async Task StartDesktopPairingAsync(bool allowAccountChange)
     {
         if (_pairingCancellation is { IsCancellationRequested: false })
             return;
 
-        if (FirebaseDesktopSessionStore.HasValidStoredSession())
+        var existingSession = FirebaseDesktopSessionStore.Load();
+        if (allowAccountChange && existingSession is not null)
         {
             var answer = MessageBox.Show(
-                "Bu bilgisayarda zaten kayıtlı bir telefon-PC oturumu var. Yeni eşleştirme onaylanırsa bu oturum yeni telefon hesabıyla değiştirilecek. Devam edilsin mi?",
-                "Telefon-PC eşleştirmesini değiştir",
+                $"Bu bilgisayarda zaten {existingSession.Email} hesabına ait bir oturum var. Yeni eşleştirme onaylanırsa bu oturum yeni telefon hesabıyla değiştirilecek. Yalnızca gerçekten hesap değiştirmek istiyorsan devam et.",
+                "Telefon-PC hesabını değiştir",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning,
                 MessageBoxResult.No);
@@ -893,7 +901,11 @@ public partial class SettingsWindow : Window
         StartDesktopPairingButton.IsEnabled = false;
         GoogleConnectButton.IsEnabled = false;
         CancelDesktopPairingButton.IsEnabled = true;
-        DesktopLoginStatusText.Text = "Telefon onayı bekleniyor...";
+        DesktopLoginStatusText.Text = allowAccountChange
+            ? "Telefon onayı bekleniyor..."
+            : existingSession is not null
+                ? "Mevcut Windows oturumu doğrulanıyor..."
+                : "Telefon onayı bekleniyor...";
         DesktopPairingCodeText.Text = "";
         DesktopPairingCodeText.Visibility = Visibility.Collapsed;
         DesktopPairingStatusText.Text = "Sunucudan güvenli eşleştirme kodu alınıyor...";
@@ -901,16 +913,37 @@ public partial class SettingsWindow : Window
 
         try
         {
+            // Refresh locally because Firebase ID tokens expire quickly and the bridge may
+            // persist only the DPAPI-protected refresh token. Bind the new pairing to the
+            // UID resolved from that refreshed token, never to the submitted code itself.
+            var currentSessionIdToken = !allowAccountChange && existingSession is not null
+                ? await _desktopPairingClient.GetFreshIdTokenAsync(existingSession, cancellation.Token)
+                : null;
             var pairing = await _desktopPairingClient.StartAsync(
                 Environment.MachineName,
+                currentSessionIdToken,
                 cancellation.Token);
 
             DesktopPairingCodeText.Text = pairing.Code;
             DesktopPairingCodeText.Visibility = Visibility.Visible;
+            HideDesktopPairingQr();
             DesktopPairingStatusText.Text =
-                $"Android MynAssistant → Ayarlar bölümüne bu kodu gir. " +
+                $"Android MynAssistant → Ayarlar bölümüne bu kodu gir veya QR kodunu tara. " +
                 $"Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}. " +
                 "Telefon onay verene kadar bu pencere açık kalmalı.";
+            try
+            {
+                ShowDesktopPairingQr(pairing.Code, pairing.ExpiresAtUtc, pairing.QrSignature);
+            }
+            catch (Exception qrError)
+            {
+                DiagnosticLogManager.WriteError(
+                    "MYN-DEVICE-007",
+                    "DesktopBridge",
+                    "QR kodu oluşturulamadı; tek kullanımlık kodla eşleştirme kullanılabilir.",
+                    qrError);
+                DesktopPairingStatusText.Text += " QR görüntülenemedi; kodu Android'e elle girebilirsin.";
+            }
 
             while (DateTimeOffset.UtcNow < pairing.ExpiresAtUtc)
             {
@@ -938,8 +971,10 @@ public partial class SettingsWindow : Window
 
                         UpdateDesktopBridgeStatus();
                         UpdateAccountDesktopBridgeStatus();
+                        var machineName = status.MachineName ?? Environment.MachineName;
+                        var accountLabel = string.IsNullOrWhiteSpace(session.Email) ? "" : $", {session.Email}";
                         DesktopPairingStatusText.Text =
-                            $"Eşleştirme tamamlandı. {status.MachineName ?? Environment.MachineName} telefon hesabına bağlandı.";
+                            $"Eşleştirme tamamlandı. {machineName} bilgisayarı{accountLabel} hesabına bağlandı.";
                         DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightGreen);
                         DesktopPairingCodeText.Visibility = Visibility.Collapsed;
                         SetSaveStatus("Telefon-PC bağlantısı eşleştirildi.", Colors.LightGreen);
@@ -990,7 +1025,9 @@ public partial class SettingsWindow : Window
                 "DesktopBridge",
                 "Telefon-PC eşleştirme API'si hata yanıtı verdi.",
                 ex);
-            DesktopLoginStatusText.Text = $"Giriş yapılamadı: {ex.Message}";
+            DesktopLoginStatusText.Text = FirebaseDesktopSessionStore.HasValidStoredSession()
+                ? "Kayıtlı oturum değişmedi; eşleştirme tamamlanmadı."
+                : $"Giriş yapılamadı: {ex.Message}";
             DesktopPairingStatusText.Text = $"{ex.Message} ({ex.ErrorCode})";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
         }
@@ -998,7 +1035,9 @@ public partial class SettingsWindow : Window
         {
             DiagnosticLogManager.WriteError(
                 "MYN-SERVER-001", "DesktopBridge", "Eşleştirme sunucusuna ulaşılamadı.", ex);
-            DesktopLoginStatusText.Text = "Giriş yapılamadı; sunucuya ulaşılamadı.";
+            DesktopLoginStatusText.Text = FirebaseDesktopSessionStore.HasValidStoredSession()
+                ? "Kayıtlı oturum değişmedi; eşleştirme tamamlanmadı."
+                : "Giriş yapılamadı; sunucuya ulaşılamadı.";
             DesktopPairingStatusText.Text =
                 "Eşleştirme sunucusuna ulaşılamadı. İnternet bağlantısını veya sunucu durumunu kontrol et. (MYN-SERVER-001)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
@@ -1007,7 +1046,9 @@ public partial class SettingsWindow : Window
         {
             DiagnosticLogManager.WriteError(
                 "MYN-SERVER-002", "DesktopBridge", "Eşleştirme isteği zaman aşımına uğradı.", ex);
-            DesktopLoginStatusText.Text = "Giriş yapılamadı; sunucu yanıt vermedi.";
+            DesktopLoginStatusText.Text = FirebaseDesktopSessionStore.HasValidStoredSession()
+                ? "Kayıtlı oturum değişmedi; eşleştirme tamamlanmadı."
+                : "Giriş yapılamadı; sunucu yanıt vermedi.";
             DesktopPairingStatusText.Text =
                 "Sunucu yanıtı zaman aşımına uğradı. Biraz sonra yeniden dene. (MYN-SERVER-002)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
@@ -1023,6 +1064,7 @@ public partial class SettingsWindow : Window
         }
         finally
         {
+            HideDesktopPairingQr();
             if (ReferenceEquals(_pairingCancellation, cancellation))
                 _pairingCancellation = null;
             cancellation.Dispose();
@@ -1030,6 +1072,39 @@ public partial class SettingsWindow : Window
             GoogleConnectButton.IsEnabled = true;
             CancelDesktopPairingButton.IsEnabled = false;
         }
+    }
+
+    private void ShowDesktopPairingQr(
+        string pairingCode,
+        DateTimeOffset expiresAtUtc,
+        string qrSignature)
+    {
+        // The payload shape is shared with Android's QR parser. The server alone
+        // verifies the HMAC and expiry when the user confirms pairing.
+        var payload = DesktopPairingQrPayload.Build(
+            pairingCode,
+            expiresAtUtc.ToUnixTimeSeconds(),
+            qrSignature);
+        using var qrData = QRCodeGenerator.GenerateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
+        using var pngRenderer = new PngByteQRCode(qrData);
+        var pngBytes = pngRenderer.GetGraphic(8);
+
+        using var stream = new MemoryStream(pngBytes);
+        var bitmap = new BitmapImage();
+        bitmap.BeginInit();
+        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+        bitmap.StreamSource = stream;
+        bitmap.EndInit();
+        bitmap.Freeze();
+
+        DesktopPairingQrImage.Source = bitmap;
+        DesktopPairingQrPanel.Visibility = Visibility.Visible;
+    }
+
+    private void HideDesktopPairingQr()
+    {
+        DesktopPairingQrImage.Source = null;
+        DesktopPairingQrPanel.Visibility = Visibility.Collapsed;
     }
 
     private void CancelDesktopPairing_Click(object sender, RoutedEventArgs e)
@@ -1283,22 +1358,29 @@ public partial class SettingsWindow : Window
             GoogleContactsConnectButton.Content = "Kişileri bağla";
 
             var details = ex.ToString();
-            var accessDenied = details.Contains("access_denied", StringComparison.OrdinalIgnoreCase)
-                || details.Contains("403", StringComparison.OrdinalIgnoreCase)
-                || details.Contains("test users", StringComparison.OrdinalIgnoreCase)
+            var testUserPolicy = details.Contains("test users", StringComparison.OrdinalIgnoreCase)
+                || details.Contains("test user", StringComparison.OrdinalIgnoreCase)
                 || details.Contains("test kullanıcı", StringComparison.OrdinalIgnoreCase);
+            var accessDenied = testUserPolicy
+                || details.Contains("access_denied", StringComparison.OrdinalIgnoreCase)
+                || details.Contains("403", StringComparison.OrdinalIgnoreCase);
             var errorCode = accessDenied ? "MYN-OAUTH-403" : "MYN-OAUTH-001";
             DiagnosticLogManager.WriteError(
                 errorCode,
                 "GoogleOAuth",
-                accessDenied
-                    ? "Google OAuth erişimi reddedildi; OAuth test kullanıcısı ayarı kontrol edilmeli."
-                    : "Google Kişiler için OAuth bağlantısı başarısız.",
+                testUserPolicy
+                    ? "Google OAuth yanıtı test kullanıcısı kısıtlamasına işaret ediyor."
+                    : accessDenied
+                        ? "Google OAuth erişimi reddedildi; kaynak ayar kesinleşmedi."
+                        : "Google Kişiler için OAuth bağlantısı başarısız.",
                 ex);
 
-            var explanation = accessDenied
-                ? "Google OAuth erişimi 403 access_denied ile reddedildi. Google Cloud Console → Google Auth Platform → Audience → Test users bölümüne bu Google hesabını ekleyin; alternatif olarak OAuth uygulamasını uygun şekilde yayımlayıp gerekiyorsa doğrulayın. Bu izin Google Console ayarıdır ve uygulamayı yeniden derlemek tek başına sorunu çözmez. Telefon-PC eşleştirmesi için Google Kişiler bağlantısı gerekli değildir."
-                : ex.Message;
+            var explanation = testUserPolicy
+                ? "Google OAuth yanıtı test kullanıcısı kısıtlamasına işaret ediyor. Google Cloud Console → Google Auth Platform → Audience bölümünde yayın durumunu ve Test users listesini kontrol et. Bu adımı yalnızca uygulama Testing durumundaysa uygula. Uygulamayı yeniden derlemek tek başına Console izinlerini değiştirmez."
+                : accessDenied
+                    ? "Google, isteğe bağlı Google Kişiler bağlantısını reddetti (403/access_denied). Bu hata tek başına hangi Console ayarının sorumlu olduğunu kanıtlamaz. Google Cloud Console'da OAuth Audience/yayın durumu, uygulama Testing durumundaysa Test users listesi, People API etkinliği ve istenen kapsamları kontrol et."
+                    : "Google Kişiler bağlantısı tamamlanamadı. Google hesabı izinlerini ve internet bağlantısını kontrol edip tekrar dene.";
+            explanation += " Telefon-PC eşleştirmesi için Google Kişiler bağlantısı gerekli değildir.";
 
             MessageBox.Show(
                 $"Google Kişiler bağlantısı başarısız:\n\n{explanation}",
@@ -1423,6 +1505,12 @@ public partial class SettingsWindow : Window
         updatedSettings.WindowsNotifications = NotificationsCheckBox.IsChecked == true;
         updatedSettings.MicrophoneEnabled = MicrophoneCheckBox.IsChecked == true;
         updatedSettings.CameraEnabled = CameraCheckBox.IsChecked == true;
+        var requestedRemoteControlEnabled = RemoteControlCheckBox.IsChecked == true;
+        if (!originalSettings.RemoteControlEnabled && requestedRemoteControlEnabled)
+        {
+            updatedSettings.RemoteControlEnabledAt = DateTimeOffset.UtcNow;
+        }
+        updatedSettings.RemoteControlEnabled = requestedRemoteControlEnabled;
         updatedSettings.BringToFrontHotkey = HotkeyTextBox.Text.Trim();
 
         // Validate/apply the new hotkey before writing settings. Apply unregisters
