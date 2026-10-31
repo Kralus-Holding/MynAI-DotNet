@@ -265,58 +265,56 @@
             </Setter>
         </Style>
 
+        <!-- Shared native Windows checkbox appearance for current and future settings. -->
+        <Style TargetType="{x:Type CheckBox}">
+            <Setter Property="Foreground" Value="#EAF0F7"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="MinHeight" Value="24"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
         <Style TargetType="ScrollBar">
-
-            <Setter Property="Width"
-                    Value="7"/>
-
-            <Setter Property="Background"
-                    Value="#0D131B"/>
-
+            <Setter Property="Width" Value="7"/>
+            <Setter Property="Height" Value="Auto"/>
+            <Setter Property="Background" Value="#0D131B"/>
             <Setter Property="Template">
-
                 <Setter.Value>
-
-                    <ControlTemplate
-                        TargetType="ScrollBar">
-
+                    <ControlTemplate TargetType="ScrollBar">
                         <Grid>
-
                             <Track x:Name="PART_Track"
+                                   Orientation="{TemplateBinding Orientation}"
                                    IsDirectionReversed="True">
-
                                 <Track.Thumb>
-
                                     <Thumb>
-
                                         <Thumb.Template>
-
-                                            <ControlTemplate
-                                                TargetType="Thumb">
-
-                                                <Border
-                                                    Background="#33445A"
-                                                    CornerRadius="4"
-                                                    Margin="1"/>
-
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border Background="#33445A"
+                                                        CornerRadius="4"
+                                                        Margin="1"/>
                                             </ControlTemplate>
-
                                         </Thumb.Template>
-
                                     </Thumb>
-
                                 </Track.Thumb>
-
                             </Track>
-
                         </Grid>
-
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Orientation" Value="Horizontal">
+                                <Setter TargetName="PART_Track"
+                                        Property="IsDirectionReversed"
+                                        Value="False"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
-
                 </Setter.Value>
-
             </Setter>
-
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto"/>
+                    <Setter Property="Height" Value="7"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
     </Window.Resources>
@@ -556,7 +554,8 @@
                                               VerticalScrollBarVisibility="Disabled"
                                               PanningMode="HorizontalOnly"
                                               IsManipulationEnabled="True"
-                                              CanContentScroll="True">
+                                              CanContentScroll="True"
+                                              PreviewMouseWheel="UserLogosGallery_PreviewMouseWheel">
                                     <StackPanel x:Name="UserLogosGalleryPanel"
                                                 Orientation="Horizontal"
                                                 MinHeight="112"/>
