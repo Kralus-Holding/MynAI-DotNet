@@ -1585,10 +1585,11 @@ public partial class SettingsWindow : Window
     {
         try
         {
+            AgentStartupManager.SetEnabled(true);
             AgentStartupManager.StartAgent();
 
             SetSaveStatus(
-                "Agent başlatıldı.",
+                "Agent başlatıldı ve Windows oturum açılışına kaydedildi.",
                 Colors.LightGreen);
 
             UpdateAgentStatus();
