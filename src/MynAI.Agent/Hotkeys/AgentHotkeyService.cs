@@ -72,7 +72,7 @@ public sealed class AgentHotkeyService
                     if (result <= 0)
                         break;
 
-                    if (message.Message == WmHotkey && message.WParam.ToInt32() == HotkeyId)
+                    if (message.Message == WmHotkey && message.WParam == (nuint)HotkeyId)
                         BringUpMainWindow();
                 }
             }
@@ -179,7 +179,7 @@ public sealed class AgentHotkeyService
                 "alt" => ModAlt,
                 "shift" => ModShift,
                 "win" or "windows" => ModWin,
-                _ => 0
+                _ => 0u
             };
             if (modifier == 0)
             {
