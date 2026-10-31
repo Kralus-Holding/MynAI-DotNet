@@ -1652,14 +1652,19 @@
                                             Margin="0,0,8,8" Click="RefreshErrorLogs_Click"/>
                                     <Button Content="Tanı raporunu kopyala" Style="{StaticResource SecondaryButton}"
                                             Margin="0,0,8,8" Click="CopyDiagnostics_Click"/>
-                                    <Button Content="Destek raporu oluştur" Style="{StaticResource PrimaryButton}"
+                                    <Button Content="Destek raporunu dışa aktar" Style="{StaticResource SecondaryButton}"
                                             Margin="0,0,8,8" Click="ExportSupportReport_Click"/>
+                                    <Button x:Name="EmailDiagnosticsButton"
+                                            Content="Hata raporunu e-postayla gönder"
+                                            Style="{StaticResource PrimaryButton}"
+                                            Margin="0,0,8,8"
+                                            Click="EmailDiagnostics_Click"/>
                                     <Button Content="Günlük klasörünü aç" Style="{StaticResource SecondaryButton}"
                                             Margin="0,0,8,8" Click="OpenDiagnosticLogs_Click"/>
                                     <Button Content="Günlükleri temizle" Style="{StaticResource SecondaryButton}"
                                             Margin="0,0,8,8" Click="ClearDiagnosticLogs_Click"/>
                                 </WrapPanel>
-                                <TextBlock Text="Raporlar otomatik olarak sunucuya gönderilmez. Günlükleri temizlemek için açık onay istenir."
+                                <TextBlock Text="Raporlar otomatik gönderilmez. E-posta gönderimi yalnızca onayından sonra yapılır; günlükleri temizlemek için de açık onay istenir."
                                            Foreground="#718096" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
