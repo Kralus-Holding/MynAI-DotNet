@@ -472,8 +472,9 @@ jobs:
             "2. Kurulum hedef klasörünü her kurulumda seçebilirsiniz. Aynı anda birden fazla bağımsız kurulum desteklenmez; mevcut klasör duruyorsa önce mevcut kurulumu kaldırın.",
             "3. MynAgent uygulama açılışında arka planda otomatik başlatılır; kurulum ekranında ayrı başlatma seçeneği yoktur.",
             "4. Telefon-PC eşleştirmesi için Windows MynAssistant → Ayarlar → Agent → QR kodu oluştur seçeneğini açın. Android MynAssistant → Ayarlar → Agent bölümünden QR kodunu tarayın veya 10 karakterli kodu girip aynı MynAssistant hesabıyla onaylayın. Kod 5 dakika geçerlidir.",
-            "5. Telefon ve Windows bilgisayarında aynı MynAssistant hesabını kullanın. Google ile giriş, aynı Firebase/MynAssistant hesabının kimlik doğrulama yöntemidir; telefon-PC bağlantısı için ayrı Google Kişiler izni veya ayrı OAuth hesabı gerekmez.",
-            "6. Canlı sunucuda /api/v1/info yapılandırma kontrolü ve pairing/start HTTP 200 smoke testi geçti. Telefon onayı sonrası Windows oturumunun tamamı gerçek Android ve Windows cihazlarında ayrıca test edilmelidir. İlk kullanımda Windows Hesap bölümünde giriş yapın, ardından Agent sekmesinden QR üretin.",
+            "5. Google ile giriş kullanıldığında Google kimliği aynı Firebase/MynAssistant hesabına doğrulanır; uygulama Google Kişiler veya Gmail kapsamları istemez.",
+            $googleOAuthReadmeLine,
+            "6. Telefon-PC eşleştirmesi için sunucudaki pairing API'sinin yayımlanmış ve Firebase ayarlarının tamamlanmış olması gerekir. HTTP 404/503 görülürse sunucu dağıtımını ve Render Environment ayarlarını kontrol edin. İlk kullanımda Windows Hesap bölümünde giriş yapın, sonra Agent sekmesinden QR üretip Android Agent sekmesinden onaylayın.",
             "7. Hata günlükleri e-posta özelliği varsayılan olarak kapalıdır. Kullanıcı Ayarlar → Hata günlükleri bölümünde otomatik gönderimi açıkça etkinleştirirse, giriş yaptığı hesapla ve 5 dakikalık sınırla tanılama raporu destek e-postasına gönderilir.",
             "",
             "Not: Kuruluşunuz Windows Application Control politikasını kullanıyorsa imzasız dosyalar engellenebilir. Güvenlik politikasını kapatmayın; yayıncı imzası/Code Integrity günlükleri yöneticiniz tarafından doğrulanmalıdır."
