@@ -418,7 +418,7 @@ jobs:
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
           if (-not $settingsCode.Contains("Google Auth Platform") -or -not $settingsCode.Contains("DesktopPairingClientException")) { throw "OAuth and pairing deployment errors must have actionable diagnostics." }
           if (-not $settingsCode.Contains('if (!hotkeyApplied)') -or -not $settingsCode.Contains('_settingsStore.Save(originalSettings)') -or -not $settingsCode.Contains('"MYN-SETTINGS-001"')) { throw "Settings save must validate hotkeys, attempt rollback, and record save failures." }
-          if (-not $settingsCode.Contains('UpdateAccountDesktopBridgeStatus') -or -not $settingsCode.Contains('HTTP 404 görülürse Render')) { throw "Account status must explain how to begin pairing and recover from an undeployed server API." }
+          if (-not $settingsCode.Contains('UpdateDesktopBridgeStatus') -or -not $pairingClient.Contains('MYN-SERVER-404')) { throw "Agent status and pairing client must explain how to recover from an undeployed pairing API." }
           $compilerCandidates = @(
             "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
             "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
@@ -471,10 +471,10 @@ jobs:
             "1. MynAssistant-Setup.exe dosyasını çalıştırın.",
             "2. Kurulum hedef klasörünü her kurulumda seçebilirsiniz. Aynı anda birden fazla bağımsız kurulum desteklenmez; mevcut klasör duruyorsa önce mevcut kurulumu kaldırın.",
             "3. MynAgent uygulama açılışında arka planda otomatik başlatılır; kurulum ekranında ayrı başlatma seçeneği yoktur.",
-            "4. İlk telefon-PC bağlantısı için Windows Ayarlar → Hesap → Telefon-PC bağlantısı → Telefonla eşleştir seçeneğini açın. Windows'ta gösterilen 10 karakterli kodu Android MynAssistant → Ayarlar → Windows bilgisayarını eşleştir alanına yazıp onaylayın. Kod 5 dakika geçerlidir.",
-            "5. Canlı sunucuda /api/v1/info yapılandırma kontrolü ve pairing/start HTTP 200 smoke testi geçti. Bu, başlangıç uç noktasının çalıştığını doğrular; telefon onayı sonrası Windows oturumunun tamamı gerçek Android ve Windows cihazlarında ayrıca test edilmelidir. Önceden kaydedilmiş geçerli oturum varsa köprü onu kullanır.",
-            $googleOAuthReadmeLine,
-            "7. Google Kişiler bağlantısı isteğe bağlıdır. Google OAuth 403 access_denied verirse, OAuth projesi Google Auth Platform → Audience → Test users bölümünde bu Google hesabına yetki verilmelidir. Bu ayar Google Cloud Console'dadır ve telefon-PC eşleştirmesi için gerekmez.",
+            "4. Telefon-PC eşleştirmesi için Windows MynAssistant → Ayarlar → Agent → QR kodu oluştur seçeneğini açın. Android MynAssistant → Ayarlar → Agent bölümünden QR kodunu tarayın veya 10 karakterli kodu girip aynı MynAssistant hesabıyla onaylayın. Kod 5 dakika geçerlidir.",
+            "5. Telefon ve Windows bilgisayarında aynı MynAssistant hesabını kullanın. Google ile giriş, aynı Firebase/MynAssistant hesabının kimlik doğrulama yöntemidir; telefon-PC bağlantısı için ayrı Google Kişiler izni veya ayrı OAuth hesabı gerekmez.",
+            "6. Canlı sunucuda /api/v1/info yapılandırma kontrolü ve pairing/start HTTP 200 smoke testi geçti. Telefon onayı sonrası Windows oturumunun tamamı gerçek Android ve Windows cihazlarında ayrıca test edilmelidir. İlk kullanımda Windows Hesap bölümünde giriş yapın, ardından Agent sekmesinden QR üretin.",
+            "7. Hata günlükleri e-posta özelliği varsayılan olarak kapalıdır. Kullanıcı Ayarlar → Hata günlükleri bölümünde otomatik gönderimi açıkça etkinleştirirse, giriş yaptığı hesapla ve 5 dakikalık sınırla tanılama raporu destek e-postasına gönderilir.",
             "",
             "Not: Kuruluşunuz Windows Application Control politikasını kullanıyorsa imzasız dosyalar engellenebilir. Güvenlik politikasını kapatmayın; yayıncı imzası/Code Integrity günlükleri yöneticiniz tarafından doğrulanmalıdır."
           ) | Set-Content -Path "$distributionDir/README-Kurulum.txt" -Encoding UTF8
