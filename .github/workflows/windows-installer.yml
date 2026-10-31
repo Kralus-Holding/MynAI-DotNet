@@ -161,6 +161,28 @@ jobs:
             throw "All Settings pages, including Agent, must be part of the vertically touch-scrollable content area."
           }
 
+          $agentHotkeyPath = "src/MynAI.Agent/Hotkeys/AgentHotkeyService.cs"
+          $agentProgram = Get-Content -LiteralPath "src/MynAI.Agent/Program.cs" -Raw -Encoding UTF8
+          $agentHotkey = Get-Content -LiteralPath $agentHotkeyPath -Raw -Encoding UTF8
+          $appStartup = Get-Content -LiteralPath "src/MynAI.Windows/App.xaml.cs" -Raw -Encoding UTF8
+          $mainWindowCode = Get-Content -LiteralPath "src/MynAI.Windows/MainWindow.xaml.cs" -Raw -Encoding UTF8
+          foreach ($required in @("RegisterHotKey", "UnregisterHotKey", "BringUpMainWindow", "Ctrl+Shift+Space")) {
+            if (-not $agentHotkey.Contains($required)) { throw "Background Agent hotkey implementation is missing: $required" }
+          }
+          if (-not $agentProgram.Contains("new AgentHotkeyService()") -or -not $agentProgram.Contains("hotkeyService.RunAsync(")) {
+            throw "MynAgent must supervise its global hotkey listener alongside the scheduler and IPC."
+          }
+          foreach ($required in @("SingleInstanceName", "ActivationEventName", "AgentStartupManager.StartAgent()")) {
+            if (-not $appStartup.Contains($required)) { throw "Windows app startup is missing single-instance or automatic Agent startup: $required" }
+          }
+          if (-not $mainWindowCode.Contains("EventResetMode.AutoReset") -or -not $mainWindowCode.Contains("RestoreFromTray()")) {
+            throw "The existing UI must restore from the Agent activation event without creating duplicate windows."
+          }
+          $bridgeSource = Get-Content -LiteralPath "tools/MynAssistantDesktopBridge/agent.py" -Raw -Encoding UTF8
+          foreach ($required in @("def lock_workstation(", "def close_active_app(", '"lock_pc"', '"close_app"', "WM_CLOSE")) {
+            if (-not $bridgeSource.Contains($required)) { throw "Remote PC lock / graceful close command is missing: $required" }
+          }
+
           $loginXamlPath = "src/MynAI.Windows/AccountLoginWindow.xaml"
           $loginCodePath = "src/MynAI.Windows/AccountLoginWindow.xaml.cs"
           if (-not (Test-Path $loginXamlPath) -or -not (Test-Path $loginCodePath)) { throw "Standalone Firebase account login UI is missing." }
