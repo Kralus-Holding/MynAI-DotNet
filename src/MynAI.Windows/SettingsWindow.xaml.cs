@@ -221,45 +221,6 @@ public partial class SettingsWindow : Window
             localSendPath is not null ? Colors.LightGreen : Colors.Goldenrod);
     }
 
-    private void AgentStartupCheckBox_Click(object sender, RoutedEventArgs e)
-    {
-        var previous = AgentStartupManager.IsEnabled();
-        var requested = AgentStartupCheckBox.IsChecked == true;
-        try
-        {
-            AgentStartupManager.SetEnabled(requested);
-            var settings = _settingsStore.Load();
-            settings.StartAgentWithWindows = requested;
-            settings.StartApplicationWithWindows = StartupSettingsManager.IsEnabled();
-            _settingsStore.Save(settings);
-            UpdateAgentStatus();
-            UpdateAgentDiagnostics();
-            SetSaveStatus(
-                requested ? "Agent için Windows başlangıcı etkinleştirildi." : "Agent için Windows başlangıcı kapatıldı.",
-                Colors.LightGreen);
-        }
-        catch (Exception ex)
-        {
-            try
-            {
-                if (AgentStartupManager.IsEnabled() != previous)
-                    AgentStartupManager.SetEnabled(previous);
-            }
-            catch (Exception rollbackError)
-            {
-                DiagnosticLogManager.WriteError(
-                    "MYN-STARTUP-999", "Agent", "Agent başlangıç ayarı geri alınamadı.", rollbackError);
-            }
-
-            AgentStartupCheckBox.IsChecked = previous;
-            DiagnosticLogManager.WriteError(
-                "MYN-STARTUP-001", "Agent", "Agent başlangıç ayarı değiştirilemedi.", ex);
-            MessageBox.Show(
-                $"Agent başlangıç ayarı değiştirilemedi. Önceki ayar korunmaya çalışıldı.\n\n{ex.Message}",
-                "MynAssistant", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
     private void StartupAppCheckBox_Click(object sender, RoutedEventArgs e)
     {
         var previous = StartupSettingsManager.IsEnabled();
@@ -1126,13 +1087,13 @@ public partial class SettingsWindow : Window
 
         try
         {
+            DesktopBridgeStartupManager.SetEnabled(true);
             if (DesktopBridgeStartupManager.IsRunning())
                 DesktopBridgeStartupManager.RestartAgent();
             else
                 DesktopBridgeStartupManager.StartAgent();
 
             UpdateDesktopBridgeStatus();
-            UpdateAccountDesktopBridgeStatus();
             var statusMessage = loginWindow.StatusMessage ?? "Firebase hesabına giriş başarılı.";
             var emailWarning = statusMessage.Contains("gönderilemedi", StringComparison.OrdinalIgnoreCase);
             SetSaveStatus(statusMessage, emailWarning ? Colors.IndianRed : Colors.LightGreen);
@@ -1145,7 +1106,6 @@ public partial class SettingsWindow : Window
                 "Firebase oturumu kaydedildi ancak Desktop Bridge yeniden başlatılamadı.",
                 bridgeError);
             UpdateDesktopBridgeStatus();
-            UpdateAccountDesktopBridgeStatus();
             SetSaveStatus(
                 "Oturum açıldı ancak telefon-PC köprüsü yeniden başlatılamadı. Bağlantı durumunu yenile. (MYN-DEVICE-006)",
                 Colors.IndianRed);
@@ -1159,7 +1119,6 @@ public partial class SettingsWindow : Window
             FirebaseDesktopSessionStore.Delete();
             UpdateDesktopLoginStatus();
             UpdateDesktopBridgeStatus();
-            UpdateAccountDesktopBridgeStatus();
             return;
         }
 
@@ -1186,7 +1145,6 @@ public partial class SettingsWindow : Window
 
             UpdateDesktopLoginStatus();
             UpdateDesktopBridgeStatus();
-            UpdateAccountDesktopBridgeStatus();
             DesktopPairingStatusText.Text = "Hesaptan çıkış yapıldı. Yerel ayarlar ve uygulama dosyaları korunuyor.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
             DesktopPairingCodeText.Visibility = Visibility.Collapsed;
@@ -1201,7 +1159,6 @@ public partial class SettingsWindow : Window
                 ex);
             UpdateDesktopLoginStatus();
             UpdateDesktopBridgeStatus();
-            UpdateAccountDesktopBridgeStatus();
             SetSaveStatus(
                 "Çıkış güvenli biçimde tamamlanamadı. Korumalı oturum korunuyor; hata günlüklerini kontrol et. (MYN-AUTH-005)",
                 Colors.IndianRed);
@@ -1223,41 +1180,58 @@ public partial class SettingsWindow : Window
         if (_pairingCancellation is { IsCancellationRequested: false })
             return;
 
-        if (FirebaseDesktopSessionStore.HasValidStoredSession())
+        var desktopSession = FirebaseDesktopSessionStore.Load();
+        if (desktopSession is null || !FirebaseDesktopSessionStore.HasValidStoredSession())
         {
-            var answer = MessageBox.Show(
-                "Bu bilgisayarda zaten kayıtlı bir telefon-PC oturumu var. Yeni eşleştirme onaylanırsa bu oturum yeni telefon hesabıyla değiştirilecek. Devam edilsin mi?",
-                "Telefon-PC eşleştirmesini değiştir",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning,
-                MessageBoxResult.No);
-            if (answer != MessageBoxResult.Yes)
-                return;
+            DesktopPairingStatusText.Text = "Önce Hesap bölümünden MynAssistant / Google hesabınla giriş yap.";
+            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            return;
         }
 
         var cancellation = new CancellationTokenSource();
         _pairingCancellation = cancellation;
         StartDesktopPairingButton.IsEnabled = false;
-        DesktopLoginButton.IsEnabled = false;
         CancelDesktopPairingButton.IsEnabled = true;
-        DesktopLoginStatusText.Text = "Telefon onayı bekleniyor...";
+        DesktopPairingQrImage.Source = null;
+        DesktopPairingQrImage.Visibility = Visibility.Collapsed;
         DesktopPairingCodeText.Text = "";
         DesktopPairingCodeText.Visibility = Visibility.Collapsed;
-        DesktopPairingStatusText.Text = "Sunucudan güvenli eşleştirme kodu alınıyor...";
+        DesktopPairingStatusText.Text = "Aynı MynAssistant hesabı doğrulanıyor ve imzalı QR kodu oluşturuluyor...";
         DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
 
         try
         {
+            var currentSessionIdToken = await _desktopPairingClient.GetFreshIdTokenAsync(
+                desktopSession,
+                cancellation.Token);
             var pairing = await _desktopPairingClient.StartAsync(
                 Environment.MachineName,
+                currentSessionIdToken,
                 cancellation.Token);
 
+            var qrExpiresAtUnix = pairing.ExpiresAtUtc.ToUnixTimeSeconds();
+            var qrPayload = $"MYNASSISTANT-PAIR:{pairing.Code}:{qrExpiresAtUnix}:{pairing.QrSignature}";
+            var qrGenerator = new QRCoder.QRCodeGenerator();
+            using var qrData = qrGenerator.CreateQrCode(qrPayload, QRCoder.QRCodeGenerator.ECCLevel.Q);
+            var qrBytes = new QRCoder.PngByteQRCode(qrData).GetGraphic(8);
+            using (var stream = new MemoryStream(qrBytes))
+            {
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.StreamSource = stream;
+                bitmap.EndInit();
+                bitmap.Freeze();
+                DesktopPairingQrImage.Source = bitmap;
+            }
+
+            DesktopPairingQrImage.Visibility = Visibility.Visible;
             DesktopPairingCodeText.Text = pairing.Code;
             DesktopPairingCodeText.Visibility = Visibility.Visible;
             DesktopPairingStatusText.Text =
-                $"Android MynAssistant → Ayarlar bölümüne bu kodu gir. " +
-                $"Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}. " +
-                "Telefon onay verene kadar bu pencere açık kalmalı.";
+                $"Android MynAssistant → Ayarlar → Agent bölümünden QR kodunu tara ve aynı hesapla onayla. " +
+                $"Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}.";
+            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
 
             while (DateTimeOffset.UtcNow < pairing.ExpiresAtUtc)
             {
@@ -1271,23 +1245,26 @@ public partial class SettingsWindow : Window
                 {
                     var session = status.Session
                         ?? throw new InvalidDataException("Onaylanan eşleştirme oturumu eksik.");
+                    if (!StringComparer.Ordinal.Equals(session.Uid, desktopSession.Uid))
+                        throw new InvalidDataException(
+                            "Onaylanan telefon hesabı Windows hesabıyla aynı değil. Mevcut oturum korunuyor.");
 
-                    // The existing user session is only replaced after the phone has explicitly approved.
                     FirebaseDesktopSessionStore.Save(session);
                     UpdateDesktopLoginStatus();
 
                     try
                     {
+                        DesktopBridgeStartupManager.SetEnabled(true);
                         if (DesktopBridgeStartupManager.IsRunning())
                             DesktopBridgeStartupManager.RestartAgent();
                         else
                             DesktopBridgeStartupManager.StartAgent();
 
                         UpdateDesktopBridgeStatus();
-                        UpdateAccountDesktopBridgeStatus();
                         DesktopPairingStatusText.Text =
-                            $"Eşleştirme tamamlandı. {status.MachineName ?? Environment.MachineName} telefon hesabına bağlandı.";
+                            $"Eşleştirme tamamlandı. {status.MachineName ?? Environment.MachineName} aynı MynAssistant hesabına bağlandı.";
                         DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightGreen);
+                        DesktopPairingQrImage.Visibility = Visibility.Collapsed;
                         DesktopPairingCodeText.Visibility = Visibility.Collapsed;
                         SetSaveStatus("Telefon-PC bağlantısı eşleştirildi.", Colors.LightGreen);
                     }
@@ -1299,9 +1276,8 @@ public partial class SettingsWindow : Window
                             "Telefon eşleştirildi ancak Desktop Bridge başlatılamadı.",
                             bridgeError);
                         UpdateDesktopBridgeStatus();
-                        UpdateAccountDesktopBridgeStatus();
                         DesktopPairingStatusText.Text =
-                            "Telefon hesabı eşleştirildi ancak Bridge başlatılamadı. Bağlantı durumunu yenileyip tekrar dene. (MYN-DEVICE-006)";
+                            "Hesap onaylandı ancak telefon-PC köprüsü başlatılamadı. Bağlantıyı yenile ve günlükleri kontrol et. (MYN-DEVICE-006)";
                         DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
                     }
 
@@ -1309,63 +1285,51 @@ public partial class SettingsWindow : Window
                 }
 
                 DesktopPairingStatusText.Text =
-                    $"Kod bekleniyor. Android MynAssistant → Ayarlar içinde kodu onayla. " +
-                    $"Kalan süre: {Math.Max(0, (int)(pairing.ExpiresAtUtc - DateTimeOffset.UtcNow).TotalSeconds)} sn.";
-                await Task.Delay(TimeSpan.FromSeconds(2), cancellation.Token);
+                    $"Telefon onayı bekleniyor. Kalan süre: {Math.Max(0, (int)(pairing.ExpiresAtUtc - DateTimeOffset.UtcNow).TotalSeconds)} sn.";
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellation.Token);
             }
 
-            UpdateDesktopLoginStatus();
-            DesktopPairingStatusText.Text =
-                "Eşleştirme kodunun süresi doldu. Yeniden eşleştirme başlat.";
+            DesktopPairingStatusText.Text = "Eşleştirme kodunun süresi doldu. Yeni QR kodu oluştur.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            DesktopPairingQrImage.Visibility = Visibility.Collapsed;
             DesktopPairingCodeText.Visibility = Visibility.Collapsed;
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            DesktopLoginStatusText.Text = FirebaseDesktopSessionStore.HasValidStoredSession()
-                ? "Önceki oturum korunuyor."
-                : "Giriş iptal edildi.";
-            DesktopPairingStatusText.Text =
-                "Eşleştirme iptal edildi. Kullanılmayan kod kısa süre içinde sona erecek.";
+            DesktopPairingStatusText.Text = "Eşleştirme iptal edildi. Önceki MynAssistant oturumu korunuyor.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
+            DesktopPairingQrImage.Visibility = Visibility.Collapsed;
             DesktopPairingCodeText.Visibility = Visibility.Collapsed;
         }
         catch (DesktopPairingClientException ex)
         {
-            DiagnosticLogManager.WriteError(
-                ex.ErrorCode,
-                "DesktopBridge",
-                "Telefon-PC eşleştirme API'si hata yanıtı verdi.",
-                ex);
-            DesktopLoginStatusText.Text = $"Giriş yapılamadı: {ex.Message}";
+            DiagnosticLogManager.WriteError(ex.ErrorCode, "DesktopBridge",
+                "Telefon-PC eşleştirme API'si hata yanıtı verdi.", ex);
             DesktopPairingStatusText.Text = $"{ex.Message} ({ex.ErrorCode})";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            DesktopPairingQrImage.Visibility = Visibility.Collapsed;
+            DesktopPairingCodeText.Visibility = Visibility.Collapsed;
         }
         catch (HttpRequestException ex)
         {
-            DiagnosticLogManager.WriteError(
-                "MYN-SERVER-001", "DesktopBridge", "Eşleştirme sunucusuna ulaşılamadı.", ex);
-            DesktopLoginStatusText.Text = "Giriş yapılamadı; sunucuya ulaşılamadı.";
+            DiagnosticLogManager.WriteError("MYN-SERVER-001", "DesktopBridge",
+                "Eşleştirme sunucusuna ulaşılamadı.", ex);
             DesktopPairingStatusText.Text =
-                "Eşleştirme sunucusuna ulaşılamadı. İnternet bağlantısını veya sunucu durumunu kontrol et. (MYN-SERVER-001)";
+                "Eşleştirme sunucusuna ulaşılamadı. İnternet bağlantısını veya Render dağıtımını kontrol et. (MYN-SERVER-001)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
         }
         catch (TaskCanceledException ex) when (!cancellation.IsCancellationRequested)
         {
-            DiagnosticLogManager.WriteError(
-                "MYN-SERVER-002", "DesktopBridge", "Eşleştirme isteği zaman aşımına uğradı.", ex);
-            DesktopLoginStatusText.Text = "Giriş yapılamadı; sunucu yanıt vermedi.";
-            DesktopPairingStatusText.Text =
-                "Sunucu yanıtı zaman aşımına uğradı. Biraz sonra yeniden dene. (MYN-SERVER-002)";
+            DiagnosticLogManager.WriteError("MYN-SERVER-002", "DesktopBridge",
+                "Eşleştirme isteği zaman aşımına uğradı.", ex);
+            DesktopPairingStatusText.Text = "Sunucu yanıtı zaman aşımına uğradı. Biraz sonra yeniden dene. (MYN-SERVER-002)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
         }
         catch (Exception ex)
         {
-            DiagnosticLogManager.WriteError(
-                "MYN-DEVICE-999", "DesktopBridge", "Telefon-PC eşleştirmesi tamamlanamadı.", ex);
-            DesktopLoginStatusText.Text = $"Giriş yapılamadı: {ex.Message}";
-            DesktopPairingStatusText.Text =
-                $"{ex.Message} (MYN-DEVICE-999)";
+            DiagnosticLogManager.WriteError("MYN-DEVICE-999", "DesktopBridge",
+                "Telefon-PC eşleştirmesi tamamlanamadı.", ex);
+            DesktopPairingStatusText.Text = $"{ex.Message} (MYN-DEVICE-999)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
         }
         finally
@@ -1374,8 +1338,8 @@ public partial class SettingsWindow : Window
                 _pairingCancellation = null;
             cancellation.Dispose();
             StartDesktopPairingButton.IsEnabled = true;
-            DesktopLoginButton.IsEnabled = true;
             CancelDesktopPairingButton.IsEnabled = false;
+            UpdateDesktopBridgeStatus();
         }
     }
 
@@ -1391,32 +1355,33 @@ public partial class SettingsWindow : Window
             return;
 
         _lastBridgeRefreshAttemptUtc = now;
-        AccountBridgeRefreshButton.IsEnabled = false;
         try
         {
-            if (FirebaseDesktopSessionStore.HasValidStoredSession())
+            if (!FirebaseDesktopSessionStore.HasValidStoredSession())
             {
-                if (DesktopBridgeStartupManager.IsRunning())
-                    DesktopBridgeStartupManager.RestartAgent();
-                else
-                    DesktopBridgeStartupManager.StartAgent();
+                DesktopBridgeStatusText.Text = "Önce MynAssistant hesabıyla giriş yap.";
+                DesktopBridgeStatusText.Foreground = new SolidColorBrush(Colors.Goldenrod);
+                return;
             }
 
+            DesktopBridgeStartupManager.SetEnabled(true);
+            if (DesktopBridgeStartupManager.IsRunning())
+                DesktopBridgeStartupManager.RestartAgent();
+            else
+                DesktopBridgeStartupManager.StartAgent();
             UpdateDesktopBridgeStatus();
-            UpdateAccountDesktopBridgeStatus();
         }
         catch (Exception ex)
         {
-            UpdateDesktopBridgeStatus();
-            AccountDesktopBridgeStatusText.Text = "Telefon-PC bağlantısı yenilenemedi.";
-            AccountDesktopBridgeStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
-            AccountDesktopBridgeMessageText.Text = ex.Message;
-            AccountDesktopBridgeStatusDot.Fill = new SolidColorBrush(Colors.IndianRed);
+            DiagnosticLogManager.WriteError(
+                "MYN-DEVICE-007", "DesktopBridge", "Telefon-PC bağlantısı yenilenemedi.", ex);
+            DesktopBridgeStatusText.Text = "Telefon-PC bağlantısı yenilenemedi.";
+            DesktopBridgeStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            DesktopBridgeMessageText.Text = ex.Message;
+            DesktopBridgeStatusDot.Fill = new SolidColorBrush(Colors.IndianRed);
         }
         finally
         {
-            AccountBridgeRefreshButton.IsEnabled = true;
-            // Start the debounce window after the operation too, so queued double-clicks are ignored.
             _lastBridgeRefreshAttemptUtc = DateTime.UtcNow;
         }
     }
@@ -1456,14 +1421,12 @@ public partial class SettingsWindow : Window
         {
             DesktopBridgeStartupManager.StopAgent();
             UpdateDesktopBridgeStatus();
-            UpdateAccountDesktopBridgeStatus();
         }
         catch (Exception ex)
         {
             DiagnosticLogManager.WriteError(
                 "MYN-AGENT-003", "DesktopBridge", "Telefon-PC bağlantısı durdurulamadı.", ex);
             UpdateDesktopBridgeStatus();
-            UpdateAccountDesktopBridgeStatus();
             MessageBox.Show(
                 $"Telefon-PC bağlantısı durdurulamadı:\n\n{ex.Message}",
                 "MynAssistant — Telefon-PC bağlantısı",
@@ -1693,53 +1656,11 @@ public partial class SettingsWindow : Window
         updatedSettings.CameraEnabled = CameraCheckBox.IsChecked == true;
         updatedSettings.BringToFrontHotkey = HotkeyTextBox.Text.Trim();
 
-        // Validate/apply the new hotkey before writing settings. Apply unregisters
-        // the old shortcut first, so restore the previous shortcut on any failure.
-        var hotkeyError = string.Empty;
-        var hotkeyApplied = false;
-        try
+        if (!IsValidHotkey(updatedSettings.BringToFrontHotkey, out var hotkeyError))
         {
-            hotkeyApplied = GlobalHotkeyService.Apply(
-                updatedSettings.BringToFrontHotkey,
-                out hotkeyError);
-        }
-        catch (Exception hotkeyException)
-        {
-            hotkeyError = hotkeyException.Message;
-            DiagnosticLogManager.WriteError(
-                "MYN-SETTINGS-002",
-                "GlobalHotkey",
-                "Yeni global kısayol uygulanamadı.",
-                hotkeyException);
-        }
-
-        if (!hotkeyApplied)
-        {
-            try
-            {
-                if (!GlobalHotkeyService.Apply(originalSettings.BringToFrontHotkey, out var restoreError))
-                {
-                    DiagnosticLogManager.WriteError(
-                        "MYN-SETTINGS-999",
-                        "GlobalHotkey",
-                        "Yeni kısayol reddedildi ve önceki kısayol geri yüklenemedi.",
-                        new InvalidOperationException(restoreError));
-                }
-            }
-            catch (Exception restoreException)
-            {
-                DiagnosticLogManager.WriteError(
-                    "MYN-SETTINGS-999",
-                    "GlobalHotkey",
-                    "Yeni kısayol reddedildi ve önceki kısayol geri yüklenemedi.",
-                    restoreException);
-            }
-
-            HotkeyInfoText.Text = string.IsNullOrWhiteSpace(hotkeyError)
-                ? "Global kısayol uygulanamadı."
-                : hotkeyError;
+            HotkeyInfoText.Text = hotkeyError;
             HotkeyInfoText.Foreground = new SolidColorBrush(Colors.IndianRed);
-            SetSaveStatus("Ayarlar kaydedilmedi; kısayol geçersiz veya kullanımda.", Colors.IndianRed);
+            SetSaveStatus("Ayarlar kaydedilmedi; global kısayol geçersiz.", Colors.IndianRed);
             return;
         }
 
@@ -1750,23 +1671,20 @@ public partial class SettingsWindow : Window
             settingsSaved = true;
 
             DesktopBridgeStartupManager.SetEnabled(requestedBridgeStartup);
+            if (AgentStartupManager.IsRunning())
+                AgentStartupManager.RestartAgent();
+            else
+                AgentStartupManager.StartAgent();
 
             DesktopBridgeStartupCheckBox.IsChecked = requestedBridgeStartup;
-            if (string.IsNullOrWhiteSpace(updatedSettings.BringToFrontHotkey))
-            {
-                HotkeyInfoText.Text = "Global kısayol kapalı.";
-            }
-            else
-            {
-                HotkeyInfoText.Text = "Global kısayol aktif.";
-            }
+            HotkeyInfoText.Text = string.IsNullOrWhiteSpace(updatedSettings.BringToFrontHotkey)
+                ? "Global kısayol kapalı."
+                : "Global kısayol Agent tarafından izleniyor.";
             HotkeyInfoText.Foreground = new SolidColorBrush(Colors.LightGreen);
 
             SetSaveStatus("Ayarlar kaydedildi.", Colors.LightGreen);
             UpdateAgentStatus();
             UpdateDesktopBridgeStatus();
-            UpdateAccountDesktopBridgeStatus();
-
             // Close only after the persistent settings and OS startup setting succeed.
             _agentTimer.Stop();
             Close();
@@ -1807,16 +1725,6 @@ public partial class SettingsWindow : Window
                     rollbackStartupError);
             }
 
-            if (!GlobalHotkeyService.Apply(originalSettings.BringToFrontHotkey, out var restoreHotkeyError))
-            {
-                rollbackFailures.Add("Önceki global kısayol geri yüklenemedi.");
-                DiagnosticLogManager.WriteError(
-                    "MYN-SETTINGS-999",
-                    "GlobalHotkey",
-                    "Kaydet hatasından sonra önceki global kısayol geri yüklenemedi.",
-                    new InvalidOperationException(restoreHotkeyError));
-            }
-
             DiagnosticLogManager.WriteError(
                 "MYN-SETTINGS-001",
                 "Settings",
@@ -1833,6 +1741,42 @@ public partial class SettingsWindow : Window
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
+    }
+
+    private static bool IsValidHotkey(string value, out string error)
+    {
+        error = string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+            return true;
+
+        var parts = value.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 2)
+        {
+            error = "Kısayol için Ctrl / Alt / Shift / Win ve bir normal tuş gerekir.";
+            return false;
+        }
+
+        var validModifiers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        { "ctrl", "control", "alt", "shift", "win", "windows" };
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < parts.Length - 1; index++)
+        {
+            if (!validModifiers.Contains(parts[index]) || !seen.Add(parts[index]))
+            {
+                error = $"Kısayol değiştiricisi geçersiz veya tekrar edilmiş: {parts[index]}";
+                return false;
+            }
+        }
+
+        if (!Enum.TryParse<Key>(parts[^1], true, out var key) || key == Key.None ||
+            key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or
+                Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin)
+        {
+            error = "Kısayolun son tuşu geçerli bir normal tuş olmalı.";
+            return false;
+        }
+
+        return true;
     }
 
     private void SetSaveStatus(
