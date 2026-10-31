@@ -173,7 +173,7 @@ public sealed class AgentHotkeyService
 
         for (var index = 0; index < parts.Length - 1; index++)
         {
-            modifiers |= parts[index].ToLowerInvariant() switch
+            var modifier = parts[index].ToLowerInvariant() switch
             {
                 "ctrl" or "control" => ModControl,
                 "alt" => ModAlt,
@@ -181,11 +181,12 @@ public sealed class AgentHotkeyService
                 "win" or "windows" => ModWin,
                 _ => 0
             };
-            if ((modifiers & (ModControl | ModAlt | ModShift | ModWin)) == 0)
+            if (modifier == 0)
             {
                 error = $"Unsupported modifier: {parts[index]}";
                 return false;
             }
+            modifiers |= modifier;
         }
 
         if (parts.Take(parts.Length - 1).Distinct(StringComparer.OrdinalIgnoreCase).Count()
@@ -214,7 +215,7 @@ public sealed class AgentHotkeyService
                 return character;
         }
 
-        if (value.StartsWith('F', StringComparison.OrdinalIgnoreCase) &&
+        if (value.StartsWith("F", StringComparison.OrdinalIgnoreCase) &&
             int.TryParse(value.AsSpan(1), out var functionNumber) &&
             functionNumber is >= 1 and <= 24)
             return (uint)(0x70 + functionNumber - 1);
