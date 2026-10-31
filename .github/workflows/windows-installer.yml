@@ -546,3 +546,5 @@ jobs:
           Write-Host "Verified customer EXE URL: $($uploadedAsset.browser_download_url)"
           Write-Host "Installer size bytes: $($localInstaller.Length)"
           Write-Host "Installer SHA-256: $localSha256"
+
+# Manual 0.1.7 installer rebuild trigger: 2026-10-31 (comment only; no build behavior changed).
