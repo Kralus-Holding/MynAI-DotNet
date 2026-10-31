@@ -933,6 +933,11 @@
                                          Padding="10"
                                          FontFamily="Consolas"
                                          FontSize="11"/>
+                                <CheckBox x:Name="AutoEmailDiagnosticsCheckBox"
+                                          Content="Hata oluştuğunda tanılama raporunu otomatik e-postayla gönder"
+                                          Margin="0,4,0,10"/>
+                                <TextBlock Text="Otomatik gönderim varsayılan olarak kapalıdır. Açarsan yalnızca giriş yaptığın MynAssistant hesabından, en fazla 5 dakikada bir rapor gönderilir."
+                                           Foreground="#718096" FontSize="11" Margin="0,0,0,8" TextWrapping="Wrap"/>
                                 <WrapPanel Margin="0,12,0,0">
                                     <Button Content="Yenile" Style="{StaticResource SecondaryButton}"
                                             Margin="0,0,8,8" Click="RefreshErrorLogs_Click"/>
