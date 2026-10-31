@@ -37,7 +37,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _refreshTimer;
     private readonly DispatcherTimer _activationTimer;
     private EventWaitHandle? _activationEvent;
-    private const string ActivationEventName = @"Local\\MynAssistant.Ui.Activate";
+    private const string ActivationEventName = @"Local\MynAssistant.Ui.Activate";
     private bool _refreshTasksInProgress;
 
     private bool _expanded;
