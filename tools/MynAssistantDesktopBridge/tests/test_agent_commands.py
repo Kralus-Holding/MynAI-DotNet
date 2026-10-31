@@ -221,6 +221,32 @@ class RemoteKeyboardCommandTests(unittest.TestCase):
             self.assertTrue(agent.command_is_supported(command))
 
 
+class RemotePowerAndWindowCommandTests(unittest.TestCase):
+    def test_lock_and_close_commands_are_supported_and_dispatched(self) -> None:
+        with mock.patch.object(agent, "lock_workstation", return_value="Windows oturumu kilitlendi.") as lock, \
+             mock.patch.object(agent, "close_active_app", return_value="notepad.exe uygulamasına güvenli kapatma isteği gönderildi.") as close:
+            lock_result = agent.execute_command("lock_pc", {})
+            close_result = agent.execute_command("close_app", {})
+
+        lock.assert_called_once_with()
+        close.assert_called_once_with()
+        self.assertIn("kilitlendi", lock_result)
+        self.assertIn("kapatma isteği", close_result)
+        self.assertTrue(agent.command_is_supported("lock_pc"))
+        self.assertTrue(agent.command_is_supported("close_app"))
+
+    def test_natural_language_lock_and_close_commands_are_routed(self) -> None:
+        with mock.patch.object(agent, "lock_workstation", return_value="Windows oturumu kilitlendi.") as lock, \
+             mock.patch.object(agent, "close_active_app", return_value="notepad.exe kapatma isteği gönderildi.") as close:
+            lock_result = agent.execute_command("text_command", {"text": "bilgisayarı kilitle"})
+            close_result = agent.execute_command("text_command", {"text": "uygulamayı kapat"})
+
+        lock.assert_called_once_with()
+        close.assert_called_once_with()
+        self.assertIn("kilitlendi", lock_result)
+        self.assertIn("kapatma isteği", close_result)
+
+
 class SafeFileListingCommandTests(unittest.TestCase):
     def test_root_listing_contains_only_existing_allowlisted_profile_folders(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
