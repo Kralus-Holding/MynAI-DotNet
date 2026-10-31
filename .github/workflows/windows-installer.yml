@@ -190,6 +190,40 @@ jobs:
           $loginCode = Get-Content -LiteralPath $loginCodePath -Raw -Encoding UTF8
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
           $loginCode = Get-Content -LiteralPath "src/MynAI.Windows/AccountLoginWindow.xaml.cs" -Raw -Encoding UTF8
+          $settingsXaml = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml" -Raw -Encoding UTF8
+          $mainXaml = Get-Content -LiteralPath "src/MynAI.Windows/MainWindow.xaml" -Raw -Encoding UTF8
+          $pairingCodeStart = $settingsCode.IndexOf("private async Task StartDesktopPairingAsync")
+          $pairingCodeEnd = $settingsCode.IndexOf("private void CancelDesktopPairing_Click", $pairingCodeStart)
+          if ($pairingCodeStart -lt 0 -or $pairingCodeEnd -le $pairingCodeStart) {
+            throw "Code-first pairing methods could not be located."
+          }
+          $pairingStartBlock = $settingsCode.Substring($pairingCodeStart, $pairingCodeEnd - $pairingCodeStart)
+          if (-not $pairingStartBlock.Contains("_pendingPairingQrPayload") -or
+              $pairingStartBlock.Contains("CreateQrCode(") -or
+              -not $settingsCode.Contains("ShowDesktopPairingQr_Click") -or
+              -not $settingsCode.Contains("CreateQrCode(")) {
+            throw "Pairing must show a manual code first and generate its QR only from the adjacent QR button."
+          }
+          if (-not $settingsXaml.Contains('PanningMode="VerticalOnly"') -or
+              -not $settingsXaml.Contains('PanningMode="HorizontalOnly"') -or
+              -not $settingsXaml.Contains('IsManipulationEnabled="True"') -or
+              -not $mainXaml.Contains('PanningMode="VerticalOnly"')) {
+            throw "Touchscreen finger-drag scrolling is not enabled on all desktop pages and logo gallery."
+          }
+          $privacyStart = $settingsXaml.IndexOf('x:Name="PrivacyPanel"')
+          $pluginsStart = $settingsXaml.IndexOf('x:Name="PluginsPanel"', $privacyStart)
+          if ($privacyStart -lt 0 -or $pluginsStart -le $privacyStart) {
+            throw "Unified Windows permissions panel is missing."
+          }
+          $privacyBlock = $settingsXaml.Substring($privacyStart, $pluginsStart - $privacyStart)
+          foreach ($permissionControl in @('x:Name="NotificationsCheckBox"', 'x:Name="MicrophoneCheckBox"', 'x:Name="CameraCheckBox"')) {
+            if (-not $privacyBlock.Contains($permissionControl)) { throw "Windows permission row is missing $permissionControl." }
+          }
+          if (-not $settingsCode.Contains("OpenNotificationsSettings_Click") -or
+              -not $settingsXaml.Contains('PanningMode="HorizontalOnly"') -or
+              -not $settingsCode.Contains("CustomLogoPlaceholderText.Visibility = Visibility.Visible")) {
+            throw "Windows notification settings, touch logo gallery, or fixed add-logo tile is missing."
+          }
           if (-not $settingsCode.Contains("new AccountLoginWindow")) { throw "The account entry point must open the standalone login window." }
           if ($settingsText.Contains("TopNavigationScrollViewer") -or $settingsText.Contains("TopGeneralNavButton") -or $settingsText.Contains("TopAgentNavButton")) {
             throw "Settings must use the left sidebar as its only navigation; the top horizontal tabs must be removed."
