@@ -5,6 +5,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Json;
+using System.Reflection;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -18,6 +21,11 @@ namespace MynAI.Windows;
 public partial class SettingsWindow : Window
 {
     private readonly MynAISettingsStore _settingsStore;
+    private static readonly HttpClient DiagnosticsHttp = new()
+    {
+        Timeout = TimeSpan.FromSeconds(70)
+    };
+    private const string DiagnosticsReportUrl = "https://mynassistant-server.onrender.com/api/v1/diagnostics/report";
 
     private readonly DispatcherTimer _agentTimer;
     private readonly DesktopPairingClient _desktopPairingClient = new();
@@ -334,6 +342,83 @@ public partial class SettingsWindow : Window
             ErrorLogsStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
             DiagnosticLogManager.WriteError(
                 "MYN-UI-999", "Settings", "Hata günlükleri ekranı güncellenemedi.", ex);
+        }
+    }
+
+    private async void EmailDiagnostics_Click(object sender, RoutedEventArgs e)
+    {
+        if (MessageBox.Show(
+                "Son uygulama ve Agent günlükleri, uygulama sürümü ve MynAssistant hesabının UID/e-posta bilgisi destek ekibine gönderilecek. Kişisel dosyaların veya ekran görüntülerin eklenmez. Göndermeyi onaylıyor musun?",
+                "MynAssistant hata raporu gönder",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information,
+                MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+
+        var session = FirebaseDesktopSessionStore.Load();
+        if (session is null || !FirebaseDesktopSessionStore.HasValidStoredSession())
+        {
+            MessageBox.Show(
+                "Hata raporu göndermek için önce Hesap bölümünden MynAssistant / Google hesabınla giriş yap.",
+                "MynAssistant",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        EmailDiagnosticsButton.IsEnabled = false;
+        ErrorLogsStatusText.Text = "Hata raporu güvenli oturumla gönderiliyor...";
+        try
+        {
+            var idToken = await _desktopPairingClient.GetFreshIdTokenAsync(session);
+            var supportReport = DiagnosticLogManager.BuildSupportReport();
+            var appVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
+            using var response = await DiagnosticsHttp.PostAsJsonAsync(
+                DiagnosticsReportUrl,
+                new
+                {
+                    source = "windows",
+                    appVersion,
+                    errorCode = "MYN-USER-REPORT",
+                    message = "Kullanıcı Ayarlar → Hata günlükleri bölümünden Windows destek raporu gönderdi.",
+                    details = supportReport
+                },
+                new JsonSerializerOptions(JsonSerializerDefaults.Web),
+                CancellationToken.None);
+            if (!response.IsSuccessStatusCode)
+            {
+                string message = $"Sunucu hata raporunu kabul etmedi (HTTP {(int)response.StatusCode}).";
+                try
+                {
+                    using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                    if (document.RootElement.TryGetProperty("detail", out var detail) &&
+                        detail.ValueKind == JsonValueKind.String &&
+                        !string.IsNullOrWhiteSpace(detail.GetString()))
+                        message = detail.GetString()!;
+                }
+                catch (JsonException)
+                {
+                    // Do not show raw proxy bodies or server diagnostics.
+                }
+                throw new InvalidOperationException(message);
+            }
+
+            ErrorLogsStatusText.Text = "Hata raporu destek ekibine e-posta ile gönderildi.";
+            ErrorLogsStatusText.Foreground = new SolidColorBrush(Colors.LightGreen);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-SUPPORT-001",
+                "Diagnostics",
+                "Kullanıcı onaylı destek raporu gönderilemedi.",
+                ex);
+            ErrorLogsStatusText.Text = "Hata raporu gönderilemedi: " + ex.Message;
+            ErrorLogsStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+        }
+        finally
+        {
+            EmailDiagnosticsButton.IsEnabled = true;
         }
     }
 
