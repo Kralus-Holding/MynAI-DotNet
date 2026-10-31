@@ -448,7 +448,8 @@
             <ScrollViewer Grid.Row="0"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
-                          PanningMode="VerticalOnly">
+                          PanningMode="VerticalOnly"
+                          IsManipulationEnabled="True">
 
                 <Grid>
 
@@ -535,7 +536,7 @@
                                                   Click="SelectCustomLogo_Click">
                                         <StackPanel VerticalAlignment="Center">
                                             <Grid Width="64" Height="64">
-                                                <Image x:Name="CustomLogoOptionImage" Stretch="Uniform"/>
+                                                <Image x:Name="CustomLogoOptionImage" Stretch="Uniform" Visibility="Collapsed"/>
                                                 <TextBlock x:Name="CustomLogoPlaceholderText" Text="+"
                                                            FontSize="34" Foreground="#66CBEA"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -554,6 +555,7 @@
                                 <ScrollViewer HorizontalScrollBarVisibility="Auto"
                                               VerticalScrollBarVisibility="Disabled"
                                               PanningMode="HorizontalOnly"
+                                              IsManipulationEnabled="True"
                                               CanContentScroll="True">
                                     <StackPanel x:Name="UserLogosGalleryPanel"
                                                 Orientation="Horizontal"
@@ -568,26 +570,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Style="{StaticResource Card}">
 
-                            <StackPanel>
-
-                                <TextBlock Text="Windows bildirimleri"
-                                           FontSize="14"
-                                           FontWeight="SemiBold"/>
-
-                                <CheckBox x:Name="NotificationsCheckBox"
-                                          Content="Planlanan işlemler için bildirim göster"
-                                          Margin="0,12,0,0"/>
-
-                                <TextBlock Text="10 ve 5 dakika uyarıları bu ayarı kullanır."
-                                           Foreground="#7E8A9D"
-                                           FontSize="11"
-                                           Margin="0,6,0,0"/>
-
-                            </StackPanel>
-
-                        </Border>
 
 
 
@@ -683,25 +666,42 @@
 
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
-                                <TextBlock Text="QR ile güvenli Telefon-PC eşleştirmesi" FontSize="14" FontWeight="SemiBold"/>
-                                <TextBlock Text="Aynı MynAssistant / Google hesabını telefonda kullan. Android MynAssistant → Ayarlar → Agent bölümünden bu QR kodunu tara ve bilgisayarı onayla. Kod 5 dakika geçerlidir."
+                                <TextBlock Text="Telefon-PC güvenli eşleştirmesi" FontSize="14" FontWeight="SemiBold"/>
+                                <TextBlock Text="Önce tek kullanımlık 10 karakterli kodu oluştur. İstersen aynı satırdaki QR simgesine dokunarak bu kodun QR görüntüsünü aç; telefonda kodu elle de girebilirsin. Kod 5 dakika geçerlidir."
                                            Foreground="#718096" FontSize="11" Margin="0,6,0,10" TextWrapping="Wrap"/>
+                                <Grid Margin="0,4,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="DesktopPairingCodeText" Text="" Visibility="Collapsed"
+                                               FontSize="26" FontWeight="Bold" Foreground="#9DD9D2"
+                                               VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <Button x:Name="ShowDesktopPairingQrButton"
+                                            Grid.Column="1"
+                                            Content="▦"
+                                            Width="42" Height="38"
+                                            FontSize="22"
+                                            Padding="4"
+                                            Margin="8,0,0,0"
+                                            ToolTip="Oluşturulan kodun QR görüntüsünü göster/gizle"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="ShowDesktopPairingQr_Click"
+                                            Visibility="Collapsed"/>
+                                </Grid>
                                 <Image x:Name="DesktopPairingQrImage" Width="168" Height="168" Stretch="Uniform"
-                                       HorizontalAlignment="Left" Visibility="Collapsed"/>
-                                <TextBlock x:Name="DesktopPairingCodeText" Text="" Visibility="Collapsed"
-                                           FontSize="26" FontWeight="Bold" Foreground="#9DD9D2"
-                                           Margin="0,8,0,8" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="DesktopPairingStatusText" Text="Henüz eşleştirme başlatılmadı."
+                                       HorizontalAlignment="Left" Visibility="Collapsed" Margin="0,4,0,8"/>
+                                <TextBlock x:Name="DesktopPairingStatusText" Text="Henüz eşleştirme kodu oluşturulmadı."
                                            Foreground="#9BA9BB" FontSize="11" TextWrapping="Wrap"/>
                                 <WrapPanel Margin="0,12,0,0">
-                                    <Button x:Name="StartDesktopPairingButton" Content="QR kodu oluştur"
+                                    <Button x:Name="StartDesktopPairingButton" Content="Kod oluştur"
                                             Style="{StaticResource PrimaryButton}" Click="StartDesktopPairing_Click"
                                             Margin="0,0,8,8"/>
                                     <Button x:Name="CancelDesktopPairingButton" Content="İptal"
                                             Style="{StaticResource SecondaryButton}" Click="CancelDesktopPairing_Click"
                                             IsEnabled="False" Margin="0,0,8,8"/>
                                 </WrapPanel>
-                                <TextBlock Text="QR kodu tek kullanımlık eşleştirme bilgisi taşır. Oturum anahtarları QR içine veya ekrana yazılmaz."
+                                <TextBlock Text="QR görüntüsü yalnızca sen istediğinde oluşturulur. Oturum anahtarları QR içine veya ekrana yazılmaz."
                                            Foreground="#718096" FontSize="11" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
@@ -796,51 +796,82 @@
                                    FontWeight="SemiBold"
                                    Margin="0,0,0,5"/>
 
-                        <TextBlock Text="Mikrofon ve kamera özelliklerini yönet."
+                        <TextBlock Text="MynAssistant izinlerini bu listeden yönet. İşaret kutuları uygulama içindeki kullanım tercihini belirler; Windows'un kendi gizlilik izinleri ayrıca ilgili sistem ayarından yönetilir."
                                    Foreground="#718096"
                                    FontSize="12"
-                                   Margin="0,0,0,18"/>
+                                   Margin="0,0,0,18"
+                                   TextWrapping="Wrap"/>
 
                         <Border Style="{StaticResource Card}">
-
                             <StackPanel>
+                                <Grid Margin="0,4,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Windows bildirimleri" FontSize="14" FontWeight="SemiBold"/>
+                                        <TextBlock Text="Planlanan görevler ve 10/5 dakika uyarıları."
+                                                   Foreground="#7E8A9D" FontSize="11" Margin="0,4,12,0"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="NotificationsCheckBox"
+                                              Grid.Column="1"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Right"
+                                              ToolTip="Planlanan işlemler için Windows bildirimi göster"/>
+                                </Grid>
+                                <Button Content="Windows bildirim ayarlarını aç"
+                                        Style="{StaticResource SecondaryButton}"
+                                        HorizontalAlignment="Left"
+                                        Click="OpenNotificationsSettings_Click"/>
+                                <Separator Margin="0,14" Background="#26374B"/>
 
-                                <TextBlock Text="Mikrofon"
-                                           FontSize="14"
-                                           FontWeight="SemiBold"/>
-
-                                <CheckBox x:Name="MicrophoneCheckBox"
-                                          Content="MynAssistant mikrofon özelliğini etkinleştir"
-                                          Margin="0,12,0,10"/>
-
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Mikrofon" FontSize="14" FontWeight="SemiBold"/>
+                                        <TextBlock Text="Sesli komutlar ve isteğe bağlı Hey Meyene özelliği."
+                                                   Foreground="#7E8A9D" FontSize="11" Margin="0,4,12,0"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="MicrophoneCheckBox"
+                                              Grid.Column="1"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Right"
+                                              ToolTip="MynAssistant içinde mikrofon kullanımına izin ver"/>
+                                </Grid>
                                 <Button Content="Windows mikrofon gizlilik ayarlarını aç"
                                         Style="{StaticResource SecondaryButton}"
                                         HorizontalAlignment="Left"
                                         Click="OpenMicrophoneSettings_Click"/>
+                                <Separator Margin="0,14" Background="#26374B"/>
 
-                            </StackPanel>
-
-                        </Border>
-
-                        <Border Style="{StaticResource Card}">
-
-                            <StackPanel>
-
-                                <TextBlock Text="Kamera"
-                                           FontSize="14"
-                                           FontWeight="SemiBold"/>
-
-                                <CheckBox x:Name="CameraCheckBox"
-                                          Content="MynAssistant kamera özelliğini etkinleştir"
-                                          Margin="0,12,0,10"/>
-
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Kamera" FontSize="14" FontWeight="SemiBold"/>
+                                        <TextBlock Text="Fotoğraf/video yakalama ve kamera destekli işlevler."
+                                                   Foreground="#7E8A9D" FontSize="11" Margin="0,4,12,0"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="CameraCheckBox"
+                                              Grid.Column="1"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Right"
+                                              ToolTip="MynAssistant içinde kamera kullanımına izin ver"/>
+                                </Grid>
                                 <Button Content="Windows kamera gizlilik ayarlarını aç"
                                         Style="{StaticResource SecondaryButton}"
                                         HorizontalAlignment="Left"
                                         Click="OpenCameraSettings_Click"/>
-
                             </StackPanel>
-
                         </Border>
 
                     </StackPanel>
