@@ -1430,7 +1430,7 @@ public partial class SettingsWindow : Window
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellation.Token);
             }
 
-            DesktopPairingStatusText.Text = "Eşleştirme kodunun süresi doldu. Yeni QR kodu oluştur.";
+            DesktopPairingStatusText.Text = "Eşleştirme kodunun süresi doldu. Yeni kod oluştur.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
             DesktopPairingQrImage.Visibility = Visibility.Collapsed;
             ShowDesktopPairingQrButton.Visibility = Visibility.Collapsed;
@@ -1442,7 +1442,9 @@ public partial class SettingsWindow : Window
             DesktopPairingStatusText.Text = "Eşleştirme iptal edildi. Önceki MynAssistant oturumu korunuyor.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
             DesktopPairingQrImage.Visibility = Visibility.Collapsed;
+            ShowDesktopPairingQrButton.Visibility = Visibility.Collapsed;
             DesktopPairingCodeText.Visibility = Visibility.Collapsed;
+            _pendingPairingQrPayload = null;
         }
         catch (DesktopPairingClientException ex)
         {
@@ -1451,7 +1453,9 @@ public partial class SettingsWindow : Window
             DesktopPairingStatusText.Text = $"{ex.Message} ({ex.ErrorCode})";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
             DesktopPairingQrImage.Visibility = Visibility.Collapsed;
+            ShowDesktopPairingQrButton.Visibility = Visibility.Collapsed;
             DesktopPairingCodeText.Visibility = Visibility.Collapsed;
+            _pendingPairingQrPayload = null;
         }
         catch (HttpRequestException ex)
         {
@@ -1460,6 +1464,10 @@ public partial class SettingsWindow : Window
             DesktopPairingStatusText.Text =
                 "Eşleştirme sunucusuna ulaşılamadı. İnternet bağlantısını veya Render dağıtımını kontrol et. (MYN-SERVER-001)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            DesktopPairingQrImage.Visibility = Visibility.Collapsed;
+            ShowDesktopPairingQrButton.Visibility = Visibility.Collapsed;
+            DesktopPairingCodeText.Visibility = Visibility.Collapsed;
+            _pendingPairingQrPayload = null;
         }
         catch (TaskCanceledException ex) when (!cancellation.IsCancellationRequested)
         {
@@ -1467,6 +1475,10 @@ public partial class SettingsWindow : Window
                 "Eşleştirme isteği zaman aşımına uğradı.", ex);
             DesktopPairingStatusText.Text = "Sunucu yanıtı zaman aşımına uğradı. Biraz sonra yeniden dene. (MYN-SERVER-002)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            DesktopPairingQrImage.Visibility = Visibility.Collapsed;
+            ShowDesktopPairingQrButton.Visibility = Visibility.Collapsed;
+            DesktopPairingCodeText.Visibility = Visibility.Collapsed;
+            _pendingPairingQrPayload = null;
         }
         catch (Exception ex)
         {
@@ -1474,6 +1486,10 @@ public partial class SettingsWindow : Window
                 "Telefon-PC eşleştirmesi tamamlanamadı.", ex);
             DesktopPairingStatusText.Text = $"{ex.Message} (MYN-DEVICE-999)";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            DesktopPairingQrImage.Visibility = Visibility.Collapsed;
+            ShowDesktopPairingQrButton.Visibility = Visibility.Collapsed;
+            DesktopPairingCodeText.Visibility = Visibility.Collapsed;
+            _pendingPairingQrPayload = null;
         }
         finally
         {
