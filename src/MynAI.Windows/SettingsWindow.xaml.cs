@@ -31,6 +31,7 @@ public partial class SettingsWindow : Window
     private readonly DispatcherTimer _agentTimer;
     private readonly DesktopPairingClient _desktopPairingClient = new();
     private CancellationTokenSource? _pairingCancellation;
+    private string? _pendingPairingQrPayload;
     private DateTime _lastBridgeRefreshAttemptUtc = DateTime.MinValue;
 
 
@@ -700,12 +701,10 @@ public partial class SettingsWindow : Window
 
         var hasCustomLogo = !string.IsNullOrWhiteSpace(settings.CustomLogoPath)
             && File.Exists(settings.CustomLogoPath);
-        CustomLogoOptionImage.Source = hasCustomLogo
-            ? MynAssistantBranding.LoadImage(settings.CustomLogoPath)
-            : null;
-        CustomLogoPlaceholderText.Visibility = hasCustomLogo
-            ? Visibility.Collapsed
-            : Visibility.Visible;
+        // The add tile remains a fixed plus action, regardless of the selected logo.
+        CustomLogoOptionImage.Source = null;
+        CustomLogoOptionImage.Visibility = Visibility.Collapsed;
+        CustomLogoPlaceholderText.Visibility = Visibility.Visible;
 
         var preset = string.IsNullOrWhiteSpace(settings.LogoPreset)
             ? "kr"
@@ -1274,6 +1273,54 @@ public partial class SettingsWindow : Window
         await StartDesktopPairingAsync();
     }
 
+    private void ShowDesktopPairingQr_Click(object sender, RoutedEventArgs e)
+    {
+        if (DesktopPairingQrImage.Visibility == Visibility.Visible)
+        {
+            DesktopPairingQrImage.Visibility = Visibility.Collapsed;
+            ShowDesktopPairingQrButton.ToolTip = "QR görüntüsünü göster";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_pendingPairingQrPayload))
+        {
+            DesktopPairingStatusText.Text = "Önce geçerli bir eşleştirme kodu oluştur.";
+            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+            return;
+        }
+
+        try
+        {
+            var qrGenerator = new QRCoder.QRCodeGenerator();
+            using var qrData = qrGenerator.CreateQrCode(
+                _pendingPairingQrPayload,
+                QRCoder.QRCodeGenerator.ECCLevel.Q);
+            var qrBytes = new QRCoder.PngByteQRCode(qrData).GetGraphic(8);
+            using var stream = new MemoryStream(qrBytes);
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.StreamSource = stream;
+            bitmap.EndInit();
+            bitmap.Freeze();
+
+            DesktopPairingQrImage.Source = bitmap;
+            DesktopPairingQrImage.Visibility = Visibility.Visible;
+            ShowDesktopPairingQrButton.ToolTip = "QR görüntüsünü gizle";
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogManager.WriteError(
+                "MYN-DEVICE-007",
+                "DesktopBridge",
+                "Mevcut eşleştirme kodunun QR görüntüsü oluşturulamadı.",
+                ex);
+            DesktopPairingStatusText.Text =
+                "QR görüntüsü oluşturulamadı. Kodu telefona elle girebilirsin. (MYN-DEVICE-007)";
+            DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
+        }
+    }
+
     private async Task StartDesktopPairingAsync()
     {
         if (_pairingCancellation is { IsCancellationRequested: false })
@@ -1291,11 +1338,14 @@ public partial class SettingsWindow : Window
         _pairingCancellation = cancellation;
         StartDesktopPairingButton.IsEnabled = false;
         CancelDesktopPairingButton.IsEnabled = true;
+        _pendingPairingQrPayload = null;
         DesktopPairingQrImage.Source = null;
         DesktopPairingQrImage.Visibility = Visibility.Collapsed;
+        ShowDesktopPairingQrButton.Visibility = Visibility.Collapsed;
+        ShowDesktopPairingQrButton.ToolTip = "QR görüntüsünü göster";
         DesktopPairingCodeText.Text = "";
         DesktopPairingCodeText.Visibility = Visibility.Collapsed;
-        DesktopPairingStatusText.Text = "Aynı MynAssistant hesabı doğrulanıyor ve imzalı QR kodu oluşturuluyor...";
+        DesktopPairingStatusText.Text = "Aynı MynAssistant hesabı doğrulanıyor ve tek kullanımlık eşleştirme kodu oluşturuluyor...";
         DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
 
         try
@@ -1309,26 +1359,16 @@ public partial class SettingsWindow : Window
                 cancellation.Token);
 
             var qrExpiresAtUnix = pairing.ExpiresAtUtc.ToUnixTimeSeconds();
-            var qrPayload = $"MYNASSISTANT-PAIR:{pairing.Code}:{qrExpiresAtUnix}:{pairing.QrSignature}";
-            var qrGenerator = new QRCoder.QRCodeGenerator();
-            using var qrData = qrGenerator.CreateQrCode(qrPayload, QRCoder.QRCodeGenerator.ECCLevel.Q);
-            var qrBytes = new QRCoder.PngByteQRCode(qrData).GetGraphic(8);
-            using (var stream = new MemoryStream(qrBytes))
-            {
-                var bitmap = new BitmapImage();
-                bitmap.BeginInit();
-                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.StreamSource = stream;
-                bitmap.EndInit();
-                bitmap.Freeze();
-                DesktopPairingQrImage.Source = bitmap;
-            }
+            _pendingPairingQrPayload =
+                $"MYNASSISTANT-PAIR:{pairing.Code}:{qrExpiresAtUnix}:{pairing.QrSignature}";
 
-            DesktopPairingQrImage.Visibility = Visibility.Visible;
             DesktopPairingCodeText.Text = pairing.Code;
             DesktopPairingCodeText.Visibility = Visibility.Visible;
+            ShowDesktopPairingQrButton.Visibility = Visibility.Visible;
+            DesktopPairingQrImage.Source = null;
+            DesktopPairingQrImage.Visibility = Visibility.Collapsed;
             DesktopPairingStatusText.Text =
-                $"Android MynAssistant → Ayarlar → Agent bölümünden QR kodunu tara ve aynı hesapla onayla. " +
+                $"Eşleştirme kodu oluşturuldu. Telefonda kodu elle girebilir veya yanındaki QR simgesine dokunup okutabilirsin. " +
                 $"Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
 
@@ -1364,7 +1404,9 @@ public partial class SettingsWindow : Window
                             $"Eşleştirme tamamlandı. {status.MachineName ?? Environment.MachineName} aynı MynAssistant hesabına bağlandı.";
                         DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightGreen);
                         DesktopPairingQrImage.Visibility = Visibility.Collapsed;
+                        ShowDesktopPairingQrButton.Visibility = Visibility.Collapsed;
                         DesktopPairingCodeText.Visibility = Visibility.Collapsed;
+                        _pendingPairingQrPayload = null;
                         SetSaveStatus("Telefon-PC bağlantısı eşleştirildi.", Colors.LightGreen);
                     }
                     catch (Exception bridgeError)
@@ -1391,7 +1433,9 @@ public partial class SettingsWindow : Window
             DesktopPairingStatusText.Text = "Eşleştirme kodunun süresi doldu. Yeni QR kodu oluştur.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
             DesktopPairingQrImage.Visibility = Visibility.Collapsed;
+            ShowDesktopPairingQrButton.Visibility = Visibility.Collapsed;
             DesktopPairingCodeText.Visibility = Visibility.Collapsed;
+            _pendingPairingQrPayload = null;
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
@@ -1444,6 +1488,10 @@ public partial class SettingsWindow : Window
 
     private void CancelDesktopPairing_Click(object sender, RoutedEventArgs e)
     {
+        _pendingPairingQrPayload = null;
+        DesktopPairingQrImage.Visibility = Visibility.Collapsed;
+        ShowDesktopPairingQrButton.Visibility = Visibility.Collapsed;
+        DesktopPairingCodeText.Visibility = Visibility.Collapsed;
         _pairingCancellation?.Cancel();
     }
 
@@ -1900,6 +1948,11 @@ public partial class SettingsWindow : Window
     {
         OpenWindowsSettings(
             "ms-settings:privacy-microphone");
+    }
+
+    private void OpenNotificationsSettings_Click(object sender, RoutedEventArgs e)
+    {
+        OpenWindowsSettings("ms-settings:notifications");
     }
 
     private void OpenCameraSettings_Click(
