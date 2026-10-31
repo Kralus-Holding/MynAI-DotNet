@@ -157,8 +157,8 @@ jobs:
           if ($agent.Contains("Agent yönetimi") -or $agent.Contains("StopAgent_Click") -or $agent.Contains("RestartAgent_Click")) {
             throw "Agent settings must not expose manual stop/restart management controls."
           }
-          if (-not $agent.Contains('PanningMode="VerticalOnly"')) {
-            throw "Agent settings must be part of the vertically touch-scrollable page."
+          if (-not $settingsText.Contains('PanningMode="VerticalOnly"')) {
+            throw "All Settings pages, including Agent, must be part of the vertically touch-scrollable content area."
           }
 
           $loginXamlPath = "src/MynAI.Windows/AccountLoginWindow.xaml"
