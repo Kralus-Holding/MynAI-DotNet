@@ -90,6 +90,9 @@ public partial class SettingsWindow : Window
         NotificationsCheckBox.IsChecked =
             settings.WindowsNotifications;
 
+        AutoEmailDiagnosticsCheckBox.IsChecked =
+            settings.SendDiagnosticsAutomatically;
+
         DesktopBridgeStartupCheckBox.IsChecked =
             DesktopBridgeStartupManager.IsEnabled();
 
@@ -1748,6 +1751,9 @@ public partial class SettingsWindow : Window
         updatedSettings.StartApplicationWithWindows = StartupSettingsManager.IsEnabled();
         updatedSettings.StartDesktopBridgeWithWindows = requestedBridgeStartup;
         updatedSettings.WindowsNotifications = NotificationsCheckBox.IsChecked == true;
+        updatedSettings.SendDiagnosticsAutomatically =
+            AutoEmailDiagnosticsCheckBox.IsChecked == true;
+
         updatedSettings.MicrophoneEnabled = MicrophoneCheckBox.IsChecked == true;
         updatedSettings.CameraEnabled = CameraCheckBox.IsChecked == true;
         updatedSettings.BringToFrontHotkey = HotkeyTextBox.Text.Trim();
