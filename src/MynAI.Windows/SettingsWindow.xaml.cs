@@ -11,15 +11,12 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.Text.RegularExpressions;
-using MynAI.Windows.Google;
 using MynAI.Windows.Auth;
 
 namespace MynAI.Windows;
 
 public partial class SettingsWindow : Window
 {
-    private readonly GoogleOAuthService _googleOAuthService;
-    private readonly GoogleAccountStore _googleAccountStore;
     private readonly MynAISettingsStore _settingsStore;
 
     private readonly DispatcherTimer _agentTimer;
@@ -34,17 +31,10 @@ public partial class SettingsWindow : Window
 
         LoadWindowIconSafely();
 
-        _googleOAuthService =
-            new GoogleOAuthService();
-
-        _googleAccountStore =
-            new GoogleAccountStore();
-
         _settingsStore =
             new MynAISettingsStore();
 
         LoadSettings();
-        LoadGoogleAccount();
         UpdateDesktopLoginStatus();
         ShowPage(GeneralPanel, GeneralNavButton);
 
@@ -60,14 +50,12 @@ public partial class SettingsWindow : Window
             {
                 UpdateAgentStatus();
                 UpdateDesktopBridgeStatus();
-                UpdateAccountDesktopBridgeStatus();
             };
 
         _agentTimer.Start();
 
         UpdateAgentStatus();
         UpdateDesktopBridgeStatus();
-        UpdateAccountDesktopBridgeStatus();
     }
 
     private void LoadWindowIconSafely()
@@ -96,11 +84,6 @@ public partial class SettingsWindow : Window
         DesktopBridgeStartupCheckBox.IsChecked =
             DesktopBridgeStartupManager.IsEnabled();
 
-        // Registry state is authoritative for Windows startup; the JSON values
-        // are a compatibility mirror and must not override the real OS state.
-        AgentStartupCheckBox.IsChecked =
-            AgentStartupManager.IsEnabled();
-
         StartupAppCheckBox.IsChecked =
             StartupSettingsManager.IsEnabled();
 
@@ -117,52 +100,6 @@ public partial class SettingsWindow : Window
         UpdateStartupStatus();
         UpdatePluginStatus();
         RefreshErrorLogViewer();
-    }
-
-    private void LoadGoogleAccount()
-    {
-        var account =
-            _googleAccountStore.Load();
-
-        if (account is not null)
-        {
-            ApplyGoogleAccount(
-                account);
-        }
-    }
-
-    private void ApplyGoogleAccount(
-        GoogleAccount account)
-    {
-        GoogleNameText.Text =
-            account.Name;
-
-        GoogleEmailText.Text =
-            account.Email;
-
-        if (!string.IsNullOrWhiteSpace(
-                account.PhotoUrl))
-        {
-            try
-            {
-                GooglePhoto.Source =
-                    new BitmapImage(
-                        new Uri(
-                            account.PhotoUrl));
-            }
-            catch
-            {
-            }
-        }
-
-        GoogleContactsCheckBox.IsEnabled =
-            true;
-
-        GoogleContactsCheckBox.IsChecked =
-            true;
-
-        GoogleContactsConnectButton.Content =
-            "Kişiler bağlı";
     }
 
     private void ShowPage(
@@ -187,33 +124,8 @@ public partial class SettingsWindow : Window
         ErrorLogsNavButton.Tag = "Normal";
         ShortcutNavButton.Tag = "Normal";
 
-        TopGeneralNavButton.Tag = ReferenceEquals(page, GeneralPanel) ? "Active" : "Normal";
-        TopAgentNavButton.Tag = ReferenceEquals(page, AgentPanel) ? "Active" : "Normal";
-        TopAccountNavButton.Tag = ReferenceEquals(page, AccountPanel) ? "Active" : "Normal";
-        TopPrivacyNavButton.Tag = ReferenceEquals(page, PrivacyPanel) ? "Active" : "Normal";
-        TopPluginsNavButton.Tag = ReferenceEquals(page, PluginsPanel) ? "Active" : "Normal";
-        TopStartupNavButton.Tag = ReferenceEquals(page, StartupPanel) ? "Active" : "Normal";
-        TopErrorLogsNavButton.Tag = ReferenceEquals(page, ErrorLogsPanel) ? "Active" : "Normal";
-        TopShortcutNavButton.Tag = ReferenceEquals(page, ShortcutPanel) ? "Active" : "Normal";
-
         selectedButton.Tag = "Active";
         page.Visibility = Visibility.Visible;
-    }
-
-    private void TopNavigationScrollViewer_PreviewMouseWheel(
-        object sender,
-        MouseWheelEventArgs e)
-    {
-        if (sender is not System.Windows.Controls.ScrollViewer viewer ||
-            viewer.ScrollableWidth <= 0)
-            return;
-
-        var nextOffset = Math.Clamp(
-            viewer.HorizontalOffset - e.Delta,
-            0,
-            viewer.ScrollableWidth);
-        viewer.ScrollToHorizontalOffset(nextOffset);
-        e.Handled = true;
     }
 
     private void GeneralNav_Click(
@@ -577,9 +489,9 @@ public partial class SettingsWindow : Window
                     : Colors.DimGray);
 
         AgentPathText.Text =
-            AgentStartupManager
-                .TryGetAgentExecutablePath()
-            ?? "Agent executable bulunamadı.";
+            AgentStartupManager.TryGetAgentExecutablePath()
+            ?? "MynAgent.exe bulunamadı. Kurulumu onar veya yeniden yükle.";
+        AgentStartButton.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void UpdateAgentDiagnostics()
@@ -725,63 +637,6 @@ public partial class SettingsWindow : Window
                     : hasError
                         ? "Köprü başlatılamadı. Agent günlüklerini ve Windows güvenlik günlüklerini kontrol edin."
                         : "Yerel Agent bu hesaptan bağımsız çalışır.";
-    }
-
-    private void UpdateAccountDesktopBridgeStatus()
-    {
-        var running = DesktopBridgeStartupManager.IsRunning();
-        var executablePath = DesktopBridgeStartupManager.TryGetExecutablePath();
-        var hasSession = FirebaseDesktopSessionStore.HasValidStoredSession();
-        var runtime = DesktopBridgeStartupManager.ReadRuntimeStatus();
-        var isFresh = runtime is not null
-            && DateTimeOffset.Now - runtime.UpdatedAt < TimeSpan.FromSeconds(90);
-        var state = isFresh ? runtime?.State?.ToLowerInvariant() : null;
-
-        var connected = running && state == "online";
-        var hasError = state == "error";
-        var authRequired = !hasSession || state == "auth_required";
-        var connecting = running && (state == "starting" || state == "connecting");
-
-        var statusText = connected
-            ? "Telefon-PC bağlantısı hazır"
-            : authRequired
-                ? "Eşleştirme gerekli"
-                : hasError
-                    ? "Bağlantı kurulamadı"
-                    : connecting
-                        ? "Bağlanıyor"
-                        : running
-                            ? "Cihaz kaydı bekleniyor"
-                            : executablePath is null
-                                ? "Bağlantı bileşeni bulunamadı"
-                                : "Bağlantı henüz başlamadı";
-
-        var color = connected
-            ? Colors.LightGreen
-            : hasError
-                ? Colors.IndianRed
-                : authRequired
-                    ? Colors.Goldenrod
-                    : Colors.LightBlue;
-
-        var messageText = connected
-            ? "Android uygulamasıyla bilgisayar bağlantısı kuruldu."
-            : authRequired
-                ? "Bu bilgisayarda güvenli telefon-PC oturumu yok. Windows'ta Telefonla eşleştir ile kod oluşturup Android MynAssistant → Ayarlar bölümünde onayla. HTTP 404 görülürse Render sunucusunun güncel sürüme dağıtılması gerekir."
-                : hasError
-                    ? "Bağlantı kurulamadı. Bağlantıyı yenileyerek tekrar dene."
-                    : connecting
-                        ? "Bağlantı kuruluyor; durum otomatik güncellenecek."
-                        : running
-                            ? "Köprü çalışıyor ancak cihaz henüz çevrimiçi değil."
-                            : executablePath is null
-                                ? "Kurulum dosyaları eksik görünüyor. MynAssistant kurulumunu onar veya yeniden yükle."
-                                : "Bağlantıyı başlatmak veya yeniden denemek için Bağlantıyı yenile'ye bas.";
-
-        AccountDesktopBridgeStatusText.Text = statusText;
-        AccountDesktopBridgeStatusText.Foreground = new SolidColorBrush(color);
-        AccountDesktopBridgeStatusDot.Fill = new SolidColorBrush(color);
-        AccountDesktopBridgeMessageText.Text = messageText;
     }
 
     private void UpdateLogoPreview(MynAISettings settings)
@@ -1736,85 +1591,6 @@ public partial class SettingsWindow : Window
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
-    }
-
-    private async void GoogleConnectButton_Click(
-        object sender,
-        RoutedEventArgs e)
-    {
-        if (!File.Exists(GoogleOAuthConfigStore.GetPath()))
-        {
-            MessageBox.Show(
-                "Google Kişiler bu kurulumda yapılandırılmamış. Uygulama oturumu için üstteki Giriş yap düğmesini kullan; Google Kişiler bağlantısı isteğe bağlıdır.",
-                "MynAssistant",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-
-        GoogleContactsConnectButton.IsEnabled =
-            false;
-
-        GoogleContactsConnectButton.Content =
-            "Bağlanıyor...";
-
-        try
-        {
-            var account =
-                await _googleOAuthService
-                    .SignInAsync();
-
-            _googleAccountStore.Save(
-                account);
-
-            ApplyGoogleAccount(
-                account);
-        }
-        catch (Exception ex)
-        {
-            GoogleContactsConnectButton.Content = "Kişileri bağla";
-
-            var details = ex.ToString();
-            var accessDenied = details.Contains("access_denied", StringComparison.OrdinalIgnoreCase)
-                || details.Contains("403", StringComparison.OrdinalIgnoreCase)
-                || details.Contains("test users", StringComparison.OrdinalIgnoreCase)
-                || details.Contains("test kullanıcı", StringComparison.OrdinalIgnoreCase);
-            var errorCode = accessDenied ? "MYN-OAUTH-403" : "MYN-OAUTH-001";
-            DiagnosticLogManager.WriteError(
-                errorCode,
-                "GoogleOAuth",
-                accessDenied
-                    ? "Google OAuth erişimi reddedildi; OAuth test kullanıcısı ayarı kontrol edilmeli."
-                    : "Google Kişiler için OAuth bağlantısı başarısız.",
-                ex);
-
-            var explanation = accessDenied
-                ? "Google OAuth erişimi 403 access_denied ile reddedildi. Google Cloud Console → Google Auth Platform → Audience → Test users bölümüne bu Google hesabını ekleyin; alternatif olarak OAuth uygulamasını uygun şekilde yayımlayıp gerekiyorsa doğrulayın. Bu izin Google Console ayarıdır ve uygulamayı yeniden derlemek tek başına sorunu çözmez. Telefon-PC eşleştirmesi için Google Kişiler bağlantısı gerekli değildir."
-                : ex.Message;
-
-            MessageBox.Show(
-                $"Google Kişiler bağlantısı başarısız:\n\n{explanation}",
-                "MynAssistant",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-        }
-        finally
-        {
-            GoogleContactsConnectButton.IsEnabled =
-                true;
-        }
-    }
-
-    private void GoogleContactsCheckBox_Checked(
-        object sender,
-        RoutedEventArgs e)
-    {
-    }
-
-    private void GoogleContactsCheckBox_Unchecked(
-        object sender,
-        RoutedEventArgs e)
-    {
     }
 
     private void HotkeyTextBox_PreviewKeyDown(
