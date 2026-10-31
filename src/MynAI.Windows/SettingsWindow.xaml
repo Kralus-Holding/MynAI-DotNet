@@ -275,6 +275,72 @@
             <Setter Property="SnapsToDevicePixels" Value="True"/>
         </Style>
 
+        <!-- Windows-like Açık/Kapalı switch shared by every current and future permission checkbox. -->
+        <Style x:Key="PermissionToggleCheckBox"
+               TargetType="{x:Type CheckBox}"
+               BasedOn="{StaticResource {x:Type CheckBox}}">
+            <Setter Property="Width" Value="92"/>
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type CheckBox}">
+                        <Grid Background="Transparent" MinWidth="92" MinHeight="28">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="46"/>
+                                <ColumnDefinition Width="46"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="StateLabel"
+                                       Text="Kapalı"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       FontSize="{TemplateBinding FontSize}"
+                                       VerticalAlignment="Center"
+                                       TextAlignment="Right"
+                                       Margin="0,0,6,0"/>
+                            <Border x:Name="SwitchTrack"
+                                    Grid.Column="1"
+                                    Width="40"
+                                    Height="20"
+                                    CornerRadius="10"
+                                    Background="#444C56"
+                                    BorderBrush="#778391"
+                                    BorderThickness="1"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                                <Ellipse x:Name="SwitchThumb"
+                                         Width="14"
+                                         Height="14"
+                                         Margin="2"
+                                         Fill="#EAF0F7"
+                                         HorizontalAlignment="Left"
+                                         VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="StateLabel" Property="Text" Value="Açık"/>
+                                <Setter TargetName="SwitchTrack" Property="Background" Value="#25B9F2"/>
+                                <Setter TargetName="SwitchTrack" Property="BorderBrush" Value="#25B9F2"/>
+                                <Setter TargetName="SwitchThumb" Property="Fill" Value="#082333"/>
+                                <Setter TargetName="SwitchThumb" Property="HorizontalAlignment" Value="Right"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="SwitchTrack" Property="BorderBrush" Value="#A7B5C4"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="StateLabel" Property="Opacity" Value="0.55"/>
+                                <Setter TargetName="SwitchTrack" Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="SwitchTrack" Property="BorderBrush" Value="#FFFFFF"/>
+                                <Setter TargetName="SwitchTrack" Property="BorderThickness" Value="2"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="ScrollBar">
             <Setter Property="Width" Value="7"/>
             <Setter Property="Height" Value="Auto"/>
@@ -789,6 +855,11 @@
 
                     <StackPanel x:Name="PrivacyPanel"
                                 Visibility="Collapsed">
+                        <!-- All CheckBoxes added to this panel inherit the same permission switch. -->
+                        <StackPanel.Resources>
+                            <Style TargetType="{x:Type CheckBox}"
+                                   BasedOn="{StaticResource PermissionToggleCheckBox}"/>
+                        </StackPanel.Resources>
 
                         <TextBlock Text="İzinler"
                                    FontSize="24"
@@ -818,7 +889,8 @@
                                               Grid.Column="1"
                                               VerticalAlignment="Center"
                                               HorizontalAlignment="Right"
-                                              ToolTip="Planlanan işlemler için Windows bildirimi göster"/>
+                                              AutomationProperties.Name="Windows bildirimleri"
+                                               ToolTip="Planlanan işlemler için Windows bildirimi göster"/>
                                 </Grid>
                                 <Button Content="Windows bildirim ayarlarını aç"
                                         Style="{StaticResource SecondaryButton}"
@@ -841,7 +913,8 @@
                                               Grid.Column="1"
                                               VerticalAlignment="Center"
                                               HorizontalAlignment="Right"
-                                              ToolTip="MynAssistant içinde mikrofon kullanımına izin ver"/>
+                                              AutomationProperties.Name="Mikrofon"
+                                               ToolTip="MynAssistant içinde mikrofon kullanımına izin ver"/>
                                 </Grid>
                                 <Button Content="Windows mikrofon gizlilik ayarlarını aç"
                                         Style="{StaticResource SecondaryButton}"
@@ -864,7 +937,8 @@
                                               Grid.Column="1"
                                               VerticalAlignment="Center"
                                               HorizontalAlignment="Right"
-                                              ToolTip="MynAssistant içinde kamera kullanımına izin ver"/>
+                                              AutomationProperties.Name="Kamera"
+                                               ToolTip="MynAssistant içinde kamera kullanımına izin ver"/>
                                 </Grid>
                                 <Button Content="Windows kamera gizlilik ayarlarını aç"
                                         Style="{StaticResource SecondaryButton}"
