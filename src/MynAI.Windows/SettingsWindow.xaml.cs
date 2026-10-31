@@ -6,6 +6,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text.Json;
 using System.Windows;
@@ -373,18 +374,21 @@ public partial class SettingsWindow : Window
             var idToken = await _desktopPairingClient.GetFreshIdTokenAsync(session);
             var supportReport = DiagnosticLogManager.BuildSupportReport();
             var appVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
-            using var response = await DiagnosticsHttp.PostAsJsonAsync(
-                DiagnosticsReportUrl,
-                new
-                {
-                    source = "windows",
-                    appVersion,
-                    errorCode = "MYN-USER-REPORT",
-                    message = "Kullanıcı Ayarlar → Hata günlükleri bölümünden Windows destek raporu gönderdi.",
-                    details = supportReport
-                },
-                new JsonSerializerOptions(JsonSerializerDefaults.Web),
-                CancellationToken.None);
+            using var request = new HttpRequestMessage(HttpMethod.Post, DiagnosticsReportUrl)
+            {
+                Content = JsonContent.Create(
+                    new
+                    {
+                        source = "windows",
+                        appVersion,
+                        errorCode = "MYN-USER-REPORT",
+                        message = "Kullanıcı Ayarlar → Hata günlükleri bölümünden Windows destek raporu gönderdi.",
+                        details = supportReport
+                    },
+                    options: new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
+            using var response = await DiagnosticsHttp.SendAsync(request, CancellationToken.None);
             if (!response.IsSuccessStatusCode)
             {
                 string message = $"Sunucu hata raporunu kabul etmedi (HTTP {(int)response.StatusCode}).";
