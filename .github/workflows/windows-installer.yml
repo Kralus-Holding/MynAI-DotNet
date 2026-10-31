@@ -439,6 +439,7 @@ jobs:
           $pairingClient = Get-Content -LiteralPath "src/MynAI.Windows/Auth/DesktopPairingClient.cs" -Raw -Encoding UTF8
           if (-not $pairingClient.Contains("HttpStatusCode.NotFound") -or -not $pairingClient.Contains("MYN-SERVER-404")) { throw "A missing live pairing endpoint must have a specific diagnosis." }
           $settingsCode = Get-Content -LiteralPath "src/MynAI.Windows/SettingsWindow.xaml.cs" -Raw -Encoding UTF8
+          $loginCode = Get-Content -LiteralPath "src/MynAI.Windows/AccountLoginWindow.xaml.cs" -Raw -Encoding UTF8
           if (-not $loginCode.Contains("Google Auth Platform") -or -not $settingsCode.Contains("DesktopPairingClientException")) { throw "Google sign-in and Agent QR pairing errors must have actionable diagnostics." }
           if (-not $settingsCode.Contains('IsValidHotkey(') -or -not $settingsCode.Contains('_settingsStore.Save(originalSettings)') -or -not $settingsCode.Contains('"MYN-SETTINGS-001"')) { throw "Settings save must validate Agent-owned global hotkeys, roll back failed saves, and record save failures." }
           if (-not $settingsCode.Contains('UpdateDesktopBridgeStatus') -or -not $pairingClient.Contains('MYN-SERVER-404')) { throw "Agent status and pairing client must explain how to recover from an undeployed pairing API." }
