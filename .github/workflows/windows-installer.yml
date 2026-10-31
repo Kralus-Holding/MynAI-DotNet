@@ -490,3 +490,5 @@ jobs:
           }
 
           Write-Host "Installer preview release published: $($release.html_url)"
+
+# Manual installer retry trigger: 2026-10-31 (comment only; no build behavior changed).
