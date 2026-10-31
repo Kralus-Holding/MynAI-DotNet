@@ -839,18 +839,36 @@ def execute_download_file(path_value: str = "") -> str:
 
 def lock_workstation() -> str:
     """Lock the interactive Windows session without logging the user out."""
-    try:
-        if not ctypes.windll.user32.LockWorkStation():
-            raise OSError(ctypes.get_last_error(), "LockWorkStation failed")
-    except Exception as exc:
-        raise RuntimeError("Windows oturumu kilitlenemedi.") from exc
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.LockWorkStation.argtypes = []
+    user32.LockWorkStation.restype = ctypes.c_bool
+    if not user32.LockWorkStation():
+        error = ctypes.get_last_error()
+        raise RuntimeError(f"Windows oturumu kilitlenemedi (Win32={error}).")
     return "Windows oturumu kilitlendi."
 
 
 def close_active_app() -> str:
     """Request a graceful WM_CLOSE for the foreground app; never force-kill a process."""
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    user32.GetForegroundWindow.argtypes = []
+    user32.GetForegroundWindow.restype = ctypes.c_void_p
+    user32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+    user32.GetWindowThreadProcessId.restype = ctypes.c_ulong
+    user32.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+    user32.PostMessageW.restype = ctypes.c_bool
+
+    kernel32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_bool, ctypes.c_uint32]
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.QueryFullProcessImageNameW.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint32, ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_ulong)
+    ]
+    kernel32.QueryFullProcessImageNameW.restype = ctypes.c_bool
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_bool
+
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
         return "Kapatılacak etkin uygulama penceresi bulunamadı."
@@ -860,14 +878,20 @@ def close_active_app() -> str:
     if not process_id.value:
         return "Etkin pencerenin işlemi belirlenemedi."
 
-    process = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, process_id.value)
+    process = kernel32.OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION,
+        False,
+        process_id.value,
+    )
     if not process:
         return "Etkin uygulama güvenli biçimde doğrulanamadı; kapatma isteği gönderilmedi."
 
     try:
         image_buffer = ctypes.create_unicode_buffer(32768)
         image_size = ctypes.c_ulong(len(image_buffer))
-        if not kernel32.QueryFullProcessImageNameW(process, 0, image_buffer, ctypes.byref(image_size)):
+        if not kernel32.QueryFullProcessImageNameW(
+            process, 0, image_buffer, ctypes.byref(image_size)
+        ):
             return "Etkin uygulamanın adı doğrulanamadı; kapatma isteği gönderilmedi."
         process_name = Path(image_buffer.value).name.casefold()
     finally:
@@ -891,7 +915,8 @@ def close_active_app() -> str:
         return "MynAssistant, Agent veya Windows sistem pencereleri uzaktan kapatılamaz."
 
     if not user32.PostMessageW(hwnd, WM_CLOSE, 0, 0):
-        raise RuntimeError("Uygulamaya güvenli kapatma mesajı gönderilemedi.")
+        error = ctypes.get_last_error()
+        raise RuntimeError(f"Uygulamaya güvenli kapatma mesajı gönderilemedi (Win32={error}).")
     return f"{process_name} uygulamasına güvenli kapatma isteği gönderildi."
 
 
