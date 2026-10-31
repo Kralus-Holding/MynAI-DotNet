@@ -150,7 +150,6 @@ public sealed class DesktopPairingClient
             string.IsNullOrWhiteSpace(result.PairingId) ||
             string.IsNullOrWhiteSpace(result.PollSecret) ||
             string.IsNullOrWhiteSpace(result.Code) ||
-            string.IsNullOrWhiteSpace(result.QrSignature) ||
             result.ExpiresAtUtc <= DateTimeOffset.UtcNow)
         {
             throw new InvalidDataException(
@@ -177,7 +176,7 @@ public sealed class DesktopPairingClient
                 JsonOptions,
                 cancellationToken);
             if (result is null ||
-                (result.State.Equals("approved", StringComparison.OrdinalIgnoreCase) &&
+                (string.Equals(result.State, "approved", StringComparison.OrdinalIgnoreCase) &&
                  (result.Session is null ||
                   string.IsNullOrWhiteSpace(result.Session.Uid) ||
                   string.IsNullOrWhiteSpace(result.Session.RefreshToken) ||
