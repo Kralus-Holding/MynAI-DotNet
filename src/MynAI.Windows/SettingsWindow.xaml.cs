@@ -896,6 +896,19 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void UserLogosGallery_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ScrollViewer scrollViewer
+            || scrollViewer.ScrollableWidth <= 0
+            || (Keyboard.Modifiers & ModifierKeys.Shift) != ModifierKeys.Shift)
+        {
+            return;
+        }
+
+        scrollViewer.ScrollToHorizontalOffset(scrollViewer.HorizontalOffset - e.Delta);
+        e.Handled = true;
+    }
+
     private void SelectUserLogo(string path)
     {
         if (!IsOwnedUserLogoPath(path, out var safePath)
@@ -1358,18 +1371,28 @@ public partial class SettingsWindow : Window
                 currentSessionIdToken,
                 cancellation.Token);
 
-            var qrExpiresAtUnix = pairing.ExpiresAtUtc.ToUnixTimeSeconds();
-            _pendingPairingQrPayload =
-                $"MYNASSISTANT-PAIR:{pairing.Code}:{qrExpiresAtUnix}:{pairing.QrSignature}";
+            var hasSignedQr = !string.IsNullOrWhiteSpace(pairing.QrSignature);
+            if (hasSignedQr)
+            {
+                var qrExpiresAtUnix = pairing.ExpiresAtUtc.ToUnixTimeSeconds();
+                _pendingPairingQrPayload =
+                    $"MYNASSISTANT-PAIR:{pairing.Code}:{qrExpiresAtUnix}:{pairing.QrSignature}";
+            }
+            else
+            {
+                _pendingPairingQrPayload = null;
+            }
 
             DesktopPairingCodeText.Text = pairing.Code;
             DesktopPairingCodeText.Visibility = Visibility.Visible;
-            ShowDesktopPairingQrButton.Visibility = Visibility.Visible;
+            ShowDesktopPairingQrButton.Visibility = hasSignedQr
+                ? Visibility.Visible
+                : Visibility.Collapsed;
             DesktopPairingQrImage.Source = null;
             DesktopPairingQrImage.Visibility = Visibility.Collapsed;
-            DesktopPairingStatusText.Text =
-                $"Eşleştirme kodu oluşturuldu. Telefonda kodu elle girebilir veya yanındaki QR simgesine dokunup okutabilirsin. " +
-                $"Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}.";
+            DesktopPairingStatusText.Text = hasSignedQr
+                ? $"Eşleştirme kodu oluşturuldu. Telefonda kodu elle girebilir veya yanındaki QR simgesine dokunup okutabilirsin. Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}."
+                : $"Eşleştirme kodu oluşturuldu. Sunucunun mevcut sürümü imzalı QR sağlamıyor; telefonda kodu elle gir. QR, sunucu güncellendiğinde etkinleşecek. Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
 
             while (DateTimeOffset.UtcNow < pairing.ExpiresAtUtc)
