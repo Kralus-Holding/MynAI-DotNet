@@ -137,9 +137,10 @@ public static class MynAssistantBranding
             throw new InvalidDataException("Seçilen görsel çözümlenemedi.");
 
         Directory.CreateDirectory(UserLogoDirectory);
+        // A GUID keeps rapid repeated imports from colliding on timestamp-based names.
         var destination = Path.Combine(
             UserLogoDirectory,
-            $"custom-logo-{DateTime.UtcNow:yyyyMMddHHmmssfff}{extension}");
+            $"custom-logo-{Guid.NewGuid():N}{extension}");
 
         File.Copy(sourcePath, destination, overwrite: false);
         return destination;

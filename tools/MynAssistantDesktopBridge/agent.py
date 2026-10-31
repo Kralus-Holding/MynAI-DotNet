@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import base64
+import binascii
+import hashlib
 import ctypes
 import io
 import json
 import os
 import platform
+import re
+import zipfile
 import subprocess
 import sys
 import unicodedata
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -32,6 +36,8 @@ SCREEN_CHECK_SECONDS = 8.0
 SCREEN_FRAME_SECONDS = 1.5
 SCREEN_REQUEST_MAX_AGE_SECONDS = 25.0
 HEARTBEAT_SECONDS = 25.0
+COMMAND_MAX_AGE_SECONDS = 60.0
+COMMAND_FUTURE_SKEW_SECONDS = 60.0
 DPAPI_ENTROPY = b"MynAssistantDesktopAgent-v1"
 APP_DATA = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MynAssistant" / "DesktopAgent"
 SESSION_FILE = APP_DATA / "session.bin"
@@ -322,7 +328,30 @@ def upload_screen_frame(session: FirebaseSession, device_id: str) -> None:
     )
 
 
-def fetch_owner_commands(session: FirebaseSession) -> list[dict]:
+def fetch_owner_commands(session: FirebaseSession, device_id: str) -> list[dict]:
+    filters = [
+        {
+            "fieldFilter": {
+                "field": {"fieldPath": "ownerId"},
+                "op": "EQUAL",
+                "value": {"stringValue": session.uid},
+            }
+        },
+        {
+            "fieldFilter": {
+                "field": {"fieldPath": "status"},
+                "op": "EQUAL",
+                "value": {"stringValue": "pending"},
+            }
+        },
+        {
+            "fieldFilter": {
+                "field": {"fieldPath": "deviceId"},
+                "op": "EQUAL",
+                "value": {"stringValue": device_id},
+            }
+        },
+    ]
     response = requests.post(
         f"{FIRESTORE}:runQuery",
         headers=session.headers(),
@@ -332,22 +361,7 @@ def fetch_owner_commands(session: FirebaseSession) -> list[dict]:
                 "where": {
                     "compositeFilter": {
                         "op": "AND",
-                        "filters": [
-                            {
-                                "fieldFilter": {
-                                    "field": {"fieldPath": "ownerId"},
-                                    "op": "EQUAL",
-                                    "value": {"stringValue": session.uid},
-                                }
-                            },
-                            {
-                                "fieldFilter": {
-                                    "field": {"fieldPath": "status"},
-                                    "op": "EQUAL",
-                                    "value": {"stringValue": "pending"},
-                                }
-                            },
-                        ],
+                        "filters": filters,
                     }
                 },
                 "limit": 100,
@@ -365,6 +379,48 @@ def fetch_owner_commands(session: FirebaseSession) -> list[dict]:
     return documents
 
 
+def _parse_command_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def command_expiration_reason(fields: dict, now: datetime | None = None) -> str | None:
+    """Fail closed for stale, missing, or implausibly future-dated commands."""
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    else:
+        current = current.astimezone(timezone.utc)
+
+    expires_at_value = fields.get("expiresAt")
+    if expires_at_value is not None:
+        expires_at = _parse_command_timestamp(expires_at_value)
+        if expires_at is None:
+            return "Komutun sona erme zamanı geçersiz; güvenlik için çalıştırılmadı."
+        seconds_until_expiry = (expires_at - current).total_seconds()
+        if seconds_until_expiry <= 0:
+            return "Komutun süresi doldu; lütfen yeniden gönder."
+        if seconds_until_expiry > COMMAND_MAX_AGE_SECONDS + COMMAND_FUTURE_SKEW_SECONDS:
+            return "Komutun sona erme zamanı beklenen sınırı aşıyor; güvenlik için çalıştırılmadı."
+        return None
+
+    created_at = _parse_command_timestamp(fields.get("createdAt"))
+    if created_at is None:
+        return "Komutun oluşturulma zamanı eksik veya geçersiz; güvenlik için çalıştırılmadı."
+    age_seconds = (current - created_at).total_seconds()
+    if age_seconds > COMMAND_MAX_AGE_SECONDS:
+        return "Komutun süresi doldu; lütfen yeniden gönder."
+    if age_seconds < -COMMAND_FUTURE_SKEW_SECONDS:
+        return "Komutun oluşturulma zamanı gelecekte; güvenlik için çalıştırılmadı."
+    return None
+
 def update_command(
     session: FirebaseSession,
     document: dict,
@@ -378,9 +434,16 @@ def update_command(
     if marker not in full_name:
         raise RuntimeError("Komut belgesinin yolu geçersiz.")
     document_path = full_name.split(marker, 1)[1]
+    command_name = decode_field(document.get("fields", {}).get("command"))
+    if command_name == "list_files":
+        result_limit = FILE_LIST_MAX_RESULT_LENGTH
+    elif command_name == "download_file":
+        result_limit = FILE_DOWNLOAD_MAX_RESULT_LENGTH
+    else:
+        result_limit = 800
     fields = {
         "status": encode_string(status),
-        "result": encode_string(result[:800]),
+        "result": encode_string(result[:result_limit]),
         "processedAt": encode_timestamp(),
     }
     if extra_fields:
@@ -538,10 +601,252 @@ def normalize_text_command(text: str) -> str:
     return " ".join(normalized.split())
 
 
+FILE_LIST_MAX_ENTRIES = 200
+FILE_LIST_MAX_PATH_LENGTH = 1024
+FILE_LIST_MAX_RESULT_LENGTH = 350_000
+FILE_DOWNLOAD_MAX_BYTES = 500_000
+FILE_DOWNLOAD_MAX_RESULT_LENGTH = 700_000
+FILE_UPLOAD_MAX_BYTES = 500_000
+ZIP_MAX_FILES = 2_000
+ZIP_MAX_INPUT_BYTES = 100_000_000
+FILE_LIST_ROOTS = (
+    ("Masaüstü", ("Desktop", "Masaüstü")),
+    ("Belgeler", ("Documents", "Belgeler")),
+    ("Resimler", ("Pictures", "Resimler")),
+    ("Müzik", ("Music", "Müzik")),
+    ("İndirilenler", ("Downloads", "İndirilenler")),
+    ("Videolar", ("Videos", "Videolar")),
+)
+
+
+def _is_reparse_point(path: Path) -> bool:
+    """Reject symbolic links and Windows junctions at every file-browser boundary."""
+    try:
+        if path.is_symlink():
+            return True
+        is_junction = getattr(path, "is_junction", None)
+        return bool(callable(is_junction) and is_junction())
+    except (OSError, RuntimeError):
+        # If Windows cannot determine the path type, fail closed.
+        return True
+
+
+def _allowed_file_roots() -> list[tuple[str, Path]]:
+    """Return only the standard profile folders exposed to the remote file browser."""
+    profile = Path(os.environ.get("USERPROFILE") or Path.home()).resolve()
+    roots: list[tuple[str, Path]] = []
+    seen: set[str] = set()
+    for label, candidates in FILE_LIST_ROOTS:
+        for folder_name in candidates:
+            candidate = profile / folder_name
+            try:
+                # Do not let a symlink/junction replace an allowlisted profile root.
+                if _is_reparse_point(candidate) or not candidate.is_dir():
+                    continue
+                resolved = candidate.resolve(strict=True)
+            except (OSError, RuntimeError):
+                continue
+            identity = os.path.normcase(str(resolved))
+            if identity in seen:
+                continue
+            seen.add(identity)
+            roots.append((label, resolved))
+            break
+    return roots
+
+
+def _serialize_file_listing(
+    current_path: str,
+    parent_path: str | None,
+    entries: list[dict],
+    truncated: bool,
+    warnings: list[str],
+) -> str:
+    payload = {
+        "schemaVersion": 1,
+        "currentPath": current_path,
+        "parentPath": parent_path,
+        "entries": entries,
+        "truncated": truncated,
+        "warnings": sorted(set(warnings)),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    # Keep the command result below Firestore's 1 MiB document limit and remove
+    # whole entries rather than cutting a JSON document mid-string.
+    while len(encoded.encode("utf-8")) > FILE_LIST_MAX_RESULT_LENGTH and entries:
+        entries.pop()
+        payload["truncated"] = True
+        payload["warnings"] = sorted(set(warnings + ["Liste boyut sınırına ulaştı; bazı öğeler gösterilmiyor."]))
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > FILE_LIST_MAX_RESULT_LENGTH:
+        raise ValueError("Dosya listesi güvenli yanıt boyutuna sığmadı.")
+    return encoded
+
+
+def execute_list_files(path_value: str = "") -> str:
+    """List metadata inside allowlisted profile folders; never read file contents."""
+    if not isinstance(path_value, str) or len(path_value) > FILE_LIST_MAX_PATH_LENGTH:
+        raise ValueError("Klasör yolu geçersiz veya çok uzun.")
+
+    roots = _allowed_file_roots()
+    if not path_value.strip():
+        entries = [
+            {
+                "name": label,
+                "path": str(root),
+                "isDirectory": True,
+                "size": 0,
+                "modifiedUtc": "",
+            }
+            for label, root in roots
+        ]
+        return _serialize_file_listing("", None, entries, False, [])
+
+    try:
+        current = Path(path_value).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("Klasör bulunamadı veya yolu geçersiz.") from exc
+
+    if not current.is_dir():
+        raise ValueError("Seçilen yol bir klasör değil.")
+
+    allowed_root = next(
+        (root for _label, root in roots if current == root or root in current.parents),
+        None,
+    )
+    if allowed_root is None:
+        raise ValueError(
+            "Bu klasöre erişim izni yok. Yalnızca Masaüstü, Belgeler, Resimler, "
+            "Müzik, İndirilenler ve Videolar klasörleri açılabilir."
+        )
+
+    entries: list[dict] = []
+    warnings: list[str] = []
+    truncated = False
+    try:
+        with os.scandir(current) as iterator:
+            for item in iterator:
+                try:
+                    item_path = Path(item.path)
+                    if _is_reparse_point(item_path):
+                        continue
+                    resolved_item = item_path.resolve(strict=True)
+                    if len(str(resolved_item)) > FILE_LIST_MAX_PATH_LENGTH:
+                        warnings.append("Yolu çok uzun olan bazı öğeler listelenmedi.")
+                        continue
+                    if not (resolved_item == allowed_root or allowed_root in resolved_item.parents):
+                        continue
+                    is_directory = item.is_dir(follow_symlinks=False)
+                    if not is_directory and not item.is_file(follow_symlinks=False):
+                        continue
+                    stat = item.stat(follow_symlinks=False)
+                    entries.append(
+                        {
+                            "name": item.name,
+                            "path": str(resolved_item),
+                            "isDirectory": is_directory,
+                            "size": 0 if is_directory else int(stat.st_size),
+                            "modifiedUtc": datetime.fromtimestamp(
+                                stat.st_mtime, timezone.utc
+                            ).isoformat(timespec="seconds").replace("+00:00", "Z"),
+                        }
+                    )
+                except (OSError, RuntimeError, ValueError):
+                    warnings.append("Bazı öğelere erişilemedi ve listeden çıkarıldı.")
+                if len(entries) > FILE_LIST_MAX_ENTRIES:
+                    truncated = True
+                    warnings.append(
+                        f"Klasör {FILE_LIST_MAX_ENTRIES} öğe sınırını aştı; bazı öğeler gösterilmiyor."
+                    )
+                    break
+    except PermissionError as exc:
+        raise ValueError("Windows bu klasörün içeriğini okumaya izin vermedi.") from exc
+    except OSError as exc:
+        raise ValueError(
+            "Klasör içeriği okunamadı. Diskin ve erişim izinlerinin durumunu kontrol et."
+        ) from exc
+
+    entries.sort(key=lambda entry: (not entry["isDirectory"], entry["name"].casefold()))
+    entries = entries[:FILE_LIST_MAX_ENTRIES]
+    parent_path = "" if current == allowed_root else str(current.parent)
+    return _serialize_file_listing(str(current), parent_path, entries, truncated, warnings)
+
+
+
+def execute_download_file(path_value: str = "") -> str:
+    """Return one bounded file payload only when it resolves inside an allowlisted profile folder."""
+    if not isinstance(path_value, str) or not path_value.strip() or len(path_value) > FILE_LIST_MAX_PATH_LENGTH:
+        raise ValueError("Dosya yolu geçersiz veya çok uzun.")
+
+    try:
+        requested = Path(path_value).expanduser()
+        target = requested.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("İndirilecek dosya bulunamadı veya yolu geçersiz.") from exc
+
+    if requested.is_symlink() or getattr(requested, "is_junction", lambda: False)():
+        raise ValueError("Sembolik bağlantı veya junction üzerinden dosya indirme engellendi.")
+    if not target.is_file():
+        raise ValueError("Seçilen öğe bir dosya değil.")
+
+    roots = _allowed_file_roots()
+    allowed_root = next(
+        (root for _label, root in roots if target == root or root in target.parents),
+        None,
+    )
+    if allowed_root is None:
+        raise ValueError(
+            "Bu dosyaya erişim izni yok. Yalnızca izin verilen kullanıcı klasörlerindeki dosyalar indirilebilir."
+        )
+
+    try:
+        before = target.stat()
+        if before.st_size > FILE_DOWNLOAD_MAX_BYTES:
+            raise ValueError(
+                f"Dosya {before.st_size} bayt; bu sürüm tek yanıtla en fazla {FILE_DOWNLOAD_MAX_BYTES} bayt indirir. "
+                "Büyük dosyalar için parçalı aktarım henüz etkin değil."
+            )
+        with target.open("rb") as stream:
+            content = stream.read(FILE_DOWNLOAD_MAX_BYTES + 1)
+        after = target.stat()
+    except PermissionError as exc:
+        raise ValueError("Windows bu dosyayı okumaya izin vermedi.") from exc
+    except OSError as exc:
+        raise ValueError("Dosya okunamadı; erişim iznini ve diskin durumunu kontrol et.") from exc
+
+    if len(content) > FILE_DOWNLOAD_MAX_BYTES:
+        raise ValueError(
+            f"Dosya {FILE_DOWNLOAD_MAX_BYTES} bayt sınırını aştı. Büyük dosyalar için parçalı aktarım henüz etkin değil."
+        )
+    if before.st_size != after.st_size or len(content) != after.st_size:
+        raise ValueError("Dosya indirme sırasında değişti; bütünlük için işlem iptal edildi.")
+
+    payload = {
+        "schemaVersion": 1,
+        "name": target.name,
+        "path": str(target),
+        "size": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "contentBase64": base64.b64encode(content).decode("ascii"),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > FILE_DOWNLOAD_MAX_RESULT_LENGTH:
+        raise ValueError("Dosya yanıtı güvenli aktarım boyutunu aştı.")
+    return encoded
+
+
 def execute_text_command(text: str) -> str:
     command = normalize_text_command(text)
     if not command:
         return "Önce bir komut yaz."
+    if command in {
+        "bilgisayar dosyalarini listele",
+        "bilgisayardaki dosyalari listele",
+        "dosyalari listele",
+        "dosya listesini iste",
+        "bilgisayar dosya listesini iste",
+    }:
+        return execute_list_files("")
 
     if command in {"sesi kapa", "sesi kapat", "sessize al", "sesi sustur", "mute"}:
         press_virtual_key(VK_VOLUME_MUTE)
@@ -615,10 +920,195 @@ def execute_text_command(text: str) -> str:
     return "Desteklenmeyen komut. Şunları deneyebilirsin: Chrome aç, Not Defteri aç, Hesap makinesi aç, YouTube aç, sesi artır, sesi azalt, masaüstünü göster."
 
 
+def _path_inside_allowed_root(path: Path, roots: list[tuple[str, Path]]) -> Path | None:
+    return next((root for _label, root in roots if path == root or root in path.parents), None)
+
+
+def _safe_transfer_name(raw: object) -> str:
+    if not isinstance(raw, str) or not raw.strip() or len(raw) > 255:
+        raise ValueError("Dosya adı geçersiz.")
+    name = raw.strip()
+    if name in {".", ".."} or re.search(r'[<>:"/\\|?*\x00-\x1f]', name):
+        raise ValueError("Dosya adı yol veya Windows tarafından desteklenmeyen karakter içeriyor.")
+    if name.endswith(".") or name.endswith(" "):
+        raise ValueError("Dosya adı nokta veya boşlukla bitemez.")
+    base = name.split(".", 1)[0].upper()
+    if base in {"CON", "PRN", "AUX", "NUL"} or re.fullmatch(r"(COM|LPT)[1-9]", base):
+        raise ValueError("Bu Windows dosya adı kullanılamaz.")
+    return name
+
+
+def execute_upload_file(fields: dict) -> str:
+    raw_destination = fields.get("destinationPath")
+    if not isinstance(raw_destination, str) or not raw_destination.strip() or len(raw_destination) > FILE_LIST_MAX_PATH_LENGTH:
+        raise ValueError("Hedef klasör yolu geçersiz.")
+    requested = Path(raw_destination).expanduser()
+    if _is_reparse_point(requested):
+        raise ValueError("Sembolik bağlantı veya junction üzerinden dosya yükleme engellendi.")
+    try:
+        destination = requested.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("Hedef klasör bulunamadı.") from exc
+    if not destination.is_dir():
+        raise ValueError("Hedef yol bir klasör olmalı.")
+    roots = _allowed_file_roots()
+    if _path_inside_allowed_root(destination, roots) is None:
+        raise ValueError("Bu klasöre erişim izni yok. Yalnızca izin verilen kullanıcı klasörlerine dosya yüklenebilir.")
+
+    name = _safe_transfer_name(fields.get("name"))
+    size = fields.get("size")
+    if isinstance(size, bool) or not isinstance(size, int) or not 0 <= size <= FILE_UPLOAD_MAX_BYTES:
+        raise ValueError(f"Dosya boyutu geçersiz; en fazla {FILE_UPLOAD_MAX_BYTES} bayt yüklenebilir.")
+    expected_hash = fields.get("sha256")
+    if not isinstance(expected_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_hash):
+        raise ValueError("Dosyanın SHA-256 bilgisi geçersiz.")
+    encoded = fields.get("contentBase64")
+    max_encoded_length = ((FILE_UPLOAD_MAX_BYTES + 2) // 3) * 4 + 8
+    if not isinstance(encoded, str) or len(encoded) > max_encoded_length:
+        raise ValueError("Dosya içeriği geçersiz veya boyut sınırını aşıyor.")
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("Dosya içeriği geçerli Base64 değil.") from exc
+    if len(content) != size:
+        raise ValueError("Dosya boyutu bildirilen değerle uyuşmuyor.")
+    actual_hash = hashlib.sha256(content).hexdigest()
+    if actual_hash.lower() != expected_hash.lower():
+        raise ValueError("Dosyanın SHA-256 doğrulaması başarısız.")
+
+    target = destination / name
+    if target.exists() or target.is_symlink() or _is_reparse_point(target):
+        raise ValueError("Hedefte aynı isimli dosya zaten var; üzerine yazılmadı.")
+    created = False
+    try:
+        with target.open("xb") as stream:
+            created = True
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError as exc:
+        raise ValueError("Hedefte aynı isimli dosya zaten var; üzerine yazılmadı.") from exc
+    except OSError as exc:
+        if created:
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise ValueError("Dosya hedef klasöre yazılamadı; disk ve izinleri kontrol et.") from exc
+    return f"Dosya yüklendi ve SHA-256 doğrulandı: {name} ({len(content)} bayt)."
+
+
+def execute_zip_folder(raw_path: str = "") -> str:
+    if not isinstance(raw_path, str) or not raw_path.strip() or len(raw_path) > FILE_LIST_MAX_PATH_LENGTH:
+        raise ValueError("ZIP yapılacak klasör yolu geçersiz.")
+    requested = Path(raw_path).expanduser()
+    if _is_reparse_point(requested):
+        raise ValueError("Sembolik bağlantı veya junction içeren klasör ZIP yapılamaz.")
+    try:
+        folder = requested.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("ZIP yapılacak klasör bulunamadı.") from exc
+    if not folder.is_dir():
+        raise ValueError("ZIP işlemi için klasör seçmelisin.")
+    roots = _allowed_file_roots()
+    root = _path_inside_allowed_root(folder, roots)
+    if root is None:
+        raise ValueError("Bu klasöre erişim izni yok. Yalnızca izin verilen kullanıcı klasörleri ZIP yapılabilir.")
+
+    files: list[Path] = []
+    total_size = 0
+
+    def collect(directory: Path) -> None:
+        nonlocal total_size
+        with os.scandir(directory) as entries:
+            for item in entries:
+                candidate = Path(item.path)
+                if _is_reparse_point(candidate):
+                    continue
+                try:
+                    resolved = candidate.resolve(strict=True)
+                    if not (resolved == root or root in resolved.parents):
+                        continue
+                    if item.is_dir(follow_symlinks=False):
+                        collect(resolved)
+                    elif item.is_file(follow_symlinks=False):
+                        total_size += int(item.stat(follow_symlinks=False).st_size)
+                        if total_size > ZIP_MAX_INPUT_BYTES:
+                            raise ValueError(f"Klasör ZIP için {ZIP_MAX_INPUT_BYTES} bayt sınırını aşıyor.")
+                        files.append(resolved)
+                        if len(files) > ZIP_MAX_FILES:
+                            raise ValueError(f"Klasör ZIP için {ZIP_MAX_FILES} dosya sınırını aşıyor.")
+                except (OSError, RuntimeError):
+                    continue
+
+    try:
+        collect(folder)
+    except ValueError:
+        raise
+    except OSError as exc:
+        raise ValueError("Klasör içeriği okunamadı; izinleri kontrol et.") from exc
+
+    output_directory = folder.parent if _path_inside_allowed_root(folder.parent, roots) is not None else folder
+    target = output_directory / _safe_transfer_name(folder.name + ".zip")
+    if target.exists() or target.is_symlink() or _is_reparse_point(target):
+        raise ValueError("Aynı isimli ZIP dosyası zaten var; üzerine yazılmadı.")
+    temporary = output_directory / f".mynassistant-zip-{uuid.uuid4().hex}.tmp"
+    target_created = False
+    try:
+        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+            for source in files:
+                try:
+                    resolved = source.resolve(strict=True)
+                    if _is_reparse_point(source) or not (resolved == root or root in resolved.parents):
+                        continue
+                    archive.write(resolved, str(resolved.relative_to(folder)).replace("\\", "/"))
+                except (OSError, RuntimeError, ValueError):
+                    continue
+        with temporary.open("rb") as source, target.open("xb") as output:
+            target_created = True
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+    except FileExistsError as exc:
+        if target_created:
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise ValueError("Aynı isimli ZIP dosyası zaten var; üzerine yazılmadı.") from exc
+    except Exception as exc:
+        if target_created:
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if isinstance(exc, ValueError):
+            raise
+        raise ValueError("ZIP oluşturulamadı; disk alanını ve klasör izinlerini kontrol et.") from exc
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return f"ZIP oluşturuldu: {target.name} ({len(files)} dosya, {target.stat().st_size} bayt)."
+
+
 def execute_command(command: str, fields: dict) -> str:
     command = command.strip().lower()
     if command == "text_command":
         return execute_text_command(str(fields.get("text") or ""))
+    if command == "list_files":
+        return execute_list_files(str(fields.get("path") or ""))
+    if command == "download_file":
+        return execute_download_file(str(fields.get("path") or ""))
+    if command == "upload_file":
+        return execute_upload_file(fields)
+    if command == "zip_folder":
+        return execute_zip_folder(str(fields.get("path") or ""))
     if command == "type_text":
         text = str(fields.get("text") or "")
         if not text.strip():
@@ -667,7 +1157,7 @@ def command_is_supported(command: str) -> bool:
     return command in {
         "mute", "volume_up", "volume_down", "home",
         "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command",
-        "type_text", "key_backspace", "key_enter"
+        "type_text", "key_backspace", "key_enter", "list_files", "download_file", "upload_file", "zip_folder"
     }
 
 
@@ -756,9 +1246,22 @@ def run_agent() -> int:
                     last_screen_frame = now
 
             if now - last_command_poll >= COMMAND_POLL_SECONDS:
-                for document in fetch_owner_commands(session):
+                for document in fetch_owner_commands(session, device_id):
                     fields = decode_document(document)
                     if fields.get("deviceId") != device_id or fields.get("status") != "pending":
+                        continue
+                    expiration_reason = command_expiration_reason(fields)
+                    if expiration_reason is not None:
+                        try:
+                            update_command(
+                                session,
+                                document,
+                                "failed",
+                                expiration_reason,
+                                expected_update_time=document.get("updateTime"),
+                            )
+                        except Exception as expiry_error:
+                            print(f"[Komut] Süresi dolmuş komutun durumu güncellenemedi; çalıştırılmadı: {expiry_error}")
                         continue
                     command = str(fields.get("command") or "")
                     if not command_is_supported(command):

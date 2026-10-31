@@ -20,6 +20,10 @@ public sealed class MynAISettings
 
     public string? CustomLogoPath { get; set; }
 
+    // Custom logos are stored separately from built-in brand assets. The legacy
+    // CustomLogoPath remains for settings files created before the gallery existed.
+    public List<string> UserLogoPaths { get; set; } = new();
+
     public string BringToFrontHotkey { get; set; } =
         "Ctrl+Shift+Space";
 }

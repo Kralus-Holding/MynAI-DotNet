@@ -97,6 +97,48 @@
 
         </Style>
 
+        <Style x:Key="TopNavButton"
+               TargetType="Button">
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="MinWidth" Value="76"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Padding" Value="13,0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#8995A8"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10">
+                            <ContentPresenter VerticalAlignment="Center"
+                                              HorizontalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#121B27"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                </Trigger>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=Tag}" Value="Active">
+                    <Setter Property="Background" Value="#10283B"/>
+                    <Setter Property="Foreground" Value="#F5FBFF"/>
+                    <Setter Property="BorderBrush" Value="#20A9D8"/>
+                    <Setter Property="BorderThickness" Value="1"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="Card"
                TargetType="Border">
 
@@ -399,11 +441,31 @@
               Margin="22">
 
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <ScrollViewer Grid.Row="0"
+            <ScrollViewer x:Name="TopNavigationScrollViewer"
+                          Grid.Row="0"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled"
+                          PanningMode="HorizontalOnly"
+                          PreviewMouseWheel="TopNavigationScrollViewer_PreviewMouseWheel"
+                          Margin="0,0,0,16">
+                <StackPanel Orientation="Horizontal">
+                    <Button x:Name="TopGeneralNavButton" Content="Genel" Tag="Active" Style="{StaticResource TopNavButton}" Click="GeneralNav_Click"/>
+                    <Button x:Name="TopAgentNavButton" Content="Agent" Tag="Normal" Style="{StaticResource TopNavButton}" Click="AgentNav_Click"/>
+                    <Button x:Name="TopAccountNavButton" Content="Hesap" Tag="Normal" Style="{StaticResource TopNavButton}" Click="AccountNav_Click"/>
+                    <Button x:Name="TopPrivacyNavButton" Content="İzinler" Tag="Normal" Style="{StaticResource TopNavButton}" Click="PrivacyNav_Click"/>
+                    <Button x:Name="TopPluginsNavButton" Content="Eklentiler" Tag="Normal" Style="{StaticResource TopNavButton}" Click="PluginsNav_Click"/>
+                    <Button x:Name="TopStartupNavButton" Content="Başlangıç" Tag="Normal" Style="{StaticResource TopNavButton}" Click="StartupNav_Click"/>
+                    <Button x:Name="TopErrorLogsNavButton" Content="Hata günlükleri" Tag="Normal" Style="{StaticResource TopNavButton}" Click="ErrorLogsNav_Click"/>
+                    <Button x:Name="TopShortcutNavButton" Content="Kısayollar" Tag="Normal" Style="{StaticResource TopNavButton}" Click="ShortcutNav_Click"/>
+                </StackPanel>
+            </ScrollViewer>
+
+            <ScrollViewer Grid.Row="1"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
 
@@ -497,13 +559,30 @@
                                                            FontSize="34" Foreground="#66CBEA"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Grid>
-                                            <TextBlock Text="Özel görsel" HorizontalAlignment="Center"
+                                            <TextBlock Text="Logo ekle" HorizontalAlignment="Center"
                                                        TextAlignment="Center" FontSize="11"
                                                        FontWeight="SemiBold" Margin="0,8,0,0"/>
                                         </StackPanel>
                                     </ToggleButton>
                                 </UniformGrid>
 
+                                <TextBlock Text="Yüklediğin logolar"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Margin="0,18,0,8"/>
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                              VerticalScrollBarVisibility="Disabled"
+                                              PanningMode="HorizontalOnly"
+                                              CanContentScroll="True">
+                                    <StackPanel x:Name="UserLogosGalleryPanel"
+                                                Orientation="Horizontal"
+                                                MinHeight="112"/>
+                                </ScrollViewer>
+                                <TextBlock Text="Menüden kendi yüklediğin bir logoyu seçebilir veya silebilirsin. Yerleşik KR / Kralus ve MynAssistant logoları silinemez."
+                                           Foreground="#7E8A9D"
+                                           FontSize="10"
+                                           Margin="0,8,0,0"
+                                           TextWrapping="Wrap"/>
 
                             </StackPanel>
                         </Border>
@@ -811,8 +890,10 @@
                                         BorderThickness="1"
                                         Background="#101720">
 
-                                    <Image Source="Resources/myn.jpg"
+                                    <Image x:Name="DesktopProfilePhoto"
+                                           Source="Resources/myn.jpg"
                                            Stretch="Uniform"
+                                           ImageFailed="DesktopProfilePhoto_ImageFailed"
                                            Margin="5"/>
 
                                 </Border>
@@ -834,12 +915,20 @@
 
                                 </StackPanel>
 
-                                <Button x:Name="GoogleConnectButton"
-                                        Grid.Column="2"
-                                        Content="Giriş yap"
-                                        Style="{StaticResource PrimaryButton}"
-                                        Click="LoginDesktopAccount_Click"
-                                        VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="2"
+                                            VerticalAlignment="Center"
+                                            Width="116">
+                                    <Button x:Name="DesktopLoginButton"
+                                            Content="Giriş yap"
+                                            Style="{StaticResource PrimaryButton}"
+                                            Click="LoginDesktopAccount_Click"/>
+                                    <Button x:Name="DesktopLogoutButton"
+                                            Content="Çıkış yap"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="LogoutDesktopAccount_Click"
+                                            Margin="0,6,0,0"
+                                            Visibility="Collapsed"/>
+                                </StackPanel>
 
                             </Grid>
 
@@ -1137,7 +1226,7 @@
 
             <!-- ALT -->
 
-            <Grid Grid.Row="1"
+            <Grid Grid.Row="2"
                   Margin="0,14,0,0">
 
                 <Grid.ColumnDefinitions>

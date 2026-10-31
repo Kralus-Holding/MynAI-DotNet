@@ -3,8 +3,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -219,6 +221,141 @@ class RemoteKeyboardCommandTests(unittest.TestCase):
             self.assertTrue(agent.command_is_supported(command))
 
 
+class SafeFileListingCommandTests(unittest.TestCase):
+    def test_root_listing_contains_only_existing_allowlisted_profile_folders(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            for folder in ("Desktop", "Documents", "Pictures", "Music", "Private"):
+                (profile / folder).mkdir()
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                payload = json.loads(agent.execute_command("list_files", {"path": ""}))
+
+        names = {entry["name"] for entry in payload["entries"]}
+        self.assertEqual(names, {"Masaüstü", "Belgeler", "Resimler", "Müzik"})
+        self.assertIsNone(payload["parentPath"])
+        self.assertTrue(agent.command_is_supported("list_files"))
+
+    def test_profile_root_reparse_points_are_not_exposed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            profile = base / "profile"
+            profile.mkdir()
+            desktop = profile / "Desktop"
+            desktop.mkdir()
+            (profile / "Documents").mkdir()
+
+            # Simulate Desktop being redirected through a symlink/junction.
+            # This does not need elevated symlink privileges on Windows CI.
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                with mock.patch.object(
+                    agent, "_is_reparse_point", side_effect=lambda path: Path(path).name.casefold() == "desktop"
+                ):
+                    payload = json.loads(agent.execute_command("list_files", {"path": ""}))
+                    names = {entry["name"] for entry in payload["entries"]}
+                    self.assertNotIn("Masaüstü", names)
+                    self.assertIn("Belgeler", names)
+                    with self.assertRaisesRegex(ValueError, "erişim izni yok"):
+                        agent.execute_command("list_files", {"path": str(desktop)})
+
+    def test_directory_listing_returns_metadata_without_reading_file_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            documents = profile / "Documents"
+            documents.mkdir()
+            nested = documents / "Raporlar"
+            nested.mkdir()
+            report = documents / "rapor.txt"
+            report.write_text("private contents", encoding="utf-8")
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                payload = json.loads(
+                    agent.execute_command("list_files", {"path": str(documents)})
+                )
+
+        self.assertEqual(payload["currentPath"], str(documents.resolve()))
+        self.assertEqual(payload["parentPath"], "")
+        self.assertEqual(
+            {entry["name"] for entry in payload["entries"]},
+            {"Raporlar", "rapor.txt"},
+        )
+        file_entry = next(entry for entry in payload["entries"] if entry["name"] == "rapor.txt")
+        self.assertFalse(file_entry["isDirectory"])
+        self.assertEqual(file_entry["size"], len("private contents".encode("utf-8")))
+        self.assertNotIn("contents", json.dumps(payload).lower())
+
+    def test_path_outside_allowlisted_profile_folders_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir) / "profile"
+            profile.mkdir()
+            (profile / "Documents").mkdir()
+            outside = Path(temp_dir) / "private"
+            outside.mkdir()
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                with self.assertRaisesRegex(ValueError, "erişim izni yok"):
+                    agent.execute_command("list_files", {"path": str(outside)})
+
+    def test_empty_directory_returns_valid_empty_listing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            documents = profile / "Documents"
+            documents.mkdir()
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                payload = json.loads(
+                    agent.execute_command("list_files", {"path": str(documents)})
+                )
+
+        self.assertEqual(payload["entries"], [])
+        self.assertFalse(payload["truncated"])
+        self.assertEqual(payload["currentPath"], str(documents.resolve()))
+
+    def test_large_directory_is_bounded_and_marked_truncated(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            documents = profile / "Documents"
+            documents.mkdir()
+            for index in range(agent.FILE_LIST_MAX_ENTRIES + 40):
+                (documents / f"file-{index:03}.txt").write_text("metadata-only test", encoding="utf-8")
+
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                payload = json.loads(
+                    agent.execute_command("list_files", {"path": str(documents)})
+                )
+
+        self.assertEqual(len(payload["entries"]), agent.FILE_LIST_MAX_ENTRIES)
+        self.assertTrue(payload["truncated"])
+        self.assertTrue(payload["warnings"])
+        self.assertTrue(all(isinstance(warning, str) and warning for warning in payload["warnings"]))
+        self.assertLessEqual(
+            len(json.dumps(payload, ensure_ascii=False).encode("utf-8")),
+            agent.FILE_LIST_MAX_RESULT_LENGTH,
+        )
+
+    def test_legacy_text_request_is_routed_to_real_file_listing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            (profile / "Desktop").mkdir()
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                payload = json.loads(agent.execute_command(
+                    "text_command", {"text": "bilgisayar dosyalarını listele"}
+                ))
+
+        self.assertEqual([entry["name"] for entry in payload["entries"]], ["Masaüstü"])
+
+
+    def test_file_list_result_is_not_truncated_at_the_status_message_limit(self) -> None:
+        document = {
+            "name": "projects/myncloud-24/databases/(default)/documents/commands/list-files",
+            "fields": {"command": {"stringValue": "list_files"}},
+        }
+        original_result = json.dumps({"entries": [{"name": "x" * 1000} for _ in range(10)]})
+        with mock.patch.object(agent, "firestore_patch") as patch:
+            agent.update_command(FakeSession(), document, "completed", original_result)
+        saved_result = patch.call_args.args[2]["result"]["stringValue"]
+        self.assertEqual(saved_result, original_result)
+        self.assertGreater(len(saved_result), 800)
+        self.assertEqual(len(json.loads(saved_result)["entries"]), 10)
+
+
+
 class FirebaseLoginRequiredTests(unittest.TestCase):
     def test_bridge_without_saved_session_requests_app_login_without_oauth_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -261,3 +398,186 @@ class FirebaseLoginRequiredTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+class SafeFileDownloadCommandTests(unittest.TestCase):
+    def test_download_returns_content_hash_and_size_from_allowlisted_file(self) -> None:
+        import base64
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            desktop = profile / "Desktop"
+            desktop.mkdir()
+            content = b"MynAssistant safe file download"
+            target = desktop / "example.txt"
+            target.write_bytes(content)
+
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                payload = json.loads(agent.execute_command("download_file", {"path": str(target)}))
+
+        self.assertEqual(payload["name"], "example.txt")
+        self.assertEqual(payload["size"], len(content))
+        self.assertEqual(base64.b64decode(payload["contentBase64"]), content)
+        self.assertEqual(payload["sha256"], hashlib.sha256(content).hexdigest())
+        self.assertTrue(agent.command_is_supported("download_file"))
+        self.assertLessEqual(len(json.dumps(payload, separators=(",", ":")).encode("utf-8")),
+                             agent.FILE_DOWNLOAD_MAX_RESULT_LENGTH)
+
+    def test_download_rejects_files_outside_allowlisted_profile_folders(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            private = profile / "Private"
+            private.mkdir()
+            target = private / "secret.txt"
+            target.write_text("not allowed", encoding="utf-8")
+
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                with self.assertRaisesRegex(ValueError, "erişim izni yok"):
+                    agent.execute_command("download_file", {"path": str(target)})
+
+    def test_download_rejects_directory_and_oversized_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile = Path(temp_dir)
+            desktop = profile / "Desktop"
+            desktop.mkdir()
+            folder = desktop / "Folder"
+            folder.mkdir()
+            oversized = desktop / "large.bin"
+            oversized.write_bytes(b"x" * (agent.FILE_DOWNLOAD_MAX_BYTES + 1))
+
+            with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}):
+                with self.assertRaisesRegex(ValueError, "bir dosya değil"):
+                    agent.execute_command("download_file", {"path": str(folder)})
+                with self.assertRaisesRegex(ValueError, "(?i)büyük dosyalar"):
+                    agent.execute_command("download_file", {"path": str(oversized)})
+
+    def test_download_rejects_empty_and_overlong_paths(self) -> None:
+        with self.assertRaisesRegex(ValueError, "geçersiz"):
+            agent.execute_command("download_file", {"path": ""})
+        with self.assertRaisesRegex(ValueError, "geçersiz"):
+            agent.execute_command("download_file", {"path": "x" * (agent.FILE_LIST_MAX_PATH_LENGTH + 1)})
+
+
+class CommandExpirationAndQueueScopeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.session = FakeSession()
+        self.now = datetime(2026, 10, 27, 21, 0, 0, tzinfo=timezone.utc)
+
+    def test_recent_command_is_still_valid(self) -> None:
+        fields = {"createdAt": (self.now - timedelta(seconds=30)).isoformat()}
+        self.assertIsNone(agent.command_expiration_reason(fields, self.now))
+
+    def test_old_pending_command_expires(self) -> None:
+        fields = {"createdAt": (self.now - timedelta(seconds=61)).isoformat()}
+        self.assertIn("süresi doldu", agent.command_expiration_reason(fields, self.now).lower())
+
+    def test_expired_offline_queued_command_cannot_run_late(self) -> None:
+        fields = {"createdAt": self.now.isoformat(), "expiresAt": (self.now - timedelta(seconds=1)).isoformat()}
+        self.assertIn("süresi doldu", agent.command_expiration_reason(fields, self.now).lower())
+
+    def test_missing_timestamp_fails_closed(self) -> None:
+        self.assertIn("zamanı", agent.command_expiration_reason({}, self.now).lower())
+
+    def test_unreasonable_future_expiry_fails_closed(self) -> None:
+        fields = {"expiresAt": (self.now + timedelta(minutes=10)).isoformat()}
+        self.assertIn("sınırı", agent.command_expiration_reason(fields, self.now).lower())
+
+    def test_query_scopes_pending_commands_to_current_device(self) -> None:
+        with mock.patch.object(agent.requests, "post", return_value=FakeResponse(200, [{"noDocument": True}])) as post:
+            self.assertEqual(agent.fetch_owner_commands(self.session, "win-test"), [])
+        query = post.call_args.kwargs["json"]["structuredQuery"]
+        filters = query["where"]["compositeFilter"]["filters"]
+        filtered_fields = {
+            item["fieldFilter"]["field"]["fieldPath"]: item["fieldFilter"]["value"]
+            for item in filters
+        }
+        self.assertEqual(filtered_fields["ownerId"]["stringValue"], "test-user")
+        self.assertEqual(filtered_fields["status"]["stringValue"], "pending")
+        self.assertEqual(filtered_fields["deviceId"]["stringValue"], "win-test")
+
+
+class SafeFileUploadAndZipCommandTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.profile = Path(self.temp.name) / "profile"
+        self.profile.mkdir()
+        self.documents = self.profile / "Documents"
+        self.documents.mkdir()
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def upload_fields(self, name: str = "from-phone.txt", content: bytes = b"phone to PC") -> dict:
+        import base64
+        import hashlib
+        return {
+            "destinationPath": str(self.documents),
+            "name": name,
+            "size": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "contentBase64": base64.b64encode(content).decode("ascii"),
+        }
+
+    def test_upload_writes_verified_bytes_inside_allowlisted_folder(self) -> None:
+        with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(self.profile)}):
+            result = agent.execute_command("upload_file", self.upload_fields())
+        self.assertEqual((self.documents / "from-phone.txt").read_bytes(), b"phone to PC")
+        self.assertIn("SHA-256", result)
+        self.assertTrue(agent.command_is_supported("upload_file"))
+
+    def test_upload_rejects_folder_outside_allowlist(self) -> None:
+        outside = self.profile / "Private"
+        outside.mkdir()
+        fields = self.upload_fields()
+        fields["destinationPath"] = str(outside)
+        with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(self.profile)}):
+            with self.assertRaisesRegex(ValueError, "erişim izni yok"):
+                agent.execute_command("upload_file", fields)
+
+    def test_upload_rejects_traversal_oversized_content_and_bad_checksum(self) -> None:
+        with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(self.profile)}):
+            with self.assertRaises(ValueError):
+                agent.execute_command("upload_file", self.upload_fields("../evil.txt"))
+            oversized = self.upload_fields(content=b"x" * (agent.FILE_UPLOAD_MAX_BYTES + 1))
+            with self.assertRaisesRegex(ValueError, "en fazla"):
+                agent.execute_command("upload_file", oversized)
+            bad_hash = self.upload_fields()
+            bad_hash["sha256"] = "0" * 64
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                agent.execute_command("upload_file", bad_hash)
+
+    def test_upload_does_not_overwrite_existing_file(self) -> None:
+        target = self.documents / "from-phone.txt"
+        target.write_bytes(b"keep")
+        with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(self.profile)}):
+            with self.assertRaisesRegex(ValueError, "zaten var"):
+                agent.execute_command("upload_file", self.upload_fields(content=b"replace"))
+        self.assertEqual(target.read_bytes(), b"keep")
+
+    def test_zip_folder_creates_valid_archive_in_allowed_parent(self) -> None:
+        folder = self.documents / "Raporlar"
+        folder.mkdir()
+        (folder / "one.txt").write_text("one", encoding="utf-8")
+        (folder / "two.txt").write_text("two", encoding="utf-8")
+        with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(self.profile)}):
+            result = agent.execute_command("zip_folder", {"path": str(folder)})
+        archive_path = self.documents / "Raporlar.zip"
+        self.assertTrue(archive_path.is_file())
+        self.assertIn("ZIP", result)
+        with zipfile.ZipFile(archive_path) as archive:
+            self.assertEqual(set(archive.namelist()), {"one.txt", "two.txt"})
+        self.assertTrue(agent.command_is_supported("zip_folder"))
+
+    def test_zip_rejects_folder_outside_allowlist_and_existing_archive(self) -> None:
+        outside = self.profile / "Private"
+        outside.mkdir()
+        folder = self.documents / "Raporlar"
+        folder.mkdir()
+        archive_path = self.documents / "Raporlar.zip"
+        archive_path.write_bytes(b"keep")
+        with mock.patch.dict(agent.os.environ, {"USERPROFILE": str(self.profile)}):
+            with self.assertRaisesRegex(ValueError, "erişim izni yok"):
+                agent.execute_command("zip_folder", {"path": str(outside)})
+            with self.assertRaisesRegex(ValueError, "zaten var"):
+                agent.execute_command("zip_folder", {"path": str(folder)})
+        self.assertEqual(archive_path.read_bytes(), b"keep")
