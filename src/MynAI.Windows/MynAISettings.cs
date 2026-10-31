@@ -10,6 +10,9 @@ public sealed class MynAISettings
 
     public bool WindowsNotifications { get; set; } = true;
 
+    // Diagnostic email reporting is opt-in and disabled on first install.
+    public bool SendDiagnosticsAutomatically { get; set; }
+
     public bool MicrophoneEnabled { get; set; }
 
     public bool CameraEnabled { get; set; }
