@@ -726,7 +726,14 @@ public partial class SettingsWindow : Window
                     ? Color.FromRgb(139, 156, 255)
                     : Color.FromRgb(38, 52, 73)),
                 Background = new SolidColorBrush(Color.FromRgb(16, 23, 32)),
-                ToolTip = Path.GetFileName(path)
+                ToolTip = Path.GetFileName(path),
+                Cursor = System.Windows.Input.Cursors.Hand
+            };
+            card.MouseLeftButtonUp += (_, args) =>
+            {
+                if (args.OriginalSource is System.Windows.Controls.Primitives.ButtonBase)
+                    return;
+                SelectUserLogo(path);
             };
             var grid = new System.Windows.Controls.Grid();
             grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
