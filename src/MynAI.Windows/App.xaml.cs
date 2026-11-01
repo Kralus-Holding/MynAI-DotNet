@@ -29,12 +29,9 @@ public partial class App : System.Windows.Application
                 return;
             }
 
-            var mainWindow = new MainWindow();
-            MainWindow = mainWindow;
-            mainWindow.Show();
-
-            // MynAgent is a background component, not a user-operated window feature.
-            // Ensure it runs now and automatically on the next Windows sign-in.
+            // Start the IPC server before constructing the UI. The window starts its
+            // scheduled-task refresh timer immediately; showing it first caused a startup
+            // race where its first pipe requests timed out before MynAgent was listening.
             try
             {
                 AgentStartupManager.SetEnabled(true);
@@ -48,6 +45,10 @@ public partial class App : System.Windows.Application
                     "MynAssistant UI opened, but its background Agent could not be started.",
                     agentError);
             }
+
+            var mainWindow = new MainWindow();
+            MainWindow = mainWindow;
+            mainWindow.Show();
         }
         catch (Exception ex)
         {
