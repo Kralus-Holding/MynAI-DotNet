@@ -749,7 +749,7 @@ def command_is_supported(command: str) -> bool:
     return command in {
         "mute", "volume_up", "volume_down", "home",
         "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command",
-        "type_text", "key_backspace", "key_enter"
+        "type_text", "key_backspace", "key_enter", "list_files"
     }
 
 
