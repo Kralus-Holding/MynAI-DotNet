@@ -86,14 +86,6 @@ def running_directory() -> Path:
     return Path(__file__).resolve().parent
 
 
-def encode_string(value: str) -> dict:
-    return {"stringValue": value}
-
-
-def encode_timestamp(value: str | None = None) -> dict:
-    return {"timestampValue": value or utc_now()}
-
-
 def decode_field(value: dict | None):
     if value is None:
         return None
@@ -236,33 +228,6 @@ def server_request(session: FirebaseSession, method: str, path: str, json_body: 
     if not isinstance(payload, dict):
         raise RuntimeError("MynAssistant Server beklenmeyen yanıt biçimi döndürdü.")
     return payload
-
-
-def firestore_patch(
-    session: FirebaseSession,
-    document_path: str,
-    fields: dict,
-    update_mask: list[str] | None = None,
-    current_document_update_time: str | None = None,
-):
-    params = []
-    if update_mask:
-        params.extend(("updateMask.fieldPaths", field) for field in update_mask)
-    if current_document_update_time:
-        # Firestore's updateTime precondition provides compare-and-swap semantics.
-        params.append(("currentDocument.updateTime", current_document_update_time))
-    response = requests.patch(
-        f"{FIRESTORE}/{document_path}",
-        params=params,
-        headers=session.headers(),
-        json={"fields": fields},
-        timeout=20,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError(
-            f"Firestore PATCH {document_path} HTTP {response.status_code}: {response.text[:500]}"
-        )
-    return response.json()
 
 
 def register_or_heartbeat(session: FirebaseSession, device_id: str, initial: bool = False) -> None:
