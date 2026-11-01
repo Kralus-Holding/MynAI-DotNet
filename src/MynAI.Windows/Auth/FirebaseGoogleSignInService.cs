@@ -193,6 +193,83 @@ public sealed class FirebaseGoogleSignInService
         }
     }
 
+    public static async Task<string?> GetGoogleProfilePhotoUrlFromFirebaseAsync(
+        string idToken,
+        string expectedUid,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(idToken) || string.IsNullOrWhiteSpace(expectedUid))
+            return null;
+
+        try
+        {
+            using var response = await Http.PostAsJsonAsync(
+                $"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={ApiKey}",
+                new { idToken },
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync(cancellationToken));
+            var root = document.RootElement;
+            if (!root.TryGetProperty("users", out var users) ||
+                users.ValueKind != JsonValueKind.Array ||
+                users.GetArrayLength() == 0)
+                return null;
+
+            var user = users[0];
+            if (!StringComparer.Ordinal.Equals(
+                    GetJsonString(user, "localId"),
+                    expectedUid))
+                return null;
+
+            // Prefer the Google provider's photo rather than a custom or stale
+            // Firebase profile image, so existing saved sessions regain the Google avatar.
+            if (user.TryGetProperty("providerUserInfo", out var providers) &&
+                providers.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var provider in providers.EnumerateArray())
+                {
+                    if (!StringComparer.Ordinal.Equals(
+                            GetJsonString(provider, "providerId"),
+                            "google.com"))
+                        continue;
+
+                    var providerPhoto = GetGoogleusercontentPhotoUrl(
+                        GetJsonString(provider, "photoUrl"));
+                    if (providerPhoto is not null)
+                        return providerPhoto;
+                }
+            }
+
+            return GetGoogleusercontentPhotoUrl(GetJsonString(user, "photoUrl"));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Profile-photo refresh is optional and must never block account sign-in.
+            return null;
+        }
+    }
+
+    private static string? GetGoogleusercontentPhotoUrl(string? value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+        string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
+        (uri.Host.Equals("googleusercontent.com", StringComparison.OrdinalIgnoreCase) ||
+         uri.Host.EndsWith(".googleusercontent.com", StringComparison.OrdinalIgnoreCase))
+            ? uri.AbsoluteUri
+            : null;
+
+    private static string? GetJsonString(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var value) &&
+        value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
     private static string? GetSafePhotoUrl(string? value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
         uri.Scheme == Uri.UriSchemeHttps
