@@ -1407,11 +1407,18 @@ public partial class SettingsWindow : Window
 
             var hasSignedQr = !string.IsNullOrWhiteSpace(pairing.QrSignature);
             var qrExpiresAtUnix = pairing.ExpiresAtUtc.ToUnixTimeSeconds();
-            _pendingPairingQrPayload = hasSignedQr
-                ? $"MYNASSISTANT-PAIR:{pairing.Code}:{qrExpiresAtUnix}:{pairing.QrSignature}"
+            var normalizedPairingCode = new string(pairing.Code
+                .Where(char.IsLetterOrDigit)
+                .Select(char.ToUpperInvariant)
+                .ToArray());
+            var displayedPairingCode = normalizedPairingCode.Length == 10
+                ? $"{normalizedPairingCode[..5]}-{normalizedPairingCode[5..]}"
                 : pairing.Code;
+            _pendingPairingQrPayload = hasSignedQr
+                ? $"MYNASSISTANT-PAIR:{normalizedPairingCode}:{qrExpiresAtUnix}:{pairing.QrSignature}"
+                : displayedPairingCode;
 
-            DesktopPairingCodeText.Text = pairing.Code;
+            DesktopPairingCodeText.Text = displayedPairingCode;
             DesktopPairingCodeText.Visibility = Visibility.Visible;
             // Always make a QR available. On older servers it contains only the
             // one-time manual code; signed payloads are used as soon as the API supports them.
