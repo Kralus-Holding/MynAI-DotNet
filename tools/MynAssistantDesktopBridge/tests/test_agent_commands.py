@@ -64,21 +64,21 @@ class FakeScreenshotImage:
         output.write(b"x" * self.sizes_by_quality[quality])
 
 
-class AtomicCommandClaimTests(unittest.TestCase):
+class ServerRelayCommandTests(unittest.TestCase):
     def setUp(self) -> None:
         self.session = FakeSession()
         self.document = {
-            "name": "projects/myncloud-24/databases/(default)/documents/commands/cmd-1",
+            "id": "cmd-1",
             "updateTime": "2026-10-22T10:00:00.000000Z",
             "fields": {
-                "ownerId": {"stringValue": "test-user"},
-                "deviceId": {"stringValue": "win-test"},
-                "command": {"stringValue": "volume_up"},
-                "status": {"stringValue": "pending"},
+                "ownerId": "test-user",
+                "deviceId": "win-test",
+                "command": "volume_up",
+                "status": "pending",
             },
         }
 
-    def test_screen_frame_compresses_before_base64_firestore_expansion(self) -> None:
+    def test_screen_frame_compresses_before_server_upload(self) -> None:
         image = FakeScreenshotImage({45: 600_001, 30: 500_000})
         with mock.patch.object(agent.pyautogui, "screenshot", return_value=image):
             encoded = agent.capture_screen_base64()
@@ -91,87 +91,91 @@ class AtomicCommandClaimTests(unittest.TestCase):
     def test_screen_frame_is_rejected_if_low_quality_still_too_large(self) -> None:
         image = FakeScreenshotImage({45: 800_001, 30: 700_001})
         with mock.patch.object(agent.pyautogui, "screenshot", return_value=image):
-            with self.assertRaisesRegex(RuntimeError, "Firestore belge boyutu"):
+            with self.assertRaisesRegex(RuntimeError, "güvenli aktarım"):
                 agent.capture_screen_base64()
         self.assertEqual(image.qualities_used, [45, 30])
 
-    def test_patch_includes_firestore_update_time_precondition(self) -> None:
-        with mock.patch.object(agent.requests, "patch", return_value=FakeResponse(200, {})) as patch:
-            agent.firestore_patch(
-                self.session,
-                "commands/cmd-1",
-                {"status": agent.encode_string("running")},
-                update_mask=["status"],
-                current_document_update_time=self.document["updateTime"],
-            )
-
-        params = patch.call_args.kwargs["params"]
-        self.assertIn(("currentDocument.updateTime", self.document["updateTime"]), params)
-        self.assertIn(("updateMask.fieldPaths", "status"), params)
-
-    def test_claim_refuses_document_without_update_time(self) -> None:
+    def test_claim_refuses_document_without_server_update_time(self) -> None:
         document = dict(self.document)
         document.pop("updateTime")
-        with mock.patch.object(agent.requests, "patch") as patch, mock.patch.object(agent.requests, "get") as get:
+        with mock.patch.object(agent, "server_request") as request:
             claimed = agent.claim_pending_command(self.session, document, "win-test")
         self.assertFalse(claimed)
-        patch.assert_not_called()
-        get.assert_not_called()
+        request.assert_not_called()
 
-    def test_claim_wins_using_compare_and_swap(self) -> None:
-        with mock.patch.object(agent.requests, "patch", return_value=FakeResponse(200, {})) as patch:
-            claimed = agent.claim_pending_command(self.session, self.document, "win-test")
-
-        self.assertTrue(claimed)
-        params = patch.call_args.kwargs["params"]
-        self.assertIn(("currentDocument.updateTime", self.document["updateTime"]), params)
-        fields = patch.call_args.kwargs["json"]["fields"]
-        self.assertEqual(fields["status"]["stringValue"], "running")
-        self.assertEqual(fields["claimedByDeviceId"]["stringValue"], "win-test")
-        self.assertTrue(fields["claimToken"]["stringValue"])
-
-    def test_cancelled_document_wins_race_and_agent_does_not_claim(self) -> None:
+    def test_claim_is_authorized_by_server_and_stores_claim_token(self) -> None:
         with mock.patch.object(
-            agent.requests, "patch", return_value=FakeResponse(
-                400, {"error": {"status": "FAILED_PRECONDITION"}}, '{"error":{"status":"FAILED_PRECONDITION"}}'
-            )
-        ) as patch, mock.patch.object(
-            agent.requests, "get", return_value=FakeResponse(
-                200, firestore_doc({"status": "cancelled", "result": "Cancelled"})
-            )
-        ) as get:
-            claimed = agent.claim_pending_command(self.session, self.document, "win-test")
-
-        self.assertFalse(claimed)
-        patch.assert_called_once()
-        get.assert_called_once()
-        self.assertIn(("currentDocument.updateTime", self.document["updateTime"]), patch.call_args.kwargs["params"])
-
-    def test_timeout_after_success_is_verified_by_unique_claim_token(self) -> None:
-        captured = {}
-
-        def patch_then_timeout(*args, **kwargs):
-            captured["body"] = kwargs["json"]["fields"]
-            raise agent.requests.Timeout("response was lost after server accepted write")
-
-        def get_claim(*args, **kwargs):
-            fields = captured["body"]
-            return FakeResponse(
-                200,
-                firestore_doc({
-                    "status": fields["status"]["stringValue"],
-                    "claimToken": fields["claimToken"]["stringValue"],
-                    "claimedByDeviceId": fields["claimedByDeviceId"]["stringValue"],
-                }),
-            )
-
-        with mock.patch.object(agent.requests, "patch", side_effect=patch_then_timeout), mock.patch.object(
-            agent.requests, "get", side_effect=get_claim
-        ):
+            agent,
+            "server_request",
+            return_value={"status": "running", "claimToken": "server-issued-claim"},
+        ) as request:
             claimed = agent.claim_pending_command(self.session, self.document, "win-test")
 
         self.assertTrue(claimed)
+        self.assertEqual(self.document["_claimToken"], "server-issued-claim")
+        request.assert_called_once_with(
+            self.session,
+            "POST",
+            "/api/v1/pc/agent/devices/win-test/commands/cmd-1/claim",
+            {
+                "deviceId": "win-test",
+                "expectedUpdateTime": self.document["updateTime"],
+            },
+            timeout=20,
+        )
 
+    def test_claim_fails_closed_when_server_rejects_claim(self) -> None:
+        with mock.patch.object(
+            agent, "server_request", side_effect=RuntimeError("Komut artık beklemede değil.")
+        ) as request:
+            claimed = agent.claim_pending_command(self.session, self.document, "win-test")
+        self.assertFalse(claimed)
+        self.assertNotIn("_claimToken", self.document)
+        request.assert_called_once()
+
+    def test_claim_without_token_never_executes_result_write(self) -> None:
+        with mock.patch.object(agent, "server_request") as request:
+            with self.assertRaisesRegex(RuntimeError, "sahiplenilmedi"):
+                agent.update_command(self.session, self.document, "completed", "done")
+        request.assert_not_called()
+
+    def test_command_result_returns_to_server_with_claim_token(self) -> None:
+        document = {
+            **self.document,
+            "_claimToken": "server-issued-claim",
+            "fields": {**self.document["fields"], "command": "list_files"},
+        }
+        original_result = json.dumps({"entries": [{"name": "x" * 1000} for _ in range(10)]})
+        with mock.patch.object(agent, "server_request") as request:
+            agent.update_command(self.session, document, "completed", original_result)
+
+        args = request.call_args.args
+        self.assertEqual(args[0], self.session)
+        self.assertEqual(args[1], "POST")
+        self.assertEqual(
+            args[2],
+            "/api/v1/pc/agent/devices/win-test/commands/cmd-1/result",
+        )
+        self.assertEqual(args[3]["claimToken"], "server-issued-claim")
+        self.assertEqual(args[3]["status"], "completed")
+        self.assertEqual(args[3]["result"], original_result)
+        self.assertGreater(len(args[3]["result"]), 800)
+
+    def test_command_queue_is_fetched_from_server_for_exact_device(self) -> None:
+        with mock.patch.object(
+            agent,
+            "server_request",
+            return_value={"items": [self.document]},
+        ) as request:
+            result = agent.fetch_owner_commands(self.session, "win-test")
+
+        self.assertEqual(result, [self.document])
+        request.assert_called_once_with(
+            self.session,
+            "GET",
+            "/api/v1/pc/agent/devices/win-test/commands",
+            timeout=25,
+        )
 
 
 class RemoteKeyboardCommandTests(unittest.TestCase):
@@ -369,13 +373,14 @@ class SafeFileListingCommandTests(unittest.TestCase):
 
     def test_file_list_result_is_not_truncated_at_the_status_message_limit(self) -> None:
         document = {
-            "name": "projects/myncloud-24/databases/(default)/documents/commands/list-files",
-            "fields": {"command": {"stringValue": "list_files"}},
+            "id": "list-files",
+            "_claimToken": "server-claim",
+            "fields": {"deviceId": "win-test", "command": "list_files"},
         }
         original_result = json.dumps({"entries": [{"name": "x" * 1000} for _ in range(10)]})
-        with mock.patch.object(agent, "firestore_patch") as patch:
+        with mock.patch.object(agent, "server_request") as request:
             agent.update_command(FakeSession(), document, "completed", original_result)
-        saved_result = patch.call_args.args[2]["result"]["stringValue"]
+        saved_result = request.call_args.args[3]["result"]
         self.assertEqual(saved_result, original_result)
         self.assertGreater(len(saved_result), 800)
         self.assertEqual(len(json.loads(saved_result)["entries"]), 10)
@@ -508,18 +513,15 @@ class CommandExpirationAndQueueScopeTests(unittest.TestCase):
         fields = {"expiresAt": (self.now + timedelta(minutes=10)).isoformat()}
         self.assertIn("sınırı", agent.command_expiration_reason(fields, self.now).lower())
 
-    def test_query_scopes_pending_commands_to_current_device(self) -> None:
-        with mock.patch.object(agent.requests, "post", return_value=FakeResponse(200, [{"noDocument": True}])) as post:
+    def test_query_scopes_pending_commands_to_current_device_through_server(self) -> None:
+        with mock.patch.object(agent, "server_request", return_value={"items": []}) as request:
             self.assertEqual(agent.fetch_owner_commands(self.session, "win-test"), [])
-        query = post.call_args.kwargs["json"]["structuredQuery"]
-        filters = query["where"]["compositeFilter"]["filters"]
-        filtered_fields = {
-            item["fieldFilter"]["field"]["fieldPath"]: item["fieldFilter"]["value"]
-            for item in filters
-        }
-        self.assertEqual(filtered_fields["ownerId"]["stringValue"], "test-user")
-        self.assertEqual(filtered_fields["status"]["stringValue"], "pending")
-        self.assertEqual(filtered_fields["deviceId"]["stringValue"], "win-test")
+        request.assert_called_once_with(
+            self.session,
+            "GET",
+            "/api/v1/pc/agent/devices/win-test/commands",
+            timeout=25,
+        )
 
 
 class SafeFileUploadAndZipCommandTests(unittest.TestCase):
