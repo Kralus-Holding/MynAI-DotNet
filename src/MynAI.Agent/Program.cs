@@ -1,4 +1,5 @@
 ﻿using MynAI.Agent.IPC;
+using MynAI.Agent.Hotkeys;
 using MynAI.Agent.Notifications;
 using MynAI.Agent.Power;
 using MynAI.Agent.Scheduler;
@@ -61,6 +62,7 @@ var scheduler = new MynScheduler(
     warningStore);
 
 var pipeServer = new AgentPipeServer(scheduler);
+var hotkeyService = new AgentHotkeyService();
 
 using var cancellationTokenSource =
     new CancellationTokenSource();
@@ -91,11 +93,15 @@ var schedulerTask = scheduler.RunAsync(
 var pipeTask = pipeServer.RunAsync(
     cancellationTokenSource.Token);
 
+var hotkeyTask = hotkeyService.RunAsync(
+    cancellationTokenSource.Token);
+
 try
 {
     await Task.WhenAll(
         schedulerTask,
-        pipeTask);
+        pipeTask,
+        hotkeyTask);
 }
 catch (OperationCanceledException)
 {

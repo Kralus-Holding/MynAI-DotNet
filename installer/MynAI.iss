@@ -1,5 +1,5 @@
 #define MyAppName "MynAssistant"
-#define MyAppVersion "0.1.6"
+#define MyAppVersion "0.1.7"
 #define MyAppPublisher "MynKralus"
 #define MyAppExeName "MynAssistant.exe"
 #define MyAgentExeName "MynAgent.exe"
@@ -35,7 +35,7 @@ VersionInfoCompany=MynKralus
 VersionInfoDescription=MynAssistant Windows Installer
 VersionInfoProductName=MynAssistant
 VersionInfoProductVersion={#MyAppVersion}
-VersionInfoVersion=0.1.6.0
+VersionInfoVersion=0.1.7.0
 VersionInfoCopyright=Copyright (C) MynKralus
 
 [Languages]
@@ -55,6 +55,9 @@ Name: "desktopicon"; Description: "Masaüstüne kısayol oluştur"; GroupDescrip
 [Files]
 Source: "..\build\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build\agent-publish\*"; DestDir: "{app}\Agent"; Flags: ignoreversion recursesubdirs createallsubdirs
+#ifexist "..\build\google-oauth\google-signin-desktop.json"
+Source: "..\build\google-oauth\google-signin-desktop.json"; DestDir: "{app}\Auth"; Flags: ignoreversion
+#endif
 
 [InstallDelete]
 ; Agent\ is an application-payload-only directory. User settings/logs/custom logos are under %LOCALAPPDATA% and remain untouched.

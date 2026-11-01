@@ -11,6 +11,7 @@ public sealed class FirebaseDesktopSession
     [JsonPropertyName("uid")] public string Uid { get; set; } = "";
     [JsonPropertyName("email")] public string Email { get; set; } = "";
     [JsonPropertyName("displayName")] public string DisplayName { get; set; } = "";
+    [JsonPropertyName("photoUrl")] public string? PhotoUrl { get; set; }
     [JsonPropertyName("refreshToken")] public string RefreshToken { get; set; } = "";
     [JsonPropertyName("idToken")] public string IdToken { get; set; } = "";
     [JsonPropertyName("expiresAt")] public long ExpiresAt { get; set; }
@@ -58,8 +59,22 @@ public static class FirebaseDesktopSessionStore
     }
 
     public static bool HasValidStoredSession() => Load() is not null;
+
+    // Use this on an explicit sign-out path so the UI cannot report logout success
+    // while the protected token file still exists. The legacy best-effort Delete
+    // method remains for callers that intentionally treat cleanup as optional.
+    public static void DeleteOrThrow()
+    {
+        if (!File.Exists(SessionPath))
+            return;
+
+        File.Delete(SessionPath);
+        if (File.Exists(SessionPath))
+            throw new IOException("Korumalı Firebase oturum dosyası silinemedi.");
+    }
+
     public static void Delete()
     {
-        try { if (File.Exists(SessionPath)) File.Delete(SessionPath); } catch { }
+        try { DeleteOrThrow(); } catch { }
     }
 }

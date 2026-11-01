@@ -1,6 +1,7 @@
 using System.Net;
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 
@@ -8,7 +9,12 @@ namespace MynAI.Windows.Auth;
 
 public sealed class DesktopPairingClient
 {
-    private const string ServerBaseUrl = "https://mynassistant-server.onrender.com";
+    internal const string ServerBaseUrl = "https://mynassistant-server.onrender.com";
+    // Firebase Web API key is a public project identifier already used by the shipped bridge;
+    // it is not a service-account secret. Server/service credentials remain server-side.
+    internal const string FirebaseWebApiKey = "AIzaSyB0z1b5OOMh8Pqn2GPd1ZuWoHEhRoKSrRM";
+    private const string FirebaseSecureTokenUrl = "https://securetoken.googleapis.com/v1/token";
+    private const string FirebaseAccountsLookupUrl = "https://identitytoolkit.googleapis.com/v1/accounts:lookup";
     private static readonly HttpClient Http = new()
     {
         Timeout = TimeSpan.FromSeconds(15)
@@ -18,18 +24,121 @@ public sealed class DesktopPairingClient
         PropertyNameCaseInsensitive = true
     };
 
-    public async Task<DesktopPairingStartResponse> StartAsync(
-        string machineName,
+    public async Task<string> GetFreshIdTokenAsync(
+        FirebaseDesktopSession session,
         CancellationToken cancellationToken = default)
     {
-        var request = new DesktopPairingStartRequest(
-            string.IsNullOrWhiteSpace(machineName) ? "Windows bilgisayarı" : machineName.Trim());
+        if (string.IsNullOrWhiteSpace(session.Uid) || string.IsNullOrWhiteSpace(session.RefreshToken))
+            throw new DesktopPairingClientException(
+                "Kaydedilmiş Windows oturumu yenilenemiyor. Android uygulamasında oturumu yeniden eşleştir.",
+                HttpStatusCode.Unauthorized,
+                "MYN-AUTH-004");
 
-        using var response = await Http.PostAsJsonAsync(
-            $"{ServerBaseUrl}/api/v1/desktop/pairing/start",
-            request,
-            JsonOptions,
-            cancellationToken);
+        // The Desktop Bridge stores the DPAPI-protected refresh token but may leave the
+        // short-lived ID token empty/stale. Refresh it before binding a new pairing to this UID.
+        using var refreshRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{FirebaseSecureTokenUrl}?key={Uri.EscapeDataString(FirebaseWebApiKey)}")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "refresh_token",
+                ["refresh_token"] = session.RefreshToken
+            })
+        };
+        using var refreshResponse = await Http.SendAsync(refreshRequest, cancellationToken);
+        if (!refreshResponse.IsSuccessStatusCode)
+        {
+            var code = refreshResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.BadRequest
+                ? "MYN-AUTH-004"
+                : "MYN-SERVER-001";
+            throw new DesktopPairingClientException(
+                "Windows oturumu doğrulanamadı veya yenilenemedi. İnternet bağlantısını kontrol et; oturum geçersizse 'Hesabı değiştir' akışını kullan.",
+                refreshResponse.StatusCode,
+                code);
+        }
+
+        using var refreshDocument = await JsonDocument.ParseAsync(
+            await refreshResponse.Content.ReadAsStreamAsync(cancellationToken),
+            cancellationToken: cancellationToken);
+        var refreshRoot = refreshDocument.RootElement;
+        var idToken = GetJsonString(refreshRoot, "id_token");
+        var refreshedToken = GetJsonString(refreshRoot, "refresh_token");
+        var expiresIn = GetJsonString(refreshRoot, "expires_in");
+        if (string.IsNullOrWhiteSpace(idToken) ||
+            string.IsNullOrWhiteSpace(refreshedToken) ||
+            !long.TryParse(expiresIn, out var lifetimeSeconds) ||
+            lifetimeSeconds <= 0)
+        {
+            throw new InvalidDataException("Firebase oturum yenileme yanıtı beklenen alanları içermiyor.");
+        }
+
+        using var lookupRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{FirebaseAccountsLookupUrl}?key={Uri.EscapeDataString(FirebaseWebApiKey)}")
+        {
+            Content = JsonContent.Create(new { idToken })
+        };
+        using var lookupResponse = await Http.SendAsync(lookupRequest, cancellationToken);
+        if (!lookupResponse.IsSuccessStatusCode)
+            throw new DesktopPairingClientException(
+                "Yenilenen Windows oturumu doğrulanamadı. Oturum değiştirilmedi.",
+                lookupResponse.StatusCode,
+                "MYN-AUTH-004");
+
+        using var lookupDocument = await JsonDocument.ParseAsync(
+            await lookupResponse.Content.ReadAsStreamAsync(cancellationToken),
+            cancellationToken: cancellationToken);
+        var users = lookupDocument.RootElement.TryGetProperty("users", out var userList) &&
+                    userList.ValueKind == JsonValueKind.Array
+            ? userList
+            : default;
+        var resolvedUid = users.ValueKind == JsonValueKind.Array && users.GetArrayLength() > 0
+            ? GetJsonString(users[0], "localId")
+            : null;
+        if (!StringComparer.Ordinal.Equals(resolvedUid, session.Uid))
+            throw new DesktopPairingClientException(
+                "Yenilenen Windows oturumu farklı bir kullanıcıya ait. Güvenlik nedeniyle eşleştirme başlatılmadı.",
+                HttpStatusCode.Unauthorized,
+                "MYN-AUTH-005");
+
+        session.IdToken = idToken;
+        session.RefreshToken = refreshedToken;
+        session.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(lifetimeSeconds - Math.Min(60, lifetimeSeconds / 10)).ToUnixTimeSeconds();
+        FirebaseDesktopSessionStore.Save(session);
+        return idToken;
+    }
+
+    private static string? GetJsonString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var value))
+            return null;
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.ToString(),
+            _ => null
+        };
+    }
+
+    public async Task<DesktopPairingStartResponse> StartAsync(
+        string machineName,
+        string? currentSessionIdToken,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = new DesktopPairingStartRequest(
+            string.IsNullOrWhiteSpace(machineName) ? "Windows bilgisayarı" : machineName.Trim());
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{ServerBaseUrl}/api/v1/desktop/pairing/start")
+        {
+            Content = JsonContent.Create(payload, options: JsonOptions)
+        };
+
+        if (!string.IsNullOrWhiteSpace(currentSessionIdToken))
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", currentSessionIdToken);
+
+        using var response = await Http.SendAsync(request, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
             throw await CreateSafeExceptionAsync(response, cancellationToken);
@@ -67,7 +176,7 @@ public sealed class DesktopPairingClient
                 JsonOptions,
                 cancellationToken);
             if (result is null ||
-                (result.State.Equals("approved", StringComparison.OrdinalIgnoreCase) &&
+                (string.Equals(result.State, "approved", StringComparison.OrdinalIgnoreCase) &&
                  (result.Session is null ||
                   string.IsNullOrWhiteSpace(result.Session.Uid) ||
                   string.IsNullOrWhiteSpace(result.Session.RefreshToken) ||
@@ -172,6 +281,7 @@ public sealed class DesktopPairingStartResponse
     public string Code { get; set; } = "";
     public string MachineName { get; set; } = "";
     public DateTimeOffset ExpiresAtUtc { get; set; }
+    public string QrSignature { get; set; } = "";
 }
 
 public sealed class DesktopPairingPollResponse

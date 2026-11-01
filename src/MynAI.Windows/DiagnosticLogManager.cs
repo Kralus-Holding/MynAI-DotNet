@@ -56,6 +56,10 @@ public static class DiagnosticLogManager
         {
             // Diagnostics must never crash the UI or hide the original failure.
         }
+
+        // The reporter is inert unless the user explicitly opted in and a
+        // protected MynAssistant account session is available.
+        AutomaticDiagnosticEmailReporter.Queue(code, component, message);
     }
 
     public static IReadOnlyList<string> ReadRecentLines()

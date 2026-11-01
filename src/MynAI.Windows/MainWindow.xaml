@@ -223,7 +223,9 @@
                     <ScrollViewer Margin="0,21,0,0"
                                   Height="102"
                                   VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled">
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  PanningMode="VerticalOnly"
+                                  IsManipulationEnabled="True">
 
                         <ScrollViewer.Resources>
                             <Style TargetType="ScrollBar"
@@ -470,7 +472,9 @@
                     <ScrollViewer Grid.Row="1"
                                   VerticalAlignment="Stretch"
                                   VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled">
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  PanningMode="VerticalOnly"
+                                  IsManipulationEnabled="True">
 
                         <ScrollViewer.Resources>
 

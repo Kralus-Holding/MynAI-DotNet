@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import base64
+import binascii
+import hashlib
 import ctypes
 import io
 import json
 import os
 import platform
+import re
+import zipfile
 import subprocess
 import sys
 import unicodedata
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -20,18 +24,18 @@ import requests
 import win32crypt
 
 
-PROJECT_ID = "myncloud-24"
 FIREBASE_API_KEY = "AIzaSyB0z1b5OOMh8Pqn2GPd1ZuWoHEhRoKSrRM"
-IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1"
 SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token"
-FIRESTORE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents"
-AGENT_VERSION = "0.2.2"
-POLL_SECONDS = 2.0
-COMMAND_POLL_SECONDS = 2.0
+SERVER_BASE_URL = "https://mynassistant-server.onrender.com"
+AGENT_VERSION = "0.2.3"
+POLL_SECONDS = 0.5
+COMMAND_POLL_SECONDS = 1.0
 SCREEN_CHECK_SECONDS = 8.0
 SCREEN_FRAME_SECONDS = 1.5
 SCREEN_REQUEST_MAX_AGE_SECONDS = 25.0
 HEARTBEAT_SECONDS = 25.0
+COMMAND_MAX_AGE_SECONDS = 60.0
+COMMAND_FUTURE_SKEW_SECONDS = 60.0
 DPAPI_ENTROPY = b"MynAssistantDesktopAgent-v1"
 APP_DATA = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MynAssistant" / "DesktopAgent"
 SESSION_FILE = APP_DATA / "session.bin"
@@ -41,6 +45,8 @@ STATUS_FILE = APP_DATA / "status.json"
 VK_VOLUME_MUTE = 0xAD
 VK_VOLUME_DOWN = 0xAE
 VK_VOLUME_UP = 0xAF
+WM_CLOSE = 0x0010
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 KEYEVENTF_KEYUP = 0x0002
 
 
@@ -80,15 +86,12 @@ def running_directory() -> Path:
     return Path(__file__).resolve().parent
 
 
-def encode_string(value: str) -> dict:
-    return {"stringValue": value}
-
-
-def encode_timestamp(value: str | None = None) -> dict:
-    return {"timestampValue": value or utc_now()}
-
-
 def decode_field(value: dict | None):
+    if value is None:
+        return None
+    # Server relay responses contain already-decoded JSON fields.
+    if not isinstance(value, dict):
+        return value
     if not value:
         return None
     if "stringValue" in value:
@@ -113,10 +116,14 @@ def decode_document(document: dict) -> dict:
 def protect_session(payload: dict) -> None:
     APP_DATA.mkdir(parents=True, exist_ok=True)
     raw = json.dumps(payload).encode("utf-8")
-    _description, encrypted = win32crypt.CryptProtectData(
+    # pywin32 CryptProtectData returns the encrypted bytes directly.
+    # CryptUnprotectData (below) is the API that returns (description, data).
+    encrypted = win32crypt.CryptProtectData(
         raw, "MynAssistant Desktop Agent", DPAPI_ENTROPY, None, None, 0
     )
-    SESSION_FILE.write_bytes(encrypted)
+    if not isinstance(encrypted, (bytes, bytearray, memoryview)) or not encrypted:
+        raise RuntimeError("Windows DPAPI oturum verisini şifrelenmiş bayt olarak döndürmedi.")
+    SESSION_FILE.write_bytes(bytes(encrypted))
 
 
 def load_protected_session() -> dict | None:
@@ -204,77 +211,48 @@ class FirebaseSession:
         self.ensure_fresh()
         return {"Authorization": f"Bearer {self.id_token}", "Content-Type": "application/json"}
 
-
-def firestore_patch(
-    session: FirebaseSession,
-    document_path: str,
-    fields: dict,
-    update_mask: list[str] | None = None,
-    current_document_update_time: str | None = None,
-):
-    params = []
-    if update_mask:
-        params.extend(("updateMask.fieldPaths", field) for field in update_mask)
-    if current_document_update_time:
-        # Firestore's updateTime precondition provides compare-and-swap semantics.
-        params.append(("currentDocument.updateTime", current_document_update_time))
-    response = requests.patch(
-        f"{FIRESTORE}/{document_path}",
-        params=params,
-        headers=session.headers(),
-        json={"fields": fields},
-        timeout=20,
-    )
+def server_request(session: FirebaseSession, method: str, path: str, json_body: dict | None = None, timeout: int = 20) -> dict:
+    """Authenticated Server API request. Windows never calls Firestore directly."""
+    url = SERVER_BASE_URL + path
+    response = requests.request(method, url, headers=session.headers(), json=json_body, timeout=timeout)
+    if response.status_code == 401:
+        session.ensure_fresh(force=True)
+        response = requests.request(method, url, headers=session.headers(), json=json_body, timeout=timeout)
     if response.status_code >= 400:
-        raise RuntimeError(
-            f"Firestore PATCH {document_path} HTTP {response.status_code}: {response.text[:500]}"
-        )
-    return response.json()
+        detail = ""
+        try:
+            payload = response.json()
+            detail = str(payload.get("detail") or payload.get("message") or payload.get("title") or "")
+        except Exception:
+            pass
+        raise RuntimeError(detail[:500] or f"MynAssistant Server isteği başarısız (HTTP {response.status_code}).")
+    if not response.content:
+        return {}
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("MynAssistant Server beklenmeyen yanıt biçimi döndürdü.")
+    return payload
 
 
 def register_or_heartbeat(session: FirebaseSession, device_id: str, initial: bool = False) -> None:
     if initial:
-        computer_name = platform.node().strip() or "Windows bilgisayarım"
-        fields = {
-            "ownerId": encode_string(session.uid),
-            "name": encode_string(computer_name),
-            "platform": encode_string("Windows"),
-            "type": encode_string("Windows"),
-            "status": encode_string("online"),
-            "connectionMode": encode_string("firebase-agent"),
-            "agentVersion": encode_string(AGENT_VERSION),
-            "lastSeenAt": encode_timestamp(),
-            "screenRequested": {"booleanValue": False},
-        }
-        response = requests.patch(
-            f"{FIRESTORE}/devices/{device_id}",
-            headers=session.headers(),
-            json={"fields": fields},
-            timeout=20,
-        )
-        if response.status_code >= 400:
-            raise RuntimeError("Windows cihaz kaydı başarısız: " + response.text[:700])
-    else:
-        firestore_patch(
+        server_request(
             session,
-            f"devices/{device_id}",
-            {
-                "status": encode_string("online"),
-                "lastSeenAt": encode_timestamp(),
-            },
-            update_mask=["status", "lastSeenAt"],
+            "POST",
+            "/api/v1/pc/agent/register",
+            {"deviceId": device_id, "machineName": platform.node().strip() or "Windows bilgisayarım", "agentVersion": AGENT_VERSION},
+        )
+    else:
+        server_request(
+            session,
+            "POST",
+            "/api/v1/pc/agent/heartbeat",
+            {"deviceId": device_id, "status": "online"},
         )
 
 
 def read_device_state(session: FirebaseSession, device_id: str) -> dict:
-    response = requests.get(
-        f"{FIRESTORE}/devices/{device_id}",
-        headers=session.headers(),
-        timeout=15,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError("Windows cihaz durumu okunamadı: " + response.text[:500])
-    return decode_document(response.json())
+    return server_request(session, "GET", f"/api/v1/pc/agent/devices/{device_id}/state", timeout=15)
 
 
 def screen_request_is_active(fields: dict) -> bool:
@@ -297,73 +275,80 @@ def capture_screen_base64() -> str:
     output = io.BytesIO()
     image.save(output, format="JPEG", quality=45, optimize=True)
     payload = output.getvalue()
-    # Firestore document size includes base64 expansion (~4/3) and field
-    # overhead. Keep the raw JPEG below 700 KB so the encoded value stays
-    # comfortably under the 1 MiB document limit.
     if len(payload) > 560_000:
         output = io.BytesIO()
         image.save(output, format="JPEG", quality=30, optimize=True)
         payload = output.getvalue()
     if len(payload) > 700_000:
-        raise RuntimeError("Ekran görüntüsü Firestore belge boyutu sınırına yaklaşıyor; kare güvenli boyut sınırının altında üretilmedi.")
+        raise RuntimeError("Ekran görüntüsü güvenli aktarım boyutunu aşıyor.")
     return base64.b64encode(payload).decode("ascii")
 
 
 def upload_screen_frame(session: FirebaseSession, device_id: str) -> None:
     frame = capture_screen_base64()
-    firestore_patch(
+    server_request(
         session,
-        f"devices/{device_id}",
-        {
-            "screenJpegBase64": encode_string(frame),
-            "screenFrameAt": encode_timestamp(),
-        },
-        update_mask=["screenJpegBase64", "screenFrameAt"],
-    )
-
-
-def fetch_owner_commands(session: FirebaseSession) -> list[dict]:
-    response = requests.post(
-        f"{FIRESTORE}:runQuery",
-        headers=session.headers(),
-        json={
-            "structuredQuery": {
-                "from": [{"collectionId": "commands"}],
-                "where": {
-                    "compositeFilter": {
-                        "op": "AND",
-                        "filters": [
-                            {
-                                "fieldFilter": {
-                                    "field": {"fieldPath": "ownerId"},
-                                    "op": "EQUAL",
-                                    "value": {"stringValue": session.uid},
-                                }
-                            },
-                            {
-                                "fieldFilter": {
-                                    "field": {"fieldPath": "status"},
-                                    "op": "EQUAL",
-                                    "value": {"stringValue": "pending"},
-                                }
-                            },
-                        ],
-                    }
-                },
-                "limit": 100,
-            }
-        },
+        "POST",
+        f"/api/v1/pc/agent/devices/{device_id}/screen-frame",
+        {"jpegBase64": frame},
         timeout=25,
     )
-    if response.status_code >= 400:
-        raise RuntimeError("Komut kuyruğu okunamadı: " + response.text[:700])
-    documents = []
-    for result in response.json():
-        document = result.get("document")
-        if document:
-            documents.append(document)
-    return documents
 
+
+def fetch_owner_commands(session: FirebaseSession, device_id: str) -> list[dict]:
+    response = server_request(
+        session,
+        "GET",
+        f"/api/v1/pc/agent/devices/{device_id}/commands",
+        timeout=25,
+    )
+    items = response.get("items")
+    if not isinstance(items, list):
+        raise RuntimeError("MynAssistant Server komut kuyruğunu beklenen biçimde döndürmedi.")
+    return [item for item in items if isinstance(item, dict) and isinstance(item.get("id"), str) and isinstance(item.get("fields"), dict)]
+
+
+def _parse_command_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def command_expiration_reason(fields: dict, now: datetime | None = None) -> str | None:
+    """Fail closed for stale, missing, or implausibly future-dated commands."""
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    else:
+        current = current.astimezone(timezone.utc)
+
+    expires_at_value = fields.get("expiresAt")
+    if expires_at_value is not None:
+        expires_at = _parse_command_timestamp(expires_at_value)
+        if expires_at is None:
+            return "Komutun sona erme zamanı geçersiz; güvenlik için çalıştırılmadı."
+        seconds_until_expiry = (expires_at - current).total_seconds()
+        if seconds_until_expiry <= 0:
+            return "Komutun süresi doldu; lütfen yeniden gönder."
+        if seconds_until_expiry > COMMAND_MAX_AGE_SECONDS + COMMAND_FUTURE_SKEW_SECONDS:
+            return "Komutun sona erme zamanı beklenen sınırı aşıyor; güvenlik için çalıştırılmadı."
+        return None
+
+    created_at = _parse_command_timestamp(fields.get("createdAt"))
+    if created_at is None:
+        return "Komutun oluşturulma zamanı eksik veya geçersiz; güvenlik için çalıştırılmadı."
+    age_seconds = (current - created_at).total_seconds()
+    if age_seconds > COMMAND_MAX_AGE_SECONDS:
+        return "Komutun süresi doldu; lütfen yeniden gönder."
+    if age_seconds < -COMMAND_FUTURE_SKEW_SECONDS:
+        return "Komutun oluşturulma zamanı gelecekte; güvenlik için çalıştırılmadı."
+    return None
 
 def update_command(
     session: FirebaseSession,
@@ -373,74 +358,54 @@ def update_command(
     expected_update_time: str | None = None,
     extra_fields: dict | None = None,
 ) -> None:
-    full_name = document.get("name", "")
-    marker = "/documents/"
-    if marker not in full_name:
-        raise RuntimeError("Komut belgesinin yolu geçersiz.")
-    document_path = full_name.split(marker, 1)[1]
-    fields = {
-        "status": encode_string(status),
-        "result": encode_string(result[:800]),
-        "processedAt": encode_timestamp(),
-    }
-    if extra_fields:
-        fields.update(extra_fields)
-    update_mask = ["status", "result", "processedAt"]
-    if extra_fields:
-        update_mask.extend(extra_fields.keys())
-    firestore_patch(
+    command_id = document.get("id")
+    claim_token = document.get("_claimToken")
+    fields = document.get("fields", {})
+    device_id = fields.get("deviceId")
+    if not isinstance(command_id, str) or not command_id or not isinstance(device_id, str) or not device_id:
+        raise RuntimeError("Sunucu komut veya cihaz kimliği eksik.")
+    if not isinstance(claim_token, str) or not claim_token:
+        raise RuntimeError("Komut sunucu tarafından sahiplenilmedi; sonuç yazılmadı.")
+    command_name = decode_field(fields.get("command"))
+    if command_name == "list_files":
+        result_limit = FILE_LIST_MAX_RESULT_LENGTH
+    elif command_name == "download_file":
+        result_limit = FILE_DOWNLOAD_MAX_RESULT_LENGTH
+    else:
+        result_limit = 800
+    if status not in {"completed", "failed"}:
+        raise RuntimeError("Sunucuya yalnızca terminal komut sonucu gönderilebilir.")
+    server_request(
         session,
-        document_path,
-        fields,
-        update_mask=update_mask,
-        current_document_update_time=expected_update_time,
+        "POST",
+        f"/api/v1/pc/agent/devices/{device_id}/commands/{command_id}/result",
+        {"claimToken": claim_token, "status": status, "result": str(result)[:result_limit]},
+        timeout=25,
     )
 
 
 def claim_pending_command(session: FirebaseSession, document: dict, device_id: str) -> bool:
-    # Never run a command if its Firestore version cannot be checked. This prevents
-    # a stale "pending" snapshot from overriding a cancellation written by the panel.
+    command_id = document.get("id")
     update_time = document.get("updateTime")
-    full_name = document.get("name", "")
-    marker = "/documents/"
-    if not isinstance(update_time, str) or not update_time or marker not in full_name:
-        print("[Command] Missing update time; command was not executed.")
+    if not isinstance(command_id, str) or not command_id or not isinstance(update_time, str) or not update_time:
+        print("[Command] Missing command ID or version; command was not executed.")
         return False
-
-    document_path = full_name.split(marker, 1)[1]
-    claim_token = uuid.uuid4().hex
     try:
-        update_command(
+        response = server_request(
             session,
-            document,
-            "running",
-            "Windows Agent komutu güvenli şekilde sahiplendi.",
-            expected_update_time=update_time,
-            extra_fields={
-                "claimToken": encode_string(claim_token),
-                "claimedByDeviceId": encode_string(device_id),
-            },
+            "POST",
+            f"/api/v1/pc/agent/devices/{device_id}/commands/{command_id}/claim",
+            {"deviceId": device_id, "expectedUpdateTime": update_time},
+            timeout=20,
         )
+        claim_token = response.get("claimToken")
+        if response.get("status") != "running" or not isinstance(claim_token, str) or not claim_token:
+            print("[Command] Server did not confirm command ownership; command was not executed.")
+            return False
+        document["_claimToken"] = claim_token
         return True
     except Exception as claim_error:
-        # A network timeout can happen after Firestore accepted the write. Read back
-        # the document and proceed only if this exact claim token won the race.
-        print(f"[Command] Claim response uncertain; verifying Firestore state: {claim_error}")
-        try:
-            response = requests.get(
-                f"{FIRESTORE}/{document_path}",
-                headers=session.headers(),
-                timeout=15,
-            )
-            if response.status_code < 400:
-                current = decode_document(response.json())
-                return (
-                    current.get("status") == "running"
-                    and current.get("claimToken") == claim_token
-                    and current.get("claimedByDeviceId") == device_id
-                )
-        except Exception as read_error:
-            print(f"[Command] Claim verification failed; command was not executed: {read_error}")
+        print("[Command] Server rejected command claim; command was not executed.")
         return False
 
 
@@ -538,10 +503,412 @@ def normalize_text_command(text: str) -> str:
     return " ".join(normalized.split())
 
 
+FILE_LIST_MAX_ENTRIES = 200
+FILE_LIST_MAX_PATH_LENGTH = 1024
+FILE_LIST_MAX_RESULT_LENGTH = 350_000
+FILE_DOWNLOAD_MAX_BYTES = 500_000
+FILE_DOWNLOAD_MAX_RESULT_LENGTH = 700_000
+FILE_UPLOAD_MAX_BYTES = 500_000
+ZIP_MAX_FILES = 2_000
+ZIP_MAX_INPUT_BYTES = 100_000_000
+FILE_LIST_ROOTS = (
+    ("Masaüstü", ("Desktop", "Masaüstü")),
+    ("Belgeler", ("Documents", "Belgeler")),
+    ("Resimler", ("Pictures", "Resimler")),
+    ("Müzik", ("Music", "Müzik")),
+    ("İndirilenler", ("Downloads", "İndirilenler")),
+    ("Videolar", ("Videos", "Videolar")),
+)
+
+# GetLogicalDrives/GetDriveTypeW constants from WinBase.h.
+DRIVE_REMOVABLE = 2
+DRIVE_FIXED = 3
+DRIVE_REMOTE = 4
+DRIVE_CDROM = 5
+DRIVE_RAMDISK = 6
+VISIBLE_DRIVE_TYPES = {
+    DRIVE_REMOVABLE,
+    DRIVE_FIXED,
+    DRIVE_REMOTE,
+    DRIVE_CDROM,
+    DRIVE_RAMDISK,
+}
+
+
+def logical_drive_letters(mask: int) -> list[str]:
+    """Convert the GetLogicalDrives bitmask to A..Z drive letters."""
+    return [
+        chr(ord("A") + index)
+        for index in range(26)
+        if mask & (1 << index)
+    ]
+
+
+def _windows_storage_roots() -> list[tuple[str, Path]]:
+    """Discover ready fixed/removable/network volumes without hardcoding C: or D:."""
+    if os.name != "nt":
+        return []
+
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        get_logical_drives = kernel32.GetLogicalDrives
+        get_logical_drives.argtypes = []
+        get_logical_drives.restype = ctypes.c_uint32
+        get_drive_type = kernel32.GetDriveTypeW
+        get_drive_type.argtypes = [ctypes.c_wchar_p]
+        get_drive_type.restype = ctypes.c_uint
+        mask = int(get_logical_drives())
+    except Exception:
+        return []
+
+    roots: list[tuple[str, Path]] = []
+    for letter in logical_drive_letters(mask):
+        root_text = f"{letter}:\\"
+        try:
+            drive_type = int(get_drive_type(root_text))
+            if drive_type not in VISIBLE_DRIVE_TYPES:
+                continue
+
+            candidate = Path(root_text)
+            if _is_reparse_point(candidate) or not candidate.is_dir():
+                continue
+            resolved = candidate.resolve(strict=True)
+            if not resolved.is_dir():
+                continue
+            roots.append((f"{letter}:", resolved))
+        except (OSError, RuntimeError, ValueError):
+            # Empty card readers and disconnected mapped volumes are omitted.
+            continue
+
+    return roots
+
+
+def _is_reparse_point(path: Path) -> bool:
+    """Reject symbolic links and Windows junctions at every file-browser boundary."""
+    try:
+        if path.is_symlink():
+            return True
+        is_junction = getattr(path, "is_junction", None)
+        return bool(callable(is_junction) and is_junction())
+    except (OSError, RuntimeError):
+        # If Windows cannot determine the path type, fail closed.
+        return True
+
+
+def _allowed_file_roots() -> list[tuple[str, Path]]:
+    """Return mounted Windows volumes plus the familiar user-folder shortcuts."""
+    profile = Path(os.environ.get("USERPROFILE") or Path.home()).resolve()
+    roots: list[tuple[str, Path]] = []
+    seen: set[str] = set()
+
+    # Volumes are listed first. Their drive roots make C:, D:, E:, F:, and
+    # removable/network volumes browsable while preserving the same path guard.
+    for label, drive_root in _windows_storage_roots():
+        identity = os.path.normcase(str(drive_root))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        roots.append((label, drive_root))
+
+    for label, candidates in FILE_LIST_ROOTS:
+        for folder_name in candidates:
+            candidate = profile / folder_name
+            try:
+                # Do not let a symlink/junction replace an allowlisted profile root.
+                if _is_reparse_point(candidate) or not candidate.is_dir():
+                    continue
+                resolved = candidate.resolve(strict=True)
+            except (OSError, RuntimeError):
+                continue
+            identity = os.path.normcase(str(resolved))
+            if identity in seen:
+                continue
+            seen.add(identity)
+            roots.append((label, resolved))
+            break
+    return roots
+
+
+def _serialize_file_listing(
+    current_path: str,
+    parent_path: str | None,
+    entries: list[dict],
+    truncated: bool,
+    warnings: list[str],
+) -> str:
+    payload = {
+        "schemaVersion": 1,
+        "currentPath": current_path,
+        "parentPath": parent_path,
+        "entries": entries,
+        "truncated": truncated,
+        "warnings": sorted(set(warnings)),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    # Keep the command result below Firestore's 1 MiB document limit and remove
+    # whole entries rather than cutting a JSON document mid-string.
+    while len(encoded.encode("utf-8")) > FILE_LIST_MAX_RESULT_LENGTH and entries:
+        entries.pop()
+        payload["truncated"] = True
+        payload["warnings"] = sorted(set(warnings + ["Liste boyut sınırına ulaştı; bazı öğeler gösterilmiyor."]))
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > FILE_LIST_MAX_RESULT_LENGTH:
+        raise ValueError("Dosya listesi güvenli yanıt boyutuna sığmadı.")
+    return encoded
+
+
+def execute_list_files(path_value: str = "") -> str:
+    """List metadata inside allowlisted profile folders; never read file contents."""
+    if not isinstance(path_value, str) or len(path_value) > FILE_LIST_MAX_PATH_LENGTH:
+        raise ValueError("Klasör yolu geçersiz veya çok uzun.")
+
+    roots = _allowed_file_roots()
+    if not path_value.strip():
+        entries = [
+            {
+                "name": label,
+                "path": str(root),
+                "isDirectory": True,
+                "size": 0,
+                "modifiedUtc": "",
+            }
+            for label, root in roots
+        ]
+        return _serialize_file_listing("", None, entries, False, [])
+
+    try:
+        current = Path(path_value).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("Klasör bulunamadı veya yolu geçersiz.") from exc
+
+    if not current.is_dir():
+        raise ValueError("Seçilen yol bir klasör değil.")
+
+    allowed_root = next(
+        (root for _label, root in roots if current == root or root in current.parents),
+        None,
+    )
+    if allowed_root is None:
+        raise ValueError(
+            "Bu klasöre erişim izni yok. Yalnızca Windows'un bağlı sürücü kökleri "
+            "ve izin verilen kullanıcı klasörü kısayolları açılabilir."
+        )
+
+    entries: list[dict] = []
+    warnings: list[str] = []
+    truncated = False
+    try:
+        with os.scandir(current) as iterator:
+            for item in iterator:
+                try:
+                    item_path = Path(item.path)
+                    if _is_reparse_point(item_path):
+                        continue
+                    resolved_item = item_path.resolve(strict=True)
+                    if len(str(resolved_item)) > FILE_LIST_MAX_PATH_LENGTH:
+                        warnings.append("Yolu çok uzun olan bazı öğeler listelenmedi.")
+                        continue
+                    if not (resolved_item == allowed_root or allowed_root in resolved_item.parents):
+                        continue
+                    is_directory = item.is_dir(follow_symlinks=False)
+                    if not is_directory and not item.is_file(follow_symlinks=False):
+                        continue
+                    stat = item.stat(follow_symlinks=False)
+                    entries.append(
+                        {
+                            "name": item.name,
+                            "path": str(resolved_item),
+                            "isDirectory": is_directory,
+                            "size": 0 if is_directory else int(stat.st_size),
+                            "modifiedUtc": datetime.fromtimestamp(
+                                stat.st_mtime, timezone.utc
+                            ).isoformat(timespec="seconds").replace("+00:00", "Z"),
+                        }
+                    )
+                except (OSError, RuntimeError, ValueError):
+                    warnings.append("Bazı öğelere erişilemedi ve listeden çıkarıldı.")
+                if len(entries) > FILE_LIST_MAX_ENTRIES:
+                    truncated = True
+                    warnings.append(
+                        f"Klasör {FILE_LIST_MAX_ENTRIES} öğe sınırını aştı; bazı öğeler gösterilmiyor."
+                    )
+                    break
+    except PermissionError as exc:
+        raise ValueError("Windows bu klasörün içeriğini okumaya izin vermedi.") from exc
+    except OSError as exc:
+        raise ValueError(
+            "Klasör içeriği okunamadı. Diskin ve erişim izinlerinin durumunu kontrol et."
+        ) from exc
+
+    entries.sort(key=lambda entry: (not entry["isDirectory"], entry["name"].casefold()))
+    entries = entries[:FILE_LIST_MAX_ENTRIES]
+    parent_path = "" if current == allowed_root else str(current.parent)
+    return _serialize_file_listing(str(current), parent_path, entries, truncated, warnings)
+
+
+
+def execute_download_file(path_value: str = "") -> str:
+    """Return one bounded file payload only when it resolves inside an allowlisted profile folder."""
+    if not isinstance(path_value, str) or not path_value.strip() or len(path_value) > FILE_LIST_MAX_PATH_LENGTH:
+        raise ValueError("Dosya yolu geçersiz veya çok uzun.")
+
+    try:
+        requested = Path(path_value).expanduser()
+        target = requested.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("İndirilecek dosya bulunamadı veya yolu geçersiz.") from exc
+
+    if requested.is_symlink() or getattr(requested, "is_junction", lambda: False)():
+        raise ValueError("Sembolik bağlantı veya junction üzerinden dosya indirme engellendi.")
+    if not target.is_file():
+        raise ValueError("Seçilen öğe bir dosya değil.")
+
+    roots = _allowed_file_roots()
+    allowed_root = next(
+        (root for _label, root in roots if target == root or root in target.parents),
+        None,
+    )
+    if allowed_root is None:
+        raise ValueError(
+            "Bu dosyaya erişim izni yok. Yalnızca izin verilen kullanıcı klasörlerindeki dosyalar indirilebilir."
+        )
+
+    try:
+        before = target.stat()
+        if before.st_size > FILE_DOWNLOAD_MAX_BYTES:
+            raise ValueError(
+                f"Dosya {before.st_size} bayt; bu sürüm tek yanıtla en fazla {FILE_DOWNLOAD_MAX_BYTES} bayt indirir. "
+                "Büyük dosyalar için parçalı aktarım henüz etkin değil."
+            )
+        with target.open("rb") as stream:
+            content = stream.read(FILE_DOWNLOAD_MAX_BYTES + 1)
+        after = target.stat()
+    except PermissionError as exc:
+        raise ValueError("Windows bu dosyayı okumaya izin vermedi.") from exc
+    except OSError as exc:
+        raise ValueError("Dosya okunamadı; erişim iznini ve diskin durumunu kontrol et.") from exc
+
+    if len(content) > FILE_DOWNLOAD_MAX_BYTES:
+        raise ValueError(
+            f"Dosya {FILE_DOWNLOAD_MAX_BYTES} bayt sınırını aştı. Büyük dosyalar için parçalı aktarım henüz etkin değil."
+        )
+    if before.st_size != after.st_size or len(content) != after.st_size:
+        raise ValueError("Dosya indirme sırasında değişti; bütünlük için işlem iptal edildi.")
+
+    payload = {
+        "schemaVersion": 1,
+        "name": target.name,
+        "path": str(target),
+        "size": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "contentBase64": base64.b64encode(content).decode("ascii"),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > FILE_DOWNLOAD_MAX_RESULT_LENGTH:
+        raise ValueError("Dosya yanıtı güvenli aktarım boyutunu aştı.")
+    return encoded
+
+
+def lock_workstation() -> str:
+    """Lock the interactive Windows session without logging the user out."""
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.LockWorkStation.argtypes = []
+    user32.LockWorkStation.restype = ctypes.c_bool
+    if not user32.LockWorkStation():
+        error = ctypes.get_last_error()
+        raise RuntimeError(f"Windows oturumu kilitlenemedi (Win32={error}).")
+    return "Windows oturumu kilitlendi."
+
+
+def close_active_app() -> str:
+    """Request a graceful WM_CLOSE for the foreground app; never force-kill a process."""
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    user32.GetForegroundWindow.argtypes = []
+    user32.GetForegroundWindow.restype = ctypes.c_void_p
+    user32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+    user32.GetWindowThreadProcessId.restype = ctypes.c_ulong
+    user32.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+    user32.PostMessageW.restype = ctypes.c_bool
+
+    kernel32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_bool, ctypes.c_uint32]
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.QueryFullProcessImageNameW.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint32, ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_ulong)
+    ]
+    kernel32.QueryFullProcessImageNameW.restype = ctypes.c_bool
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_bool
+
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return "Kapatılacak etkin uygulama penceresi bulunamadı."
+
+    process_id = ctypes.c_ulong(0)
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(process_id))
+    if not process_id.value:
+        return "Etkin pencerenin işlemi belirlenemedi."
+
+    process = kernel32.OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION,
+        False,
+        process_id.value,
+    )
+    if not process:
+        return "Etkin uygulama güvenli biçimde doğrulanamadı; kapatma isteği gönderilmedi."
+
+    try:
+        image_buffer = ctypes.create_unicode_buffer(32768)
+        image_size = ctypes.c_ulong(len(image_buffer))
+        if not kernel32.QueryFullProcessImageNameW(
+            process, 0, image_buffer, ctypes.byref(image_size)
+        ):
+            return "Etkin uygulamanın adı doğrulanamadı; kapatma isteği gönderilmedi."
+        process_name = Path(image_buffer.value).name.casefold()
+    finally:
+        kernel32.CloseHandle(process)
+
+    protected_processes = {
+        "mynassistant.exe",
+        "mynagent.exe",
+        "mynai.agent.exe",
+        "mynassistantdesktopbridge.exe",
+        "explorer.exe",
+        "winlogon.exe",
+        "csrss.exe",
+        "dwm.exe",
+        "services.exe",
+        "lsass.exe",
+        "smss.exe",
+        "system",
+    }
+    if process_name in protected_processes:
+        return "MynAssistant, Agent veya Windows sistem pencereleri uzaktan kapatılamaz."
+
+    if not user32.PostMessageW(hwnd, WM_CLOSE, 0, 0):
+        error = ctypes.get_last_error()
+        raise RuntimeError(f"Uygulamaya güvenli kapatma mesajı gönderilemedi (Win32={error}).")
+    return f"{process_name} uygulamasına güvenli kapatma isteği gönderildi."
+
+
 def execute_text_command(text: str) -> str:
     command = normalize_text_command(text)
     if not command:
         return "Önce bir komut yaz."
+    if command in {"bilgisayari kilitle", "bilgisayarı kilitle", "ekrani kilitle", "oturumu kilitle", "kilitle", "lock pc"}:
+        return lock_workstation()
+    if command in {"uygulamayi kapat", "uygulamayı kapat", "aktif uygulamayi kapat", "aktif pencereyi kapat", "pencereyi kapat", "close app"}:
+        return close_active_app()
+
+    if command in {
+        "bilgisayar dosyalarini listele",
+        "bilgisayardaki dosyalari listele",
+        "dosyalari listele",
+        "dosya listesini iste",
+        "bilgisayar dosya listesini iste",
+    }:
+        return execute_list_files("")
 
     if command in {"sesi kapa", "sesi kapat", "sessize al", "sesi sustur", "mute"}:
         press_virtual_key(VK_VOLUME_MUTE)
@@ -615,10 +982,195 @@ def execute_text_command(text: str) -> str:
     return "Desteklenmeyen komut. Şunları deneyebilirsin: Chrome aç, Not Defteri aç, Hesap makinesi aç, YouTube aç, sesi artır, sesi azalt, masaüstünü göster."
 
 
+def _path_inside_allowed_root(path: Path, roots: list[tuple[str, Path]]) -> Path | None:
+    return next((root for _label, root in roots if path == root or root in path.parents), None)
+
+
+def _safe_transfer_name(raw: object) -> str:
+    if not isinstance(raw, str) or not raw.strip() or len(raw) > 255:
+        raise ValueError("Dosya adı geçersiz.")
+    name = raw.strip()
+    if name in {".", ".."} or re.search(r'[<>:"/\\|?*\x00-\x1f]', name):
+        raise ValueError("Dosya adı yol veya Windows tarafından desteklenmeyen karakter içeriyor.")
+    if name.endswith(".") or name.endswith(" "):
+        raise ValueError("Dosya adı nokta veya boşlukla bitemez.")
+    base = name.split(".", 1)[0].upper()
+    if base in {"CON", "PRN", "AUX", "NUL"} or re.fullmatch(r"(COM|LPT)[1-9]", base):
+        raise ValueError("Bu Windows dosya adı kullanılamaz.")
+    return name
+
+
+def execute_upload_file(fields: dict) -> str:
+    raw_destination = fields.get("destinationPath")
+    if not isinstance(raw_destination, str) or not raw_destination.strip() or len(raw_destination) > FILE_LIST_MAX_PATH_LENGTH:
+        raise ValueError("Hedef klasör yolu geçersiz.")
+    requested = Path(raw_destination).expanduser()
+    if _is_reparse_point(requested):
+        raise ValueError("Sembolik bağlantı veya junction üzerinden dosya yükleme engellendi.")
+    try:
+        destination = requested.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("Hedef klasör bulunamadı.") from exc
+    if not destination.is_dir():
+        raise ValueError("Hedef yol bir klasör olmalı.")
+    roots = _allowed_file_roots()
+    if _path_inside_allowed_root(destination, roots) is None:
+        raise ValueError("Bu klasöre erişim izni yok. Yalnızca izin verilen kullanıcı klasörlerine dosya yüklenebilir.")
+
+    name = _safe_transfer_name(fields.get("name"))
+    size = fields.get("size")
+    if isinstance(size, bool) or not isinstance(size, int) or not 0 <= size <= FILE_UPLOAD_MAX_BYTES:
+        raise ValueError(f"Dosya boyutu geçersiz; en fazla {FILE_UPLOAD_MAX_BYTES} bayt yüklenebilir.")
+    expected_hash = fields.get("sha256")
+    if not isinstance(expected_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_hash):
+        raise ValueError("Dosyanın SHA-256 bilgisi geçersiz.")
+    encoded = fields.get("contentBase64")
+    max_encoded_length = ((FILE_UPLOAD_MAX_BYTES + 2) // 3) * 4 + 8
+    if not isinstance(encoded, str) or len(encoded) > max_encoded_length:
+        raise ValueError("Dosya içeriği geçersiz veya boyut sınırını aşıyor.")
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("Dosya içeriği geçerli Base64 değil.") from exc
+    if len(content) != size:
+        raise ValueError("Dosya boyutu bildirilen değerle uyuşmuyor.")
+    actual_hash = hashlib.sha256(content).hexdigest()
+    if actual_hash.lower() != expected_hash.lower():
+        raise ValueError("Dosyanın SHA-256 doğrulaması başarısız.")
+
+    target = destination / name
+    if target.exists() or target.is_symlink() or _is_reparse_point(target):
+        raise ValueError("Hedefte aynı isimli dosya zaten var; üzerine yazılmadı.")
+    created = False
+    try:
+        with target.open("xb") as stream:
+            created = True
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError as exc:
+        raise ValueError("Hedefte aynı isimli dosya zaten var; üzerine yazılmadı.") from exc
+    except OSError as exc:
+        if created:
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise ValueError("Dosya hedef klasöre yazılamadı; disk ve izinleri kontrol et.") from exc
+    return f"Dosya yüklendi ve SHA-256 doğrulandı: {name} ({len(content)} bayt)."
+
+
+def execute_zip_folder(raw_path: str = "") -> str:
+    if not isinstance(raw_path, str) or not raw_path.strip() or len(raw_path) > FILE_LIST_MAX_PATH_LENGTH:
+        raise ValueError("ZIP yapılacak klasör yolu geçersiz.")
+    requested = Path(raw_path).expanduser()
+    if _is_reparse_point(requested):
+        raise ValueError("Sembolik bağlantı veya junction içeren klasör ZIP yapılamaz.")
+    try:
+        folder = requested.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("ZIP yapılacak klasör bulunamadı.") from exc
+    if not folder.is_dir():
+        raise ValueError("ZIP işlemi için klasör seçmelisin.")
+    roots = _allowed_file_roots()
+    root = _path_inside_allowed_root(folder, roots)
+    if root is None:
+        raise ValueError("Bu klasöre erişim izni yok. Yalnızca izin verilen kullanıcı klasörleri ZIP yapılabilir.")
+
+    files: list[Path] = []
+    total_size = 0
+
+    def collect(directory: Path) -> None:
+        nonlocal total_size
+        with os.scandir(directory) as entries:
+            for item in entries:
+                candidate = Path(item.path)
+                if _is_reparse_point(candidate):
+                    continue
+                try:
+                    resolved = candidate.resolve(strict=True)
+                    if not (resolved == root or root in resolved.parents):
+                        continue
+                    if item.is_dir(follow_symlinks=False):
+                        collect(resolved)
+                    elif item.is_file(follow_symlinks=False):
+                        total_size += int(item.stat(follow_symlinks=False).st_size)
+                        if total_size > ZIP_MAX_INPUT_BYTES:
+                            raise ValueError(f"Klasör ZIP için {ZIP_MAX_INPUT_BYTES} bayt sınırını aşıyor.")
+                        files.append(resolved)
+                        if len(files) > ZIP_MAX_FILES:
+                            raise ValueError(f"Klasör ZIP için {ZIP_MAX_FILES} dosya sınırını aşıyor.")
+                except (OSError, RuntimeError):
+                    continue
+
+    try:
+        collect(folder)
+    except ValueError:
+        raise
+    except OSError as exc:
+        raise ValueError("Klasör içeriği okunamadı; izinleri kontrol et.") from exc
+
+    output_directory = folder.parent if _path_inside_allowed_root(folder.parent, roots) is not None else folder
+    target = output_directory / _safe_transfer_name(folder.name + ".zip")
+    if target.exists() or target.is_symlink() or _is_reparse_point(target):
+        raise ValueError("Aynı isimli ZIP dosyası zaten var; üzerine yazılmadı.")
+    temporary = output_directory / f".mynassistant-zip-{uuid.uuid4().hex}.tmp"
+    target_created = False
+    try:
+        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+            for source in files:
+                try:
+                    resolved = source.resolve(strict=True)
+                    if _is_reparse_point(source) or not (resolved == root or root in resolved.parents):
+                        continue
+                    archive.write(resolved, str(resolved.relative_to(folder)).replace("\\", "/"))
+                except (OSError, RuntimeError, ValueError):
+                    continue
+        with temporary.open("rb") as source, target.open("xb") as output:
+            target_created = True
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+    except FileExistsError as exc:
+        if target_created:
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise ValueError("Aynı isimli ZIP dosyası zaten var; üzerine yazılmadı.") from exc
+    except Exception as exc:
+        if target_created:
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if isinstance(exc, ValueError):
+            raise
+        raise ValueError("ZIP oluşturulamadı; disk alanını ve klasör izinlerini kontrol et.") from exc
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return f"ZIP oluşturuldu: {target.name} ({len(files)} dosya, {target.stat().st_size} bayt)."
+
+
 def execute_command(command: str, fields: dict) -> str:
     command = command.strip().lower()
     if command == "text_command":
         return execute_text_command(str(fields.get("text") or ""))
+    if command == "list_files":
+        return execute_list_files(str(fields.get("path") or ""))
+    if command == "download_file":
+        return execute_download_file(str(fields.get("path") or ""))
+    if command == "upload_file":
+        return execute_upload_file(fields)
+    if command == "zip_folder":
+        return execute_zip_folder(str(fields.get("path") or ""))
     if command == "type_text":
         text = str(fields.get("text") or "")
         if not text.strip():
@@ -635,6 +1187,10 @@ def execute_command(command: str, fields: dict) -> str:
     if command == "key_enter":
         pyautogui.press("enter")
         return "Enter tuşu gönderildi."
+    if command == "lock_pc":
+        return lock_workstation()
+    if command in {"close_app", "close_active_app"}:
+        return close_active_app()
     if command == "mute":
         press_virtual_key(VK_VOLUME_MUTE)
         return "Bilgisayarın sesi aç/kapat tuşuyla değiştirildi."
@@ -658,16 +1214,14 @@ def execute_command(command: str, fields: dict) -> str:
     if command == "mouse_right_click":
         pyautogui.click(button="right")
         return "Sağ tıklama uygulandı."
-    if command == "power":
-        return "Güç kapatma bu sürümde etkin değil; yanlışlıkla kapanmayı önlemek için işlem uygulanmadı."
     return f"Desteklenmeyen komut: {command}"
 
 
 def command_is_supported(command: str) -> bool:
     return command in {
         "mute", "volume_up", "volume_down", "home",
-        "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command",
-        "type_text", "key_backspace", "key_enter"
+        "mouse_move", "mouse_click", "mouse_right_click", "lock_pc", "close_app", "text_command",
+        "type_text", "key_backspace", "key_enter", "list_files", "download_file", "upload_file", "zip_folder"
     }
 
 
@@ -702,9 +1256,9 @@ def run_agent() -> int:
         return 2
 
     device_id = load_device_id(session.uid)
-    write_bridge_status("connecting", "Firebase oturumu doğrulandı; Windows PC kaydediliyor.", email=session.email, device_id=device_id)
+    write_bridge_status("connecting", "Firebase oturumu doğrulandı; Windows PC MynAssistant Server'a kaydediliyor.", email=session.email, device_id=device_id)
     register_or_heartbeat(session, device_id, initial=True)
-    write_bridge_status("online", "PC Firestore'a kaydedildi; Android ve web paneli için hazır.", email=session.email, device_id=device_id)
+    write_bridge_status("online", "Windows PC MynAssistant Server üzerinden Android ve web paneli için hazır.", email=session.email, device_id=device_id)
     print(f"Cihaz çevrimiçi: {platform.node()} (ID: {device_id})")
     print("Android uygulamasında Cihazlarım bölümünde otomatik görünmesi gerekir.")
     print("PC Kumandası açıkken masaüstü önizlemesi yaklaşık saniyede bir güncellenir.")
@@ -724,7 +1278,7 @@ def run_agent() -> int:
                 register_or_heartbeat(session, device_id)
                 write_bridge_status(
                     "online",
-                    "PC Firestore'a kaydedildi; kalp atışı başarılı.",
+                    "PC MynAssistant Server üzerinden çevrimiçi; kalp atışı başarılı.",
                     email=session.email,
                     device_id=device_id,
                 )
@@ -737,15 +1291,7 @@ def run_agent() -> int:
                 screen_active = screen_request_is_active(device_state)
                 last_screen_check = now
                 if was_active and not screen_active:
-                    try:
-                        firestore_patch(
-                            session,
-                            f"devices/{device_id}",
-                            {"screenJpegBase64": encode_string(""), "screenFrameAt": encode_timestamp()},
-                            update_mask=["screenJpegBase64", "screenFrameAt"],
-                        )
-                    except Exception as exc:
-                        print(f"[Uyarı] Önizleme alanı temizlenemedi: {exc}")
+                    print("[Önizleme] Sunucu ekran isteğini kapattı; yeni kare gönderimi durduruldu.")
 
             if screen_active and now - last_screen_frame >= SCREEN_FRAME_SECONDS:
                 try:
@@ -756,24 +1302,27 @@ def run_agent() -> int:
                     last_screen_frame = now
 
             if now - last_command_poll >= COMMAND_POLL_SECONDS:
-                for document in fetch_owner_commands(session):
+                for document in fetch_owner_commands(session, device_id):
                     fields = decode_document(document)
                     if fields.get("deviceId") != device_id or fields.get("status") != "pending":
                         continue
+                    # The Server must atomically claim this exact command version before
+                    # the Agent executes it. No unclaimed command is ever run locally.
+                    if not claim_pending_command(session, document, device_id):
+                        continue
+                    expiration_reason = command_expiration_reason(fields)
                     command = str(fields.get("command") or "")
+                    if expiration_reason is not None:
+                        try:
+                            update_command(session, document, "failed", expiration_reason)
+                        except Exception as expiry_error:
+                            print(f"[Komut] Süresi dolmuş komutun sonucu sunucuya yazılamadı: {expiry_error}")
+                        continue
                     if not command_is_supported(command):
                         try:
-                            update_command(
-                                session,
-                                document,
-                                "failed",
-                                "Desteklenmeyen komut.",
-                                expected_update_time=document.get("updateTime"),
-                            )
-                        except Exception as claim_error:
-                            print(f"[Komut] Geçersiz komutun durumu değişmiş olabilir; kayıt güncellenmedi: {claim_error}")
-                        continue
-                    if not claim_pending_command(session, document, device_id):
+                            update_command(session, document, "failed", "Desteklenmeyen komut.")
+                        except Exception as command_error:
+                            print(f"[Komut] Desteklenmeyen komutun sonucu sunucuya yazılamadı: {command_error}")
                         continue
                     try:
                         result = execute_command(command, fields)
@@ -784,7 +1333,7 @@ def run_agent() -> int:
                         try:
                             update_command(session, document, "failed", str(exc))
                         except Exception as update_exc:
-                            print(f"[Hata] Komut durumu güncellenemedi: {update_exc}")
+                            print(f"[Hata] Komut sonucu sunucuya yazılamadı: {update_exc}")
                         print(f"[Hata] {command}: {exc}")
                 last_command_poll = now
 
@@ -793,19 +1342,14 @@ def run_agent() -> int:
         print("\nAgent kapatılıyor...")
     finally:
         try:
-            firestore_patch(
+            server_request(
                 session,
-                f"devices/{device_id}",
-                {
-                    "status": encode_string("offline"),
-                    "lastSeenAt": encode_timestamp(),
-                    "screenRequested": {"booleanValue": False},
-                    "screenJpegBase64": encode_string(""),
-                },
-                update_mask=["status", "lastSeenAt", "screenRequested", "screenJpegBase64"],
+                "POST",
+                "/api/v1/pc/agent/heartbeat",
+                {"deviceId": device_id, "status": "offline"},
             )
         except Exception as exc:
-            print(f"[Uyarı] Çevrimdışı durumu kaydedilemedi: {exc}")
+            print(f"[Uyarı] Çevrimdışı durumu MynAssistant Server'a kaydedilemedi: {exc}")
         write_bridge_status(
             "offline",
             "Windows bağlantı köprüsü kapatıldı.",

@@ -1,0 +1,201 @@
+<Window x:Class="MynAI.Windows.AccountLoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MynAssistant — Hesap"
+        Width="500"
+        Height="720"
+        MinWidth="460"
+        MinHeight="620"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize"
+        Background="#0B1220"
+        Foreground="#E5ECF6"
+        FontFamily="Segoe UI">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Margin="0,0,0,18"
+                    HorizontalAlignment="Center">
+            <Border Width="64" Height="64"
+                    CornerRadius="16"
+                    Background="#111827"
+                    BorderBrush="#304158"
+                    BorderThickness="1"
+                    Padding="7"
+                    HorizontalAlignment="Center">
+                <Image Source="Resources/myn.jpg" Stretch="Uniform"/>
+            </Border>
+            <TextBlock Text="MynAssistant"
+                       FontSize="23"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       Margin="0,10,0,0"/>
+            <TextBlock Text="Hesabına güvenli şekilde devam et"
+                       FontSize="12"
+                       Foreground="#94A3B8"
+                       HorizontalAlignment="Center"
+                       Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Border Background="#111827"
+                    BorderBrush="#263449"
+                    BorderThickness="1"
+                    CornerRadius="18"
+                    Padding="22">
+                <StackPanel>
+                    <TextBlock x:Name="ModeTitleText"
+                               Text="Giriş yap"
+                               FontSize="21"
+                               FontWeight="SemiBold"/>
+                    <TextBlock x:Name="ModeDescriptionText"
+                               Text="MynAssistant hesabınla Windows uygulamasına giriş yap."
+                               FontSize="12"
+                               Foreground="#94A3B8"
+                               TextWrapping="Wrap"
+                               Margin="0,6,0,18"/>
+
+                    <TextBlock Text="E-posta"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,6"/>
+                    <TextBox x:Name="EmailTextBox"
+                             Height="42"
+                             Padding="11,9"
+                             FontSize="14"
+                             Background="#0B1220"
+                             Foreground="#E5ECF6"
+                             BorderBrush="#304158"
+                             CaretBrush="#8B9CFF"
+                             ToolTip="Hesabındaki e-posta adresi"
+                             Margin="0,0,0,14"/>
+
+                    <TextBlock Text="Şifre"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,6"/>
+                    <PasswordBox x:Name="PasswordBox"
+                                 Height="42"
+                                 Padding="11,9"
+                                 FontSize="14"
+                                 Background="#0B1220"
+                                 Foreground="#E5ECF6"
+                                 BorderBrush="#304158"
+                                 Margin="0,0,0,14"/>
+
+                    <StackPanel x:Name="ConfirmPasswordPanel"
+                                Visibility="Collapsed"
+                                Margin="0,0,0,12">
+                        <TextBlock Text="Şifreyi tekrar gir"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,6"/>
+                        <PasswordBox x:Name="ConfirmPasswordBox"
+                                     Height="42"
+                                     Padding="11,9"
+                                     FontSize="14"
+                                     Background="#0B1220"
+                                     Foreground="#E5ECF6"
+                                     BorderBrush="#304158"/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="StatusText"
+                               Text=""
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               Visibility="Collapsed"
+                               Margin="0,0,0,12"/>
+
+                    <Button x:Name="SubmitButton"
+                            Content="Giriş yap"
+                            Height="42"
+                            FontSize="13"
+                            FontWeight="SemiBold"
+                            Background="#8B9CFF"
+                            Foreground="#0B1220"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            Click="Submit_Click"/>
+
+                    <WrapPanel HorizontalAlignment="Center"
+                               Margin="0,12,0,2">
+                        <Button x:Name="RegisterModeButton"
+                                Content="Yeni hesap oluştur"
+                                Padding="10,7"
+                                Margin="0,0,6,0"
+                                Background="Transparent"
+                                Foreground="#B9C5D7"
+                                BorderBrush="#304158"
+                                Click="RegisterMode_Click"/>
+                        <Button x:Name="LoginModeButton"
+                                Content="Giriş yap"
+                                Padding="10,7"
+                                Background="Transparent"
+                                Foreground="#B9C5D7"
+                                BorderBrush="#304158"
+                                Visibility="Collapsed"
+                                Click="LoginMode_Click"/>
+                    </WrapPanel>
+
+                    <Button x:Name="ForgotPasswordButton"
+                            Content="Şifremi unuttum"
+                            HorizontalAlignment="Center"
+                            Padding="10,7"
+                            Margin="0,0,0,14"
+                            Background="Transparent"
+                            Foreground="#9FB0FF"
+                            BorderThickness="0"
+                            Click="ForgotPassword_Click"/>
+
+                    <Border Background="#0B1220"
+                            BorderBrush="#263449"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="12"
+                            Margin="0,0,0,10">
+                        <TextBlock Text="E-posta/şifre ve Google ile giriş ayrı yöntemlerdir. Google girişi masaüstü OAuth istemci JSON'u gerektirir; yalnızca Google OpenID/e-posta/profil kapsamları istenir, Google Kişiler erişimi istenmez. Android onayı, telefonda açık olan MynAssistant hesabını bu bilgisayarla eşleştirir."
+                                   FontSize="11"
+                                   Foreground="#A9B7CA"
+                                   TextWrapping="Wrap"/>
+                    </Border>
+
+                    <Button x:Name="GoogleSignInButton"
+                            Content="Google ile giriş yap"
+                            Height="42"
+                            FontSize="13"
+                            FontWeight="SemiBold"
+                            Background="#F3F6FC"
+                            Foreground="#1C2737"
+                            BorderBrush="#D9E1EC"
+                            Cursor="Hand"
+                            Margin="0,0,0,8"
+                            Click="GoogleSignIn_Click"/>
+
+                    <Button x:Name="PhoneApprovalButton"
+                            Content="Android ile oturum onayı"
+                            Height="40"
+                            FontSize="12"
+                            Background="#172235"
+                            Foreground="#E5ECF6"
+                            BorderBrush="#304158"
+                            Cursor="Hand"
+                            Click="PhoneApproval_Click"/>
+
+                    <Button Content="Geri dön"
+                            HorizontalAlignment="Center"
+                            Padding="10,7"
+                            Margin="0,12,0,0"
+                            Background="Transparent"
+                            Foreground="#94A3B8"
+                            BorderThickness="0"
+                            Click="Close_Click"/>
+                </StackPanel>
+            </Border>
+        </ScrollViewer>
+    </Grid>
+</Window>

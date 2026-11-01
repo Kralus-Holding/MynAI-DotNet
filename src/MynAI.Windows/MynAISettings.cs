@@ -10,6 +10,9 @@ public sealed class MynAISettings
 
     public bool WindowsNotifications { get; set; } = true;
 
+    // Diagnostic email reporting is opt-in and disabled on first install.
+    public bool SendDiagnosticsAutomatically { get; set; }
+
     public bool MicrophoneEnabled { get; set; }
 
     public bool CameraEnabled { get; set; }
@@ -19,6 +22,10 @@ public sealed class MynAISettings
     public string LogoPreset { get; set; } = "kr";
 
     public string? CustomLogoPath { get; set; }
+
+    // Custom logos are stored separately from built-in brand assets. The legacy
+    // CustomLogoPath remains for settings files created before the gallery existed.
+    public List<string> UserLogoPaths { get; set; } = new();
 
     public string BringToFrontHotkey { get; set; } =
         "Ctrl+Shift+Space";
