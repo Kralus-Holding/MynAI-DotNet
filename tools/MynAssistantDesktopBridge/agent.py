@@ -27,7 +27,7 @@ import win32crypt
 FIREBASE_API_KEY = "AIzaSyB0z1b5OOMh8Pqn2GPd1ZuWoHEhRoKSrRM"
 SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token"
 SERVER_BASE_URL = "https://mynassistant-server.onrender.com"
-AGENT_VERSION = "0.2.2"
+AGENT_VERSION = "0.2.3"
 POLL_SECONDS = 0.5
 COMMAND_POLL_SECONDS = 1.0
 SCREEN_CHECK_SECONDS = 8.0
