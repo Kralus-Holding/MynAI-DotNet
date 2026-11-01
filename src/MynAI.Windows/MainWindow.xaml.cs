@@ -57,9 +57,12 @@ public partial class MainWindow : Window
 
         Loaded += MainWindow_Loaded;
 
+        // Scheduled tasks change rarely. Polling every two seconds repeatedly
+        // opens the named pipe and races with other UI commands on slower PCs.
+        // Keep the UI fresh without continuously stressing the Agent IPC channel.
         _refreshTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(2)
+            Interval = TimeSpan.FromSeconds(15)
         };
 
         _refreshTimer.Tick += async (_, _) =>
@@ -823,7 +826,17 @@ internal sealed class AgentClient
                 PipeDirection.InOut,
                 PipeOptions.Asynchronous);
 
-        await pipe.ConnectAsync(3000);
+        using var connectCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
+        {
+            await pipe.ConnectAsync(connectCancellation.Token);
+        }
+        catch (OperationCanceledException ex) when (connectCancellation.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                "MynAI.Agent IPC kanalı 5 saniye içinde açılamadı. Agent hizmetinin çalıştığını kontrol et.",
+                ex);
+        }
 
         using var reader =
             new StreamReader(
@@ -844,7 +857,7 @@ internal sealed class AgentClient
             JsonSerializer.Serialize(request));
 
         string? response;
-        using (var responseCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+        using (var responseCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8)))
         {
             try
             {
@@ -853,7 +866,7 @@ internal sealed class AgentClient
             catch (OperationCanceledException ex) when (responseCancellation.IsCancellationRequested)
             {
                 throw new TimeoutException(
-                    "Agent 3 saniye içinde IPC yanıtı vermedi. Agent durumunu ve Hata günlükleri bölümünü kontrol et.",
+                    "Agent 8 saniye içinde IPC yanıtı vermedi. Agent durumunu ve Hata günlükleri bölümünü kontrol et.",
                     ex);
             }
         }

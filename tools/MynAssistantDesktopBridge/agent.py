@@ -615,8 +615,91 @@ def execute_text_command(text: str) -> str:
     return "Desteklenmeyen komut. Şunları deneyebilirsin: Chrome aç, Not Defteri aç, Hesap makinesi aç, YouTube aç, sesi artır, sesi azalt, masaüstünü göster."
 
 
-def execute_command(command: str, fields: dict) -> str:
+def list_windows_drives() -> dict:
+    """Return every currently mounted Windows drive without exposing inaccessible roots."""
+    entries = []
+    warnings = []
+    for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        root = Path(f"{letter}:\\\\")
+        try:
+            if not root.exists():
+                continue
+            # A root may exist but be temporarily unavailable (for example, an
+            # unplugged removable disk). Only advertise roots that can be read.
+            if not os.path.isdir(str(root)):
+                continue
+            entries.append({
+                "name": f"{letter}:",
+                "path": str(root),
+                "isDirectory": True,
+                "size": 0,
+                "modifiedUtc": "",
+            })
+        except (OSError, PermissionError) as exc:
+            warnings.append(f"{letter}: sürücüsü okunamadı: {type(exc).__name__}")
+    return {
+        "currentPath": "",
+        "parentPath": None,
+        "entries": entries,
+        "truncated": False,
+        "warnings": warnings,
+    }
+
+
+def list_directory(path: str) -> dict:
+    """List a requested directory using bounded metadata-only enumeration."""
+    requested = Path(path).expanduser()
+    if not requested.is_absolute():
+        raise ValueError("Dosya yolu mutlak olmalıdır.")
+    if not requested.exists():
+        raise FileNotFoundError("İstenen sürücü veya klasör bulunamadı.")
+    if not requested.is_dir():
+        raise NotADirectoryError("İstenen yol bir klasör değil.")
+
+    entries = []
+    warnings = []
+    try:
+        iterator = os.scandir(str(requested))
+        with iterator:
+            for item in iterator:
+                if len(entries) >= 200:
+                    break
+                try:
+                    stat = item.stat(follow_symlinks=False)
+                    is_directory = item.is_dir(follow_symlinks=False)
+                    entries.append({
+                        "name": item.name,
+                        "path": item.path,
+                        "isDirectory": is_directory,
+                        "size": 0 if is_directory else max(0, int(stat.st_size)),
+                        "modifiedUtc": datetime.fromtimestamp(
+                            stat.st_mtime, timezone.utc
+                        ).isoformat(),
+                    })
+                except (OSError, PermissionError) as exc:
+                    warnings.append(f"{item.name}: okunamadı ({type(exc).__name__})")
+    except (OSError, PermissionError):
+        raise
+
+    entries.sort(key=lambda entry: (not entry["isDirectory"], entry["name"].casefold()))
+    parent = str(requested.parent) if requested.parent != requested else None
+    return {
+        "currentPath": str(requested),
+        "parentPath": parent,
+        "entries": entries,
+        "truncated": len(entries) >= 200,
+        "warnings": warnings,
+    }
+
+
+def execute_command(command: str, fields: dict):
     command = command.strip().lower()
+    if command == "list_files":
+        requested_path = str(fields.get("path") or "").strip()
+        return json.dumps(
+            list_windows_drives() if not requested_path else list_directory(requested_path),
+            ensure_ascii=False,
+        )
     if command == "text_command":
         return execute_text_command(str(fields.get("text") or ""))
     if command == "type_text":
@@ -662,12 +745,11 @@ def execute_command(command: str, fields: dict) -> str:
         return "Güç kapatma bu sürümde etkin değil; yanlışlıkla kapanmayı önlemek için işlem uygulanmadı."
     return f"Desteklenmeyen komut: {command}"
 
-
 def command_is_supported(command: str) -> bool:
     return command in {
         "mute", "volume_up", "volume_down", "home",
         "mouse_move", "mouse_click", "mouse_right_click", "power", "text_command",
-        "type_text", "key_backspace", "key_enter"
+        "type_text", "key_backspace", "key_enter", "list_files"
     }
 
 
