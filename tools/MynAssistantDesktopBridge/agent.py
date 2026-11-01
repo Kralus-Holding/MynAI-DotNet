@@ -690,8 +690,8 @@ def execute_list_files(path_value: str = "") -> str:
     )
     if allowed_root is None:
         raise ValueError(
-            "Bu klasöre erişim izni yok. Yalnızca Masaüstü, Belgeler, Resimler, "
-            "Müzik, İndirilenler ve Videolar klasörleri açılabilir."
+            "Bu klasöre erişim izni yok. Yalnızca Windows'un bağlı sürücü kökleri "
+            "ve izin verilen kullanıcı klasörü kısayolları açılabilir."
         )
 
     entries: list[dict] = []
