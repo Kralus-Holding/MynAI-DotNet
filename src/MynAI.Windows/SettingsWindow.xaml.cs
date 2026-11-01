@@ -1065,7 +1065,7 @@ public partial class SettingsWindow : Window
     {
         var session = FirebaseDesktopSessionStore.Load();
         UpdateDesktopProfilePhoto(session?.PhotoUrl);
-        if (session is not null && string.IsNullOrWhiteSpace(session.PhotoUrl))
+        if (session is not null && !IsGoogleProfilePhotoUrl(session.PhotoUrl))
             _ = RefreshGoogleProfilePhotoAsync(session);
 
         if (session is null)
@@ -1114,14 +1114,22 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private static bool IsGoogleProfilePhotoUrl(string? value)
+    {
+        return Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+            string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
+            (uri.Host.Equals("googleusercontent.com", StringComparison.OrdinalIgnoreCase) ||
+             uri.Host.EndsWith(".googleusercontent.com", StringComparison.OrdinalIgnoreCase));
+    }
+
     private void UpdateDesktopProfilePhoto(string? photoUrl)
     {
         DesktopProfilePhoto.Source = LoadAppFallbackPhoto();
 
         // Only allow HTTPS URLs returned by the Firebase-authenticated profile.
         // Google Contacts OAuth is not used for the MynAssistant account session.
-        if (!Uri.TryCreate(photoUrl, UriKind.Absolute, out var uri) ||
-            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        if (!IsGoogleProfilePhotoUrl(photoUrl) ||
+            !Uri.TryCreate(photoUrl, UriKind.Absolute, out var uri))
             return;
 
         try
