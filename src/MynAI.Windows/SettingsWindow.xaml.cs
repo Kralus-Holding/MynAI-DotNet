@@ -1440,27 +1440,21 @@ public partial class SettingsWindow : Window
                 cancellation.Token);
 
             var hasSignedQr = !string.IsNullOrWhiteSpace(pairing.QrSignature);
-            if (hasSignedQr)
-            {
-                var qrExpiresAtUnix = pairing.ExpiresAtUtc.ToUnixTimeSeconds();
-                _pendingPairingQrPayload =
-                    $"MYNASSISTANT-PAIR:{pairing.Code}:{qrExpiresAtUnix}:{pairing.QrSignature}";
-            }
-            else
-            {
-                _pendingPairingQrPayload = null;
-            }
+            var qrExpiresAtUnix = pairing.ExpiresAtUtc.ToUnixTimeSeconds();
+            _pendingPairingQrPayload = hasSignedQr
+                ? $"MYNASSISTANT-PAIR:{pairing.Code}:{qrExpiresAtUnix}:{pairing.QrSignature}"
+                : pairing.Code;
 
             DesktopPairingCodeText.Text = pairing.Code;
             DesktopPairingCodeText.Visibility = Visibility.Visible;
-            ShowDesktopPairingQrButton.Visibility = hasSignedQr
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+            // Always make a QR available. On older servers it contains only the
+            // one-time manual code; signed payloads are used as soon as the API supports them.
+            ShowDesktopPairingQrButton.Visibility = Visibility.Visible;
             DesktopPairingQrImage.Source = null;
             DesktopPairingQrImage.Visibility = Visibility.Collapsed;
             DesktopPairingStatusText.Text = hasSignedQr
-                ? $"Eşleştirme kodu oluşturuldu. Telefonda kodu elle girebilir veya yanındaki QR simgesine dokunup okutabilirsin. Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}."
-                : $"Eşleştirme kodu oluşturuldu. Sunucunun mevcut sürümü imzalı QR sağlamıyor; telefonda kodu elle gir. QR, sunucu güncellendiğinde etkinleşecek. Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}.";
+                ? $"İmzalı eşleştirme QR kodu hazır. Telefonda kodu elle de girebilirsin. Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}."
+                : $"QR kodu hazır; yalnızca tek kullanımlık kodu içerir. Android uygulamasındaki kod alanına okutulan kodu gir. Sunucu güncellendiğinde QR imzası otomatik etkinleşir. Son kullanma: {pairing.ExpiresAtUtc.ToLocalTime():HH:mm:ss}.";
             DesktopPairingStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
 
             while (DateTimeOffset.UtcNow < pairing.ExpiresAtUtc)
