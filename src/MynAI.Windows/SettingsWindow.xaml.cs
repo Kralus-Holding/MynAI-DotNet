@@ -32,6 +32,7 @@ public partial class SettingsWindow : Window
     private readonly DesktopPairingClient _desktopPairingClient = new();
     private CancellationTokenSource? _pairingCancellation;
     private string? _pendingPairingQrPayload;
+    private bool _profilePhotoRefreshInProgress;
     private DateTime _lastBridgeRefreshAttemptUtc = DateTime.MinValue;
 
 
@@ -1064,6 +1065,9 @@ public partial class SettingsWindow : Window
     {
         var session = FirebaseDesktopSessionStore.Load();
         UpdateDesktopProfilePhoto(session?.PhotoUrl);
+        if (session is not null && string.IsNullOrWhiteSpace(session.PhotoUrl))
+            _ = RefreshGoogleProfilePhotoAsync(session);
+
         if (session is null)
         {
             DesktopLoginStatusText.Text =
@@ -1078,6 +1082,36 @@ public partial class SettingsWindow : Window
             : $"Oturum açık: {session.Email}";
         DesktopLoginButton.Content = "Hesabı değiştir";
         DesktopLogoutButton.Visibility = Visibility.Visible;
+    }
+
+    private async Task RefreshGoogleProfilePhotoAsync(FirebaseDesktopSession session)
+    {
+        if (_profilePhotoRefreshInProgress)
+            return;
+
+        _profilePhotoRefreshInProgress = true;
+        try
+        {
+            var idToken = await _desktopPairingClient.GetFreshIdTokenAsync(session);
+            var photoUrl = await FirebaseGoogleSignInService.GetGoogleProfilePhotoUrlFromFirebaseAsync(
+                idToken,
+                session.Uid);
+
+            if (string.IsNullOrWhiteSpace(photoUrl))
+                return;
+
+            session.PhotoUrl = photoUrl;
+            FirebaseDesktopSessionStore.Save(session);
+            UpdateDesktopProfilePhoto(photoUrl);
+        }
+        catch
+        {
+            // The account screen and sign-in remain usable if the optional Google avatar lookup fails.
+        }
+        finally
+        {
+            _profilePhotoRefreshInProgress = false;
+        }
     }
 
     private void UpdateDesktopProfilePhoto(string? photoUrl)
