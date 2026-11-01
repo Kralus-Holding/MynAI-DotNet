@@ -266,13 +266,19 @@ if __name__ == "__main__":
 class PcFileListingCommandTests(unittest.TestCase):
     def test_root_listing_returns_all_mounted_drives_as_json(self) -> None:
         fake_roots = {
-            "C:\\\\": True,
-            "D:\\\\": True,
-            "E:\\\\": False,
-            "F:\\\\": True,
+            "C:\\\\\\\\": True,
+            "D:\\\\\\\\": True,
+            "E:\\\\\\\\": False,
+            "F:\\\\\\\\": True,
         }
-        with mock.patch.object(agent.Path, "exists", autospec=True, side_effect=lambda path: fake_roots.get(str(path), False)), \\
-             mock.patch.object(agent.os.path, "isdir", side_effect=lambda path: fake_roots.get(str(path), False)):
+        with mock.patch.object(agent, "list_windows_drives", return_value={
+            "currentPath": "", "parentPath": None, "truncated": False, "warnings": [],
+            "entries": [
+                {"name": letter, "path": letter + "\\\\\\\\", "isDirectory": True,
+                 "size": 0, "modifiedUtc": ""}
+                for letter in ("C:", "D:", "F:")
+            ],
+        }):
             result = json.loads(agent.execute_command("list_files", {"path": ""}))
 
         self.assertEqual([item["name"] for item in result["entries"]], ["C:", "D:", "F:"])
@@ -286,8 +292,8 @@ class PcFileListingCommandTests(unittest.TestCase):
             st_mtime = 1_800_000_000
 
         class FakeEntry:
-            def __init__(self, path: str, is_dir: bool):
-                self.name = Path(path).name
+            def __init__(self, name: str, path: str, is_dir: bool):
+                self.name = name
                 self.path = path
                 self._is_dir = is_dir
             def stat(self, follow_symlinks: bool = False):
@@ -307,13 +313,16 @@ class PcFileListingCommandTests(unittest.TestCase):
             def __next__(self):
                 return next(self.entries)
 
-        entries = [FakeEntry(r"C:\\Data\\folder", True), FakeEntry(r"C:\\Data\\file.txt", False)]
-        with mock.patch.object(agent.Path, "exists", return_value=True), \\
-             mock.patch.object(agent.Path, "is_dir", return_value=True), \\
+        entries = [
+            FakeEntry("file.txt", "C:\\\\\\\\Data\\\\file.txt", False),
+            FakeEntry("folder", "C:\\\\\\\\Data\\\\folder", True),
+        ]
+        with mock.patch.object(agent.Path, "exists", return_value=True), \\\\
+             mock.patch.object(agent.Path, "is_dir", return_value=True), \\\\
              mock.patch.object(agent.os, "scandir", return_value=FakeScanner(entries)):
-            result = agent.list_directory(r"C:\\Data")
+            result = agent.list_directory("C:\\\\\\\\Data")
 
-        self.assertEqual(result["currentPath"], r"C:\\Data")
+        self.assertEqual(result["currentPath"], "C:\\\\\\\\Data")
         self.assertEqual([entry["name"] for entry in result["entries"]], ["folder", "file.txt"])
         self.assertTrue(result["entries"][0]["isDirectory"])
         self.assertEqual(result["entries"][1]["size"], 128)
