@@ -845,9 +845,9 @@
 
                                     <Image x:Name="DesktopProfilePhoto"
                                            Source="Resources/myn.jpg"
-                                           Stretch="Uniform"
+                                           Stretch="UniformToFill"
                                            ImageFailed="DesktopProfilePhoto_ImageFailed"
-                                           Margin="5"/>
+                                           Margin="0"/>
 
                                 </Border>
 
@@ -864,6 +864,19 @@
                                                Foreground="#7D899B"
                                                FontSize="11"
                                                Margin="0,4,0,0"
+                                               TextWrapping="Wrap"/>
+                                    <Button x:Name="ProfilePhotoUploadButton"
+                                            Content="Profil fotoğrafını değiştir"
+                                            Style="{StaticResource SecondaryButton}"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,9,0,0"
+                                            Click="UploadDesktopProfilePhoto_Click"
+                                            IsEnabled="False"/>
+                                    <TextBlock x:Name="ProfilePhotoStatusText"
+                                               Text="JPG, PNG veya WebP • En fazla 5 MB"
+                                               Foreground="#7D899B"
+                                               FontSize="10"
+                                               Margin="0,5,0,0"
                                                TextWrapping="Wrap"/>
 
                                 </StackPanel>
