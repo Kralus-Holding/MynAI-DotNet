@@ -826,7 +826,17 @@ internal sealed class AgentClient
                 PipeDirection.InOut,
                 PipeOptions.Asynchronous);
 
-        await pipe.ConnectAsync(3000);
+        using var connectCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
+        {
+            await pipe.ConnectAsync(connectCancellation.Token);
+        }
+        catch (OperationCanceledException ex) when (connectCancellation.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                "MynAI.Agent IPC kanalı 5 saniye içinde açılamadı. Agent hizmetinin çalıştığını kontrol et.",
+                ex);
+        }
 
         using var reader =
             new StreamReader(
