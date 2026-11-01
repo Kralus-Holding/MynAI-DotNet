@@ -753,12 +753,42 @@
                                             Click="ShowDesktopPairingQr_Click"
                                             Visibility="Collapsed">
                                         <Viewbox Width="20" Height="20" Stretch="Uniform">
-                                            <Path Width="20"
-                                                  Height="20"
-                                                  Fill="#EAF0F7"
-                                                  FillRule="EvenOdd"
-                                                  Stretch="Fill"
-                                                  Data="M1,1 H8 V8 H1 Z M3,3 V6 H6 V3 Z M12,1 H19 V8 H12 Z M14,3 V6 H17 V3 Z M1,12 H8 V19 H1 Z M3,14 V17 H6 V14 Z M12,12 H14 V14 H12 Z M16,12 H19 V14 H16 Z M12,16 H14 V19 H12 Z M16,16 H19 V19 H16 Z"/>
+                                            <Grid Width="20" Height="20">
+                                                <Border Width="8" Height="8"
+                                                        HorizontalAlignment="Left"
+                                                        VerticalAlignment="Top"
+                                                        BorderBrush="#EAF0F7"
+                                                        BorderThickness="2">
+                                                    <Border Margin="1" Background="#EAF0F7"/>
+                                                </Border>
+                                                <Border Width="8" Height="8"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Top"
+                                                        BorderBrush="#EAF0F7"
+                                                        BorderThickness="2">
+                                                    <Border Margin="1" Background="#EAF0F7"/>
+                                                </Border>
+                                                <Border Width="8" Height="8"
+                                                        HorizontalAlignment="Left"
+                                                        VerticalAlignment="Bottom"
+                                                        BorderBrush="#EAF0F7"
+                                                        BorderThickness="2">
+                                                    <Border Margin="1" Background="#EAF0F7"/>
+                                                </Border>
+                                                <UniformGrid Rows="2" Columns="2"
+                                                             Width="7" Height="7"
+                                                             HorizontalAlignment="Right"
+                                                             VerticalAlignment="Bottom">
+                                                    <Border Margin="0.5" Background="#EAF0F7"/>
+                                                    <Border Margin="0.5" Background="#EAF0F7"/>
+                                                    <Border Margin="0.5" Background="#EAF0F7"/>
+                                                    <Border Margin="0.5" Background="#EAF0F7"/>
+                                                </UniformGrid>
+                                                <Border Width="3" Height="3"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        Background="#EAF0F7"/>
+                                            </Grid>
                                         </Viewbox>
                                     </Button>
                                 </Grid>
