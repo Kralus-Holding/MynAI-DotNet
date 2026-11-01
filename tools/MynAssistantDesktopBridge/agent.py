@@ -116,10 +116,14 @@ def decode_document(document: dict) -> dict:
 def protect_session(payload: dict) -> None:
     APP_DATA.mkdir(parents=True, exist_ok=True)
     raw = json.dumps(payload).encode("utf-8")
-    _description, encrypted = win32crypt.CryptProtectData(
+    # pywin32 CryptProtectData returns the encrypted bytes directly.
+    # CryptUnprotectData (below) is the API that returns (description, data).
+    encrypted = win32crypt.CryptProtectData(
         raw, "MynAssistant Desktop Agent", DPAPI_ENTROPY, None, None, 0
     )
-    SESSION_FILE.write_bytes(encrypted)
+    if not isinstance(encrypted, (bytes, bytearray, memoryview)) or not encrypted:
+        raise RuntimeError("Windows DPAPI oturum verisini şifrelenmiş bayt olarak döndürmedi.")
+    SESSION_FILE.write_bytes(bytes(encrypted))
 
 
 def load_protected_session() -> dict | None:
@@ -516,6 +520,66 @@ FILE_LIST_ROOTS = (
     ("Videolar", ("Videos", "Videolar")),
 )
 
+# GetLogicalDrives/GetDriveTypeW constants from WinBase.h.
+DRIVE_REMOVABLE = 2
+DRIVE_FIXED = 3
+DRIVE_REMOTE = 4
+DRIVE_RAMDISK = 6
+VISIBLE_DRIVE_TYPES = {
+    DRIVE_REMOVABLE,
+    DRIVE_FIXED,
+    DRIVE_REMOTE,
+    DRIVE_RAMDISK,
+}
+
+
+def logical_drive_letters(mask: int) -> list[str]:
+    """Convert the GetLogicalDrives bitmask to A..Z drive letters."""
+    return [
+        chr(ord("A") + index)
+        for index in range(26)
+        if mask & (1 << index)
+    ]
+
+
+def _windows_storage_roots() -> list[tuple[str, Path]]:
+    """Discover ready fixed/removable/network volumes without hardcoding C: or D:."""
+    if os.name != "nt":
+        return []
+
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        get_logical_drives = kernel32.GetLogicalDrives
+        get_logical_drives.argtypes = []
+        get_logical_drives.restype = ctypes.c_uint32
+        get_drive_type = kernel32.GetDriveTypeW
+        get_drive_type.argtypes = [ctypes.c_wchar_p]
+        get_drive_type.restype = ctypes.c_uint
+        mask = int(get_logical_drives())
+    except Exception:
+        return []
+
+    roots: list[tuple[str, Path]] = []
+    for letter in logical_drive_letters(mask):
+        root_text = f"{letter}:\\"
+        try:
+            drive_type = int(get_drive_type(root_text))
+            if drive_type not in VISIBLE_DRIVE_TYPES:
+                continue
+
+            candidate = Path(root_text)
+            if _is_reparse_point(candidate) or not candidate.is_dir():
+                continue
+            resolved = candidate.resolve(strict=True)
+            if not resolved.is_dir():
+                continue
+            roots.append((f"{letter}:", resolved))
+        except (OSError, RuntimeError, ValueError):
+            # Empty card readers and disconnected mapped volumes are omitted.
+            continue
+
+    return roots
+
 
 def _is_reparse_point(path: Path) -> bool:
     """Reject symbolic links and Windows junctions at every file-browser boundary."""
@@ -530,10 +594,20 @@ def _is_reparse_point(path: Path) -> bool:
 
 
 def _allowed_file_roots() -> list[tuple[str, Path]]:
-    """Return only the standard profile folders exposed to the remote file browser."""
+    """Return mounted Windows volumes plus the familiar user-folder shortcuts."""
     profile = Path(os.environ.get("USERPROFILE") or Path.home()).resolve()
     roots: list[tuple[str, Path]] = []
     seen: set[str] = set()
+
+    # Volumes are listed first. Their drive roots make C:, D:, E:, F:, and
+    # removable/network volumes browsable while preserving the same path guard.
+    for label, drive_root in _windows_storage_roots():
+        identity = os.path.normcase(str(drive_root))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        roots.append((label, drive_root))
+
     for label, candidates in FILE_LIST_ROOTS:
         for folder_name in candidates:
             candidate = profile / folder_name
