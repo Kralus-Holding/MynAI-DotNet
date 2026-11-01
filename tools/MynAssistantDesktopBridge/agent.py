@@ -384,7 +384,7 @@ def claim_pending_command(session: FirebaseSession, document: dict, device_id: s
     command_id = document.get("id")
     update_time = document.get("updateTime")
     if not isinstance(command_id, str) or not command_id or not isinstance(update_time, str) or not update_time:
-        print("[Command] Sunucu komut kimliği veya sürümü eksik; komut çalıştırılmadı.")
+        print("[Command] Missing command ID or version; command was not executed.")
         return False
     try:
         response = server_request(
@@ -401,7 +401,7 @@ def claim_pending_command(session: FirebaseSession, document: dict, device_id: s
         document["_claimToken"] = claim_token
         return True
     except Exception as claim_error:
-        print(f"[Command] Server komut sahiplenme isteği reddedildi; komut çalıştırılmadı: {claim_error}")
+        print(f"[Command] Server rejected command claim; command was not executed: {claim_error}")
         return False
 
 
