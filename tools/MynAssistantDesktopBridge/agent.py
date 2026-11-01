@@ -389,81 +389,54 @@ def update_command(
     expected_update_time: str | None = None,
     extra_fields: dict | None = None,
 ) -> None:
-    full_name = document.get("name", "")
-    marker = "/documents/"
-    if marker not in full_name:
-        raise RuntimeError("Komut belgesinin yolu geçersiz.")
-    document_path = full_name.split(marker, 1)[1]
-    command_name = decode_field(document.get("fields", {}).get("command"))
+    command_id = document.get("id")
+    claim_token = document.get("_claimToken")
+    fields = document.get("fields", {})
+    device_id = fields.get("deviceId")
+    if not isinstance(command_id, str) or not command_id or not isinstance(device_id, str) or not device_id:
+        raise RuntimeError("Sunucu komut veya cihaz kimliği eksik.")
+    if not isinstance(claim_token, str) or not claim_token:
+        raise RuntimeError("Komut sunucu tarafından sahiplenilmedi; sonuç yazılmadı.")
+    command_name = decode_field(fields.get("command"))
     if command_name == "list_files":
         result_limit = FILE_LIST_MAX_RESULT_LENGTH
     elif command_name == "download_file":
         result_limit = FILE_DOWNLOAD_MAX_RESULT_LENGTH
     else:
         result_limit = 800
-    fields = {
-        "status": encode_string(status),
-        "result": encode_string(result[:result_limit]),
-        "processedAt": encode_timestamp(),
-    }
-    if extra_fields:
-        fields.update(extra_fields)
-    update_mask = ["status", "result", "processedAt"]
-    if extra_fields:
-        update_mask.extend(extra_fields.keys())
-    firestore_patch(
+    if status not in {"completed", "failed"}:
+        raise RuntimeError("Sunucuya yalnızca terminal komut sonucu gönderilebilir.")
+    server_request(
         session,
-        document_path,
-        fields,
-        update_mask=update_mask,
-        current_document_update_time=expected_update_time,
+        "POST",
+        f"/api/v1/pc/agent/devices/{device_id}/commands/{command_id}/result",
+        {"claimToken": claim_token, "status": status, "result": str(result)[:result_limit]},
+        timeout=25,
     )
 
 
 def claim_pending_command(session: FirebaseSession, document: dict, device_id: str) -> bool:
-    # Never run a command if its Firestore version cannot be checked. This prevents
-    # a stale "pending" snapshot from overriding a cancellation written by the panel.
+    command_id = document.get("id")
     update_time = document.get("updateTime")
-    full_name = document.get("name", "")
-    marker = "/documents/"
-    if not isinstance(update_time, str) or not update_time or marker not in full_name:
-        print("[Command] Missing update time; command was not executed.")
+    if not isinstance(command_id, str) or not command_id or not isinstance(update_time, str) or not update_time:
+        print("[Command] Sunucu komut kimliği veya sürümü eksik; komut çalıştırılmadı.")
         return False
-
-    document_path = full_name.split(marker, 1)[1]
-    claim_token = uuid.uuid4().hex
     try:
-        update_command(
+        response = server_request(
             session,
-            document,
-            "running",
-            "Windows Agent komutu güvenli şekilde sahiplendi.",
-            expected_update_time=update_time,
-            extra_fields={
-                "claimToken": encode_string(claim_token),
-                "claimedByDeviceId": encode_string(device_id),
-            },
+            "POST",
+            f"/api/v1/pc/agent/devices/{device_id}/commands/{command_id}/claim",
+            {"deviceId": device_id, "expectedUpdateTime": update_time},
+            timeout=20,
         )
+        claim_token = response.get("claimToken")
+        if response.get("status") != "running" or not isinstance(claim_token, str) or not claim_token:
+            print("[Command] Server komut sahipliğini doğrulamadı; komut çalıştırılmadı.")
+            return False
+        document["_claimToken"] = claim_token
         return True
     except Exception as claim_error:
-        # A network timeout can happen after Firestore accepted the write. Read back
-        # the document and proceed only if this exact claim token won the race.
-        print(f"[Command] Claim response uncertain; verifying Firestore state: {claim_error}")
-        try:
-            response = requests.get(
-                f"{FIRESTORE}/{document_path}",
-                headers=session.headers(),
-                timeout=15,
-            )
-            if response.status_code < 400:
-                current = decode_document(response.json())
-                return (
-                    current.get("status") == "running"
-                    and current.get("claimToken") == claim_token
-                    and current.get("claimedByDeviceId") == device_id
-                )
-        except Exception as read_error:
-            print(f"[Command] Claim verification failed; command was not executed: {read_error}")
+        print(f"[Command] Server komut sahiplenme isteği reddedildi; komut çalıştırılmadı: {claim_error}")
         return False
 
 
