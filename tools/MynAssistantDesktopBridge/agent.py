@@ -1215,9 +1215,9 @@ def run_agent() -> int:
         return 2
 
     device_id = load_device_id(session.uid)
-    write_bridge_status("connecting", "Firebase oturumu doğrulandı; Windows PC kaydediliyor.", email=session.email, device_id=device_id)
+    write_bridge_status("connecting", "Firebase oturumu doğrulandı; Windows PC MynAssistant Server'a kaydediliyor.", email=session.email, device_id=device_id)
     register_or_heartbeat(session, device_id, initial=True)
-    write_bridge_status("online", "PC Firestore'a kaydedildi; Android ve web paneli için hazır.", email=session.email, device_id=device_id)
+    write_bridge_status("online", "Windows PC MynAssistant Server üzerinden Android ve web paneli için hazır.", email=session.email, device_id=device_id)
     print(f"Cihaz çevrimiçi: {platform.node()} (ID: {device_id})")
     print("Android uygulamasında Cihazlarım bölümünde otomatik görünmesi gerekir.")
     print("PC Kumandası açıkken masaüstü önizlemesi yaklaşık saniyede bir güncellenir.")
@@ -1237,7 +1237,7 @@ def run_agent() -> int:
                 register_or_heartbeat(session, device_id)
                 write_bridge_status(
                     "online",
-                    "PC Firestore'a kaydedildi; kalp atışı başarılı.",
+                    "PC MynAssistant Server üzerinden çevrimiçi; kalp atışı başarılı.",
                     email=session.email,
                     device_id=device_id,
                 )
@@ -1250,15 +1250,7 @@ def run_agent() -> int:
                 screen_active = screen_request_is_active(device_state)
                 last_screen_check = now
                 if was_active and not screen_active:
-                    try:
-                        firestore_patch(
-                            session,
-                            f"devices/{device_id}",
-                            {"screenJpegBase64": encode_string(""), "screenFrameAt": encode_timestamp()},
-                            update_mask=["screenJpegBase64", "screenFrameAt"],
-                        )
-                    except Exception as exc:
-                        print(f"[Uyarı] Önizleme alanı temizlenemedi: {exc}")
+                    print("[Önizleme] Sunucu ekran isteğini kapattı; yeni kare gönderimi durduruldu.")
 
             if screen_active and now - last_screen_frame >= SCREEN_FRAME_SECONDS:
                 try:
@@ -1273,33 +1265,23 @@ def run_agent() -> int:
                     fields = decode_document(document)
                     if fields.get("deviceId") != device_id or fields.get("status") != "pending":
                         continue
+                    # The Server must atomically claim this exact command version before
+                    # the Agent executes it. No unclaimed command is ever run locally.
+                    if not claim_pending_command(session, document, device_id):
+                        continue
                     expiration_reason = command_expiration_reason(fields)
+                    command = str(fields.get("command") or "")
                     if expiration_reason is not None:
                         try:
-                            update_command(
-                                session,
-                                document,
-                                "failed",
-                                expiration_reason,
-                                expected_update_time=document.get("updateTime"),
-                            )
+                            update_command(session, document, "failed", expiration_reason)
                         except Exception as expiry_error:
-                            print(f"[Komut] Süresi dolmuş komutun durumu güncellenemedi; çalıştırılmadı: {expiry_error}")
+                            print(f"[Komut] Süresi dolmuş komutun sonucu sunucuya yazılamadı: {expiry_error}")
                         continue
-                    command = str(fields.get("command") or "")
                     if not command_is_supported(command):
                         try:
-                            update_command(
-                                session,
-                                document,
-                                "failed",
-                                "Desteklenmeyen komut.",
-                                expected_update_time=document.get("updateTime"),
-                            )
-                        except Exception as claim_error:
-                            print(f"[Komut] Geçersiz komutun durumu değişmiş olabilir; kayıt güncellenmedi: {claim_error}")
-                        continue
-                    if not claim_pending_command(session, document, device_id):
+                            update_command(session, document, "failed", "Desteklenmeyen komut.")
+                        except Exception as command_error:
+                            print(f"[Komut] Desteklenmeyen komutun sonucu sunucuya yazılamadı: {command_error}")
                         continue
                     try:
                         result = execute_command(command, fields)
@@ -1310,7 +1292,7 @@ def run_agent() -> int:
                         try:
                             update_command(session, document, "failed", str(exc))
                         except Exception as update_exc:
-                            print(f"[Hata] Komut durumu güncellenemedi: {update_exc}")
+                            print(f"[Hata] Komut sonucu sunucuya yazılamadı: {update_exc}")
                         print(f"[Hata] {command}: {exc}")
                 last_command_poll = now
 
@@ -1319,19 +1301,14 @@ def run_agent() -> int:
         print("\nAgent kapatılıyor...")
     finally:
         try:
-            firestore_patch(
+            server_request(
                 session,
-                f"devices/{device_id}",
-                {
-                    "status": encode_string("offline"),
-                    "lastSeenAt": encode_timestamp(),
-                    "screenRequested": {"booleanValue": False},
-                    "screenJpegBase64": encode_string(""),
-                },
-                update_mask=["status", "lastSeenAt", "screenRequested", "screenJpegBase64"],
+                "POST",
+                "/api/v1/pc/agent/heartbeat",
+                {"deviceId": device_id, "status": "offline"},
             )
         except Exception as exc:
-            print(f"[Uyarı] Çevrimdışı durumu kaydedilemedi: {exc}")
+            print(f"[Uyarı] Çevrimdışı durumu MynAssistant Server'a kaydedilemedi: {exc}")
         write_bridge_status(
             "offline",
             "Windows bağlantı köprüsü kapatıldı.",
