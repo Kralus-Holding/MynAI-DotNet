@@ -396,7 +396,7 @@ def claim_pending_command(session: FirebaseSession, document: dict, device_id: s
         )
         claim_token = response.get("claimToken")
         if response.get("status") != "running" or not isinstance(claim_token, str) or not claim_token:
-            print("[Command] Server komut sahipliğini doğrulamadı; komut çalıştırılmadı.")
+            print("[Command] Server did not confirm command ownership; command was not executed.")
             return False
         document["_claimToken"] = claim_token
         return True
