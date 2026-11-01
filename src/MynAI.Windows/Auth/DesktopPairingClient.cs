@@ -9,10 +9,10 @@ namespace MynAI.Windows.Auth;
 
 public sealed class DesktopPairingClient
 {
-    private const string ServerBaseUrl = "https://mynassistant-server.onrender.com";
+    internal const string ServerBaseUrl = "https://mynassistant-server.onrender.com";
     // Firebase Web API key is a public project identifier already used by the shipped bridge;
     // it is not a service-account secret. Server/service credentials remain server-side.
-    private const string FirebaseWebApiKey = "AIzaSyB0z1b5OOMh8Pqn2GPd1ZuWoHEhRoKSrRM";
+    internal const string FirebaseWebApiKey = "AIzaSyB0z1b5OOMh8Pqn2GPd1ZuWoHEhRoKSrRM";
     private const string FirebaseSecureTokenUrl = "https://securetoken.googleapis.com/v1/token";
     private const string FirebaseAccountsLookupUrl = "https://identitytoolkit.googleapis.com/v1/accounts:lookup";
     private static readonly HttpClient Http = new()
