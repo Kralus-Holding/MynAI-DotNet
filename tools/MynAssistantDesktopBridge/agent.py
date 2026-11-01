@@ -267,47 +267,23 @@ def firestore_patch(
 
 def register_or_heartbeat(session: FirebaseSession, device_id: str, initial: bool = False) -> None:
     if initial:
-        computer_name = platform.node().strip() or "Windows bilgisayarım"
-        fields = {
-            "ownerId": encode_string(session.uid),
-            "name": encode_string(computer_name),
-            "platform": encode_string("Windows"),
-            "type": encode_string("Windows"),
-            "status": encode_string("online"),
-            "connectionMode": encode_string("firebase-agent"),
-            "agentVersion": encode_string(AGENT_VERSION),
-            "lastSeenAt": encode_timestamp(),
-            "screenRequested": {"booleanValue": False},
-        }
-        response = requests.patch(
-            f"{FIRESTORE}/devices/{device_id}",
-            headers=session.headers(),
-            json={"fields": fields},
-            timeout=20,
-        )
-        if response.status_code >= 400:
-            raise RuntimeError("Windows cihaz kaydı başarısız: " + response.text[:700])
-    else:
-        firestore_patch(
+        server_request(
             session,
-            f"devices/{device_id}",
-            {
-                "status": encode_string("online"),
-                "lastSeenAt": encode_timestamp(),
-            },
-            update_mask=["status", "lastSeenAt"],
+            "POST",
+            "/api/v1/pc/agent/register",
+            {"deviceId": device_id, "machineName": platform.node().strip() or "Windows bilgisayarım", "agentVersion": AGENT_VERSION},
+        )
+    else:
+        server_request(
+            session,
+            "POST",
+            "/api/v1/pc/agent/heartbeat",
+            {"deviceId": device_id, "status": "online"},
         )
 
 
 def read_device_state(session: FirebaseSession, device_id: str) -> dict:
-    response = requests.get(
-        f"{FIRESTORE}/devices/{device_id}",
-        headers=session.headers(),
-        timeout=15,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError("Windows cihaz durumu okunamadı: " + response.text[:500])
-    return decode_document(response.json())
+    return server_request(session, "GET", f"/api/v1/pc/agent/devices/{device_id}/state", timeout=15)
 
 
 def screen_request_is_active(fields: dict) -> bool:
@@ -330,80 +306,37 @@ def capture_screen_base64() -> str:
     output = io.BytesIO()
     image.save(output, format="JPEG", quality=45, optimize=True)
     payload = output.getvalue()
-    # Firestore document size includes base64 expansion (~4/3) and field
-    # overhead. Keep the raw JPEG below 700 KB so the encoded value stays
-    # comfortably under the 1 MiB document limit.
     if len(payload) > 560_000:
         output = io.BytesIO()
         image.save(output, format="JPEG", quality=30, optimize=True)
         payload = output.getvalue()
     if len(payload) > 700_000:
-        raise RuntimeError("Ekran görüntüsü Firestore belge boyutu sınırına yaklaşıyor; kare güvenli boyut sınırının altında üretilmedi.")
+        raise RuntimeError("Ekran görüntüsü güvenli aktarım boyutunu aşıyor.")
     return base64.b64encode(payload).decode("ascii")
 
 
 def upload_screen_frame(session: FirebaseSession, device_id: str) -> None:
     frame = capture_screen_base64()
-    firestore_patch(
+    server_request(
         session,
-        f"devices/{device_id}",
-        {
-            "screenJpegBase64": encode_string(frame),
-            "screenFrameAt": encode_timestamp(),
-        },
-        update_mask=["screenJpegBase64", "screenFrameAt"],
+        "POST",
+        f"/api/v1/pc/agent/devices/{device_id}/screen-frame",
+        {"jpegBase64": frame},
+        timeout=25,
     )
 
 
 def fetch_owner_commands(session: FirebaseSession, device_id: str) -> list[dict]:
-    filters = [
-        {
-            "fieldFilter": {
-                "field": {"fieldPath": "ownerId"},
-                "op": "EQUAL",
-                "value": {"stringValue": session.uid},
-            }
-        },
-        {
-            "fieldFilter": {
-                "field": {"fieldPath": "status"},
-                "op": "EQUAL",
-                "value": {"stringValue": "pending"},
-            }
-        },
-        {
-            "fieldFilter": {
-                "field": {"fieldPath": "deviceId"},
-                "op": "EQUAL",
-                "value": {"stringValue": device_id},
-            }
-        },
-    ]
-    response = requests.post(
-        f"{FIRESTORE}:runQuery",
-        headers=session.headers(),
-        json={
-            "structuredQuery": {
-                "from": [{"collectionId": "commands"}],
-                "where": {
-                    "compositeFilter": {
-                        "op": "AND",
-                        "filters": filters,
-                    }
-                },
-                "limit": 100,
-            }
-        },
+    response = server_request(
+        session,
+        "GET",
+        f"/api/v1/pc/agent/devices/{device_id}/commands",
         timeout=25,
     )
-    if response.status_code >= 400:
-        raise RuntimeError("Komut kuyruğu okunamadı: " + response.text[:700])
-    documents = []
-    for result in response.json():
-        document = result.get("document")
-        if document:
-            documents.append(document)
-    return documents
+    items = response.get("items")
+    if not isinstance(items, list):
+        raise RuntimeError("MynAssistant Server komut kuyruğunu beklenen biçimde döndürmedi.")
+    return [item for item in items if isinstance(item, dict) and isinstance(item.get("id"), str) and isinstance(item.get("fields"), dict)]
 
 
 def _parse_command_timestamp(value: object) -> datetime | None:
