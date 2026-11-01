@@ -24,11 +24,9 @@ import requests
 import win32crypt
 
 
-PROJECT_ID = "myncloud-24"
 FIREBASE_API_KEY = "AIzaSyB0z1b5OOMh8Pqn2GPd1ZuWoHEhRoKSrRM"
-IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1"
 SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token"
-FIRESTORE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents"
+SERVER_BASE_URL = "https://mynassistant-server.onrender.com"
 AGENT_VERSION = "0.2.2"
 POLL_SECONDS = 0.5
 COMMAND_POLL_SECONDS = 1.0
@@ -97,6 +95,11 @@ def encode_timestamp(value: str | None = None) -> dict:
 
 
 def decode_field(value: dict | None):
+    if value is None:
+        return None
+    # Server relay responses contain already-decoded JSON fields.
+    if not isinstance(value, dict):
+        return value
     if not value:
         return None
     if "stringValue" in value:
@@ -211,6 +214,28 @@ class FirebaseSession:
     def headers(self) -> dict:
         self.ensure_fresh()
         return {"Authorization": f"Bearer {self.id_token}", "Content-Type": "application/json"}
+
+def server_request(session: FirebaseSession, method: str, path: str, json_body: dict | None = None, timeout: int = 20) -> dict:
+    """Authenticated Server API request. Windows never calls Firestore directly."""
+    url = SERVER_BASE_URL + path
+    response = requests.request(method, url, headers=session.headers(), json=json_body, timeout=timeout)
+    if response.status_code == 401:
+        session.ensure_fresh(force=True)
+        response = requests.request(method, url, headers=session.headers(), json=json_body, timeout=timeout)
+    if response.status_code >= 400:
+        detail = ""
+        try:
+            payload = response.json()
+            detail = str(payload.get("detail") or payload.get("message") or payload.get("title") or "")
+        except Exception:
+            pass
+        raise RuntimeError(detail[:500] or f"MynAssistant Server isteği başarısız (HTTP {response.status_code}).")
+    if not response.content:
+        return {}
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("MynAssistant Server beklenmeyen yanıt biçimi döndürdü.")
+    return payload
 
 
 def firestore_patch(
