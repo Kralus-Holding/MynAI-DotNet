@@ -847,7 +847,7 @@ internal sealed class AgentClient
             JsonSerializer.Serialize(request));
 
         string? response;
-        using (var responseCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+        using (var responseCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8)))
         {
             try
             {
@@ -856,7 +856,7 @@ internal sealed class AgentClient
             catch (OperationCanceledException ex) when (responseCancellation.IsCancellationRequested)
             {
                 throw new TimeoutException(
-                    "Agent 3 saniye içinde IPC yanıtı vermedi. Agent durumunu ve Hata günlükleri bölümünü kontrol et.",
+                    "Agent 8 saniye içinde IPC yanıtı vermedi. Agent durumunu ve Hata günlükleri bölümünü kontrol et.",
                     ex);
             }
         }
