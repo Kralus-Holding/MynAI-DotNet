@@ -64,6 +64,59 @@ class FakeScreenshotImage:
         output.write(b"x" * self.sizes_by_quality[quality])
 
 
+class DpapiAndDriveDiscoveryTests(unittest.TestCase):
+    def test_crypt_protect_data_bytes_are_saved_without_tuple_unpacking(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            app_data = Path(temporary)
+            session_file = app_data / "session.bin"
+            with (
+                mock.patch.object(agent, "APP_DATA", app_data),
+                mock.patch.object(agent, "SESSION_FILE", session_file),
+                mock.patch.object(agent.win32crypt, "CryptProtectData", return_value=b"dpapi-ciphertext") as protect,
+            ):
+                agent.protect_session({"uid": "test-user", "refreshToken": "refresh-token"})
+
+            self.assertEqual(session_file.read_bytes(), b"dpapi-ciphertext")
+            protect.assert_called_once()
+
+    def test_crypt_unprotect_data_keeps_pywin32_two_value_return(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            session_file = Path(temporary) / "session.bin"
+            session_file.write_bytes(b"dpapi-ciphertext")
+            payload = {"uid": "test-user", "refreshToken": "refresh-token"}
+            raw = json.dumps(payload).encode("utf-8")
+            with (
+                mock.patch.object(agent, "SESSION_FILE", session_file),
+                mock.patch.object(agent.win32crypt, "CryptUnprotectData", return_value=("MynAssistant", raw)),
+            ):
+                self.assertEqual(agent.load_protected_session(), payload)
+
+    def test_drive_mask_discovers_every_logical_volume_letter(self) -> None:
+        mask = sum(1 << index for index in (2, 3, 4, 5, 7, 25))
+        self.assertEqual(
+            agent.logical_drive_letters(mask),
+            ["C", "D", "E", "F", "H", "Z"],
+        )
+
+    def test_allowed_roots_include_mounted_drives_and_keep_user_shortcuts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            drive = root / "volume-c"
+            profile = root / "profile"
+            drive.mkdir()
+            profile.mkdir()
+            (profile / "Documents").mkdir()
+            with (
+                mock.patch.dict(agent.os.environ, {"USERPROFILE": str(profile)}),
+                mock.patch.object(agent, "_windows_storage_roots", return_value=[("C:", drive), ("D:", root)]),
+            ):
+                roots = agent._allowed_file_roots()
+
+            self.assertEqual([label for label, _ in roots], ["C:", "D:", "Belgeler"])
+            self.assertEqual(roots[0][1], drive)
+            self.assertEqual(roots[2][1], (profile / "Documents").resolve())
+
+
 class ServerRelayCommandTests(unittest.TestCase):
     def setUp(self) -> None:
         self.session = FakeSession()
