@@ -305,6 +305,13 @@ class RemotePowerAndWindowCommandTests(unittest.TestCase):
 
 
 class SafeFileListingCommandTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # These tests cover profile-folder containment. Drive discovery is tested
+        # separately so the Windows CI runner's C:/D: disks cannot widen the fixture.
+        self.drive_roots_patch = mock.patch.object(agent, "_windows_storage_roots", return_value=[])
+        self.drive_roots_patch.start()
+        self.addCleanup(self.drive_roots_patch.stop)
+
     def test_root_listing_contains_only_existing_allowlisted_profile_folders(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             profile = Path(temp_dir)
@@ -484,6 +491,11 @@ if __name__ == "__main__":
     unittest.main(verbosity=2)
 
 class SafeFileDownloadCommandTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.drive_roots_patch = mock.patch.object(agent, "_windows_storage_roots", return_value=[])
+        self.drive_roots_patch.start()
+        self.addCleanup(self.drive_roots_patch.stop)
+
     def test_download_returns_content_hash_and_size_from_allowlisted_file(self) -> None:
         import base64
         import hashlib
@@ -579,6 +591,9 @@ class CommandExpirationAndQueueScopeTests(unittest.TestCase):
 
 class SafeFileUploadAndZipCommandTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.drive_roots_patch = mock.patch.object(agent, "_windows_storage_roots", return_value=[])
+        self.drive_roots_patch.start()
+        self.addCleanup(self.drive_roots_patch.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.profile = Path(self.temp.name) / "profile"
         self.profile.mkdir()
