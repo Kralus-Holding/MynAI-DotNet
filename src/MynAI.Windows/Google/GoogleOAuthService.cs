@@ -16,9 +16,11 @@ public sealed class GoogleOAuthService
 {
     private static readonly string[] Scopes =
     [
+        // Keep Google's canonical OpenID Connect scope names stable.
+        // Replacing these with userinfo URL scopes invalidates previously cached grants.
         "openid",
-        "https://www.googleapis.com/auth/userinfo.email",
-        "https://www.googleapis.com/auth/userinfo.profile",
+        "email",
+        "profile",
         "https://www.googleapis.com/auth/contacts.readonly"
     ];
 
@@ -29,14 +31,13 @@ public sealed class GoogleOAuthService
 
     public GoogleOAuthService()
     {
-        var currentTokens = Path.Combine(GoogleOAuthConfigStore.CurrentDirectory, "Tokens");
-        var legacyTokens = Path.Combine(GoogleOAuthConfigStore.LegacyDirectory, "Tokens");
-
-        // Keep prior OAuth token storage if it already exists, so upgrading
-        // from the MynAI folder does not silently disconnect the user's account.
-        _tokenDirectory = !Directory.Exists(currentTokens) && Directory.Exists(legacyTokens)
-            ? legacyTokens
-            : currentTokens;
+        // The previous release requested userinfo URL scopes while older installations
+        // stored grants for "email openid profile". Never reuse that incompatible token
+        // cache: keep it as a rollback backup and perform one clean consent for Contacts.
+        // Future releases keep this versioned store stable.
+        _tokenDirectory = Path.Combine(
+            GoogleOAuthConfigStore.CurrentDirectory,
+            "Tokens-contacts-v2");
     }
 
     public async Task<GoogleAccount> SignInAsync(
