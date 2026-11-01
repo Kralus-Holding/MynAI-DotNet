@@ -39,6 +39,8 @@ public partial class MainWindow : Window
     private EventWaitHandle? _activationEvent;
     private const string ActivationEventName = @"Local\MynAssistant.Ui.Activate";
     private bool _refreshTasksInProgress;
+    private DateTimeOffset _nextAgentRefreshUtc = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastAgentIpcErrorLogUtc = DateTimeOffset.MinValue;
 
     private bool _expanded;
     private bool _dragging;
@@ -617,7 +619,9 @@ public partial class MainWindow : Window
     {
         // Loaded and DispatcherTimer can both request a refresh. Do not let
         // overlapping pipe requests race and overwrite the Agent status.
-        if (_refreshTasksInProgress)
+        // After an IPC timeout, back off instead of logging the same failure every 2 seconds.
+        if (_refreshTasksInProgress ||
+            DateTimeOffset.UtcNow < _nextAgentRefreshUtc)
             return;
 
         _refreshTasksInProgress = true;
@@ -640,6 +644,8 @@ public partial class MainWindow : Window
 
             // "Aktif •" means the Agent answered the IPC request successfully;
             // it is not a claim that the cloud/Render service is online.
+            _nextAgentRefreshUtc = DateTimeOffset.MinValue;
+            _lastAgentIpcErrorLogUtc = DateTimeOffset.MinValue;
             AgentStatusText.Text = "Aktif •";
             AgentStatusText.Foreground = new SolidColorBrush(Color.FromRgb(126, 212, 145));
 
@@ -648,15 +654,23 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            DiagnosticLogManager.WriteError(
-                "MYN-AGENT-001",
-                "Agent",
-                "Planlanan görevler yenilenemedi; Agent IPC yanıtı alınamadı.",
-                ex);
+            var now = DateTimeOffset.UtcNow;
+            _nextAgentRefreshUtc = now.AddSeconds(10);
 
-            AgentStatusText.Text = "Bağlantı yok •";
+            // Persist at most one identical IPC failure every 60 seconds.
+            if (now - _lastAgentIpcErrorLogUtc >= TimeSpan.FromSeconds(60))
+            {
+                _lastAgentIpcErrorLogUtc = now;
+                DiagnosticLogManager.WriteError(
+                    "MYN-AGENT-001",
+                    "Agent",
+                    "Planlanan görevler yenilenemedi; Agent IPC yanıtı alınamadı. 10 saniye sonra yeniden denenecek.",
+                    ex);
+            }
+
+            AgentStatusText.Text = "Bağlantı bekleniyor •";
             AgentStatusText.Foreground = new SolidColorBrush(Color.FromRgb(220, 125, 125));
-            SetStatus("Agent bağlantısı bekleniyor");
+            SetStatus("Agent bağlantısı bekleniyor; otomatik yeniden denenecek");
         }
         finally
         {
@@ -860,7 +874,7 @@ internal sealed class AgentClient
                 PipeDirection.InOut,
                 PipeOptions.Asynchronous);
 
-        await pipe.ConnectAsync(3000);
+        await pipe.ConnectAsync(8000);
 
         using var reader =
             new StreamReader(
@@ -881,7 +895,7 @@ internal sealed class AgentClient
             JsonSerializer.Serialize(request));
 
         string? response;
-        using (var responseCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+        using (var responseCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8)))
         {
             try
             {
@@ -890,7 +904,7 @@ internal sealed class AgentClient
             catch (OperationCanceledException ex) when (responseCancellation.IsCancellationRequested)
             {
                 throw new TimeoutException(
-                    "Agent 3 saniye içinde IPC yanıtı vermedi. Agent durumunu ve Hata günlükleri bölümünü kontrol et.",
+                    "Agent 8 saniye içinde IPC yanıtı vermedi. Agent günlükleri ve Windows işlemlerini kontrol et.",
                     ex);
             }
         }
