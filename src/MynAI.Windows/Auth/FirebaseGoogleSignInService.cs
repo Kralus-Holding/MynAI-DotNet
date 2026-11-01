@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -115,6 +116,14 @@ public sealed class FirebaseGoogleSignInService
         if (!long.TryParse(result.expiresIn, out var expiresIn))
             expiresIn = 3600;
 
+        // Firebase's identity-provider response may omit photoUrl even though Google
+        // supplied the profile scope. Read the verified Google userinfo profile with
+        // the short-lived OAuth access token, then persist only its public HTTPS photo URL.
+        var googleProfilePhotoUrl = await GetGoogleProfilePhotoUrlAsync(
+            credential.Token.AccessToken,
+            result.email,
+            cancellationToken);
+
         var session = new FirebaseDesktopSession
         {
             Uid = result.localId,
@@ -122,7 +131,7 @@ public sealed class FirebaseGoogleSignInService
             DisplayName = string.IsNullOrWhiteSpace(result.displayName)
                 ? (result.email?.Split('@').FirstOrDefault() ?? "Google Kullanıcısı")
                 : result.displayName,
-            PhotoUrl = GetSafePhotoUrl(result.photoUrl),
+            PhotoUrl = GetSafePhotoUrl(googleProfilePhotoUrl) ?? GetSafePhotoUrl(result.photoUrl),
             IdToken = result.idToken,
             RefreshToken = result.refreshToken,
             ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(60, expiresIn - 60)).ToUnixTimeSeconds()
@@ -139,11 +148,62 @@ public sealed class FirebaseGoogleSignInService
                text.Contains("403", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static async Task<string?> GetGoogleProfilePhotoUrlAsync(
+        string? accessToken,
+        string? expectedEmail,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(accessToken))
+            return null;
+
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                "https://www.googleapis.com/oauth2/v2/userinfo");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+            using var response = await Http.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var profile = await response.Content.ReadFromJsonAsync<GoogleUserInfoResponse>(
+                cancellationToken: cancellationToken);
+            if (profile is null ||
+                string.IsNullOrWhiteSpace(expectedEmail) ||
+                !StringComparer.OrdinalIgnoreCase.Equals(profile.Email, expectedEmail))
+                return null;
+
+            if (!Uri.TryCreate(profile.Picture, UriKind.Absolute, out var photoUri) ||
+                !string.Equals(photoUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+                !(photoUri.Host.Equals("googleusercontent.com", StringComparison.OrdinalIgnoreCase) ||
+                  photoUri.Host.EndsWith(".googleusercontent.com", StringComparison.OrdinalIgnoreCase)))
+                return null;
+
+            return photoUri.AbsoluteUri;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Sign-in must remain available if Google's optional avatar endpoint is unavailable.
+            return null;
+        }
+    }
+
     private static string? GetSafePhotoUrl(string? value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
         uri.Scheme == Uri.UriSchemeHttps
             ? uri.AbsoluteUri
             : null;
+
+    private sealed class GoogleUserInfoResponse
+    {
+        [JsonPropertyName("email")] public string? Email { get; set; }
+        [JsonPropertyName("picture")] public string? Picture { get; set; }
+    }
 
     private static async Task<FirebaseGoogleSignInException> CreateFirebaseErrorAsync(
         HttpResponseMessage response,
