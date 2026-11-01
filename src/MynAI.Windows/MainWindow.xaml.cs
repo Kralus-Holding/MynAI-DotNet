@@ -57,9 +57,12 @@ public partial class MainWindow : Window
 
         Loaded += MainWindow_Loaded;
 
+        // Scheduled tasks change rarely. Polling every two seconds repeatedly
+        // opens the named pipe and races with other UI commands on slower PCs.
+        // Keep the UI fresh without continuously stressing the Agent IPC channel.
         _refreshTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(2)
+            Interval = TimeSpan.FromSeconds(15)
         };
 
         _refreshTimer.Tick += async (_, _) =>
