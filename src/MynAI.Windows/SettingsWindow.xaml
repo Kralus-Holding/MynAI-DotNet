@@ -734,19 +734,22 @@
                                 <TextBlock Text="Telefon-PC güvenli eşleştirmesi" FontSize="14" FontWeight="SemiBold"/>
                                 <TextBlock Text="Önce tek kullanımlık 10 karakterli kodu oluştur. İstersen aynı satırdaki QR simgesine dokunarak bu kodun QR görüntüsünü aç; telefonda kodu elle de girebilirsin. Kod 5 dakika geçerlidir."
                                            Foreground="#718096" FontSize="11" Margin="0,6,0,10" TextWrapping="Wrap"/>
-                                <Grid Margin="0,4,0,6">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock x:Name="DesktopPairingCodeText" Text="" Visibility="Collapsed"
-                                               FontSize="26" FontWeight="Bold" Foreground="#9DD9D2"
-                                               VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Center"
+                                            Margin="0,4,0,6">
+                                    <TextBlock x:Name="DesktopPairingCodeText"
+                                               Text=""
+                                               Visibility="Collapsed"
+                                               FontSize="26"
+                                               FontWeight="Bold"
+                                               Foreground="#9DD9D2"
+                                               VerticalAlignment="Center"
+                                               TextWrapping="NoWrap"/>
                                     <Button x:Name="ShowDesktopPairingQrButton"
-                                            Grid.Column="1"
                                             Width="42" Height="38"
                                             Padding="4"
-                                            Margin="8,0,0,0"
+                                            Margin="9,0,0,0"
                                             ToolTip="Oluşturulan kodun QR görüntüsünü göster/gizle"
                                             AutomationProperties.Name="QR kodunu göster veya gizle"
                                             Style="{StaticResource SecondaryButton}"
@@ -791,7 +794,7 @@
                                             </Grid>
                                         </Viewbox>
                                     </Button>
-                                </Grid>
+                                </StackPanel>
                                 <Image x:Name="DesktopPairingQrImage" Width="168" Height="168" Stretch="Uniform"
                                        HorizontalAlignment="Left" Visibility="Collapsed" Margin="0,4,0,8"/>
                                 <TextBlock x:Name="DesktopPairingStatusText" Text="Henüz eşleştirme kodu oluşturulmadı."
@@ -865,19 +868,7 @@
                                                FontSize="11"
                                                Margin="0,4,0,0"
                                                TextWrapping="Wrap"/>
-                                    <Button x:Name="ProfilePhotoUploadButton"
-                                            Content="Profil fotoğrafını değiştir"
-                                            Style="{StaticResource SecondaryButton}"
-                                            HorizontalAlignment="Left"
-                                            Margin="0,9,0,0"
-                                            Click="UploadDesktopProfilePhoto_Click"
-                                            IsEnabled="False"/>
-                                    <TextBlock x:Name="ProfilePhotoStatusText"
-                                               Text="JPG, PNG veya WebP • En fazla 5 MB"
-                                               Foreground="#7D899B"
-                                               FontSize="10"
-                                               Margin="0,5,0,0"
-                                               TextWrapping="Wrap"/>
+
 
                                 </StackPanel>
 
