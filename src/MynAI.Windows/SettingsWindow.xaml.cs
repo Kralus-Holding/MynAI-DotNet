@@ -30,7 +30,6 @@ public partial class SettingsWindow : Window
 
     private readonly DispatcherTimer _agentTimer;
     private readonly DesktopPairingClient _desktopPairingClient = new();
-    private readonly DesktopProfilePhotoClient _desktopProfilePhotoClient = new();
     private CancellationTokenSource? _pairingCancellation;
     private string? _pendingPairingQrPayload;
     private DateTime _lastBridgeRefreshAttemptUtc = DateTime.MinValue;
@@ -1065,11 +1064,8 @@ public partial class SettingsWindow : Window
     {
         var session = FirebaseDesktopSessionStore.Load();
         UpdateDesktopProfilePhoto(session?.PhotoUrl);
-        ProfilePhotoUploadButton.IsEnabled = session is not null;
         if (session is null)
         {
-            ProfilePhotoStatusText.Text = "Profil fotoğrafı yüklemek için önce hesabına giriş yap.";
-            ProfilePhotoStatusText.Foreground = new SolidColorBrush(Color.FromRgb(125, 137, 155));
             DesktopLoginStatusText.Text =
                 "Giriş yapılmadı. Giriş veya kayıt için devam et.";
             DesktopLoginButton.Content = "Giriş yap";
@@ -1082,70 +1078,6 @@ public partial class SettingsWindow : Window
             : $"Oturum açık: {session.Email}";
         DesktopLoginButton.Content = "Hesabı değiştir";
         DesktopLogoutButton.Visibility = Visibility.Visible;
-    }
-
-    private async void UploadDesktopProfilePhoto_Click(object sender, RoutedEventArgs e)
-    {
-        var session = FirebaseDesktopSessionStore.Load();
-        if (session is null)
-        {
-            ProfilePhotoStatusText.Text = "Profil fotoğrafı yüklemek için önce MynAssistant hesabına giriş yap.";
-            ProfilePhotoStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
-            return;
-        }
-
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "MynAssistant profil fotoğrafı seç",
-            Filter = "Profil fotoğrafı (*.jpg;*.jpeg;*.png;*.webp)|*.jpg;*.jpeg;*.png;*.webp",
-            CheckFileExists = true,
-            Multiselect = false
-        };
-        if (dialog.ShowDialog(this) != true)
-            return;
-
-        try
-        {
-            var info = new FileInfo(dialog.FileName);
-            if (info.Length is <= 0 or > 5 * 1024 * 1024)
-            {
-                ProfilePhotoStatusText.Text = "Profil fotoğrafı boş olamaz ve 5 MB sınırını aşamaz.";
-                ProfilePhotoStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
-                return;
-            }
-
-            ProfilePhotoUploadButton.IsEnabled = false;
-            ProfilePhotoStatusText.Text = "Fotoğraf güvenli biçimde yükleniyor...";
-            ProfilePhotoStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
-
-            var updatedSession = await _desktopProfilePhotoClient.UploadAsync(
-                session,
-                dialog.FileName);
-
-            UpdateDesktopProfilePhoto(updatedSession.PhotoUrl);
-            ProfilePhotoStatusText.Text = "Profil fotoğrafı güncellendi ve bu Windows hesabına kaydedildi.";
-            ProfilePhotoStatusText.Foreground = new SolidColorBrush(Colors.LightGreen);
-            SetSaveStatus("MynAssistant profil fotoğrafı güncellendi.", Colors.LightGreen);
-        }
-        catch (OperationCanceledException)
-        {
-            ProfilePhotoStatusText.Text = "Profil fotoğrafı yüklemesi iptal edildi.";
-            ProfilePhotoStatusText.Foreground = new SolidColorBrush(Colors.LightBlue);
-        }
-        catch (Exception ex)
-        {
-            DiagnosticLogManager.WriteError(
-                "MYN-AUTH-007",
-                "FirebaseDesktopProfilePhoto",
-                "Windows hesap profil fotoğrafı yüklenemedi.",
-                ex);
-            ProfilePhotoStatusText.Text = $"Profil fotoğrafı yüklenemedi: {ex.Message}";
-            ProfilePhotoStatusText.Foreground = new SolidColorBrush(Colors.IndianRed);
-        }
-        finally
-        {
-            ProfilePhotoUploadButton.IsEnabled = FirebaseDesktopSessionStore.HasValidStoredSession();
-        }
     }
 
     private void UpdateDesktopProfilePhoto(string? photoUrl)
