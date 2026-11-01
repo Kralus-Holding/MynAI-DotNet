@@ -401,7 +401,7 @@ def claim_pending_command(session: FirebaseSession, document: dict, device_id: s
         document["_claimToken"] = claim_token
         return True
     except Exception as claim_error:
-        print(f"[Command] Server rejected command claim; command was not executed: {claim_error}")
+        print("[Command] Server rejected command claim; command was not executed.")
         return False
 
 
