@@ -264,24 +264,28 @@ if __name__ == "__main__":
 
 
 class PcFileListingCommandTests(unittest.TestCase):
-    def test_root_listing_returns_mounted_drives_as_json(self) -> None:
-        expected = {
-            "currentPath": "",
-            "parentPath": None,
-            "truncated": False,
-            "warnings": [],
-            "entries": [
-                {"name": letter, "path": letter + "\\", "isDirectory": True,
-                 "size": 0, "modifiedUtc": ""}
-                for letter in ("C:", "D:", "F:")
-            ],
-        }
-        with mock.patch.object(agent, "list_windows_drives", return_value=expected):
+    def test_root_listing_returns_all_accessible_mounted_drives_as_json(self) -> None:
+        accessible = {"C:", "D:", "F:"}
+
+        with (
+            mock.patch.object(
+                agent.Path,
+                "exists",
+                autospec=True,
+                side_effect=lambda root: str(root)[:2] in accessible,
+            ),
+            mock.patch.object(
+                agent.os.path,
+                "isdir",
+                side_effect=lambda root: str(root)[:2] in accessible,
+            ),
+        ):
             result = json.loads(agent.execute_command("list_files", {"path": ""}))
 
         self.assertEqual([item["name"] for item in result["entries"]], ["C:", "D:", "F:"])
         self.assertTrue(all(item["isDirectory"] for item in result["entries"]))
         self.assertIsNone(result["parentPath"])
+        self.assertEqual(result["warnings"], [])
         self.assertTrue(agent.command_is_supported("list_files"))
 
     def test_directory_listing_is_bounded_and_returns_android_contract(self) -> None:
